@@ -3,7 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
 // Import components
-import Sidebar from "../User/UserSideBar"; // Import the new Sidebar component
+import Sidebar from "../User/UserSideBar";
 
 // Import thumbnails
 import DefaultThumbnail from "../MapboxImages/map-default.png";
@@ -21,7 +21,7 @@ const UserMap = () => {
 
   const [lng] = useState(122.961602);
   const [lat] = useState(10.507447);
-  const [zoom] = useState(13);
+  const [zoom] = useState(11);
   const [mapStyle, setMapStyle] = useState("mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d");
   const [showLayers, setShowLayers] = useState(false);
   const [isSwitcherVisible, setIsSwitcherVisible] = useState(false);
@@ -50,44 +50,39 @@ const UserMap = () => {
     if (map.current) {
       map.current.flyTo({
         center: barangayCoordinates,
-        zoom: 14, // Set zoom level when zooming into the barangay
-        essential: true, // This ensures the action is considered important for accessibility
+        zoom: 12,
+        essential: true,
       });
     }
   };
 
   const handleBarangaySelect = (barangayData) => {
     setSelectedBarangay(barangayData);
-    
-    // Remove previous marker if exists
+
     if (markerRef.current) {
       markerRef.current.remove();
     }
-    
-    // Add new marker at selected coordinates
+
     if (map.current && barangayData) {
-      // Create a new marker
-      const el = document.createElement('div');
-      el.className = 'marker';
-      el.style.width = '18px';
-      el.style.height = '18px';
-      el.style.borderRadius = '50%';
-      el.style.backgroundColor = '#10B981'; // Green color matching the app theme
-      el.style.border = '3px solid white';
-      el.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.3)';
-      
-      // Create popup for the marker
-      const popup = new mapboxgl.Popup({ offset: 25 })
-        .setHTML(`<h3 class="font-bold text-green-600">${barangayData.name}</h3>
-                 <p class="text-sm">Coordinates: ${barangayData.coordinates[1].toFixed(6)}, ${barangayData.coordinates[0].toFixed(6)}</p>`);
-      
-      // Add the marker to the map
+      const el = document.createElement("div");
+      el.className = "marker";
+      el.style.width = "18px";
+      el.style.height = "18px";
+      el.style.borderRadius = "50%";
+      el.style.backgroundColor = "#10B981";
+      el.style.border = "3px solid white";
+      el.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
+
+      const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
+        <h3 class="font-bold text-green-600">${barangayData.name}</h3>
+        <p class="text-sm">Coordinates: ${barangayData.coordinates[1].toFixed(6)}, ${barangayData.coordinates[0].toFixed(6)}</p>
+      `);
+
       markerRef.current = new mapboxgl.Marker(el)
         .setLngLat(barangayData.coordinates)
         .setPopup(popup)
         .addTo(map.current);
-        
-      // Open the popup by default
+
       markerRef.current.togglePopup();
     }
   };
@@ -104,24 +99,23 @@ const UserMap = () => {
     } else {
       map.current.setStyle(mapStyle);
     }
-    
-    // Preserve marker when style changes
-    map.current.on('style.load', () => {
+
+    map.current.on("style.load", () => {
       if (selectedBarangay && markerRef.current) {
-        // Re-add the marker after style change
-        const el = document.createElement('div');
-        el.className = 'marker';
-        el.style.width = '18px';
-        el.style.height = '18px';
-        el.style.borderRadius = '50%';
-        el.style.backgroundColor = '#10B981';
-        el.style.border = '3px solid white';
-        el.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.3)';
-        
-        const popup = new mapboxgl.Popup({ offset: 25 })
-          .setHTML(`<h3 class="font-bold text-green-600">${selectedBarangay.name}</h3>
-                   <p class="text-sm">Coordinates: ${selectedBarangay.coordinates[1].toFixed(6)}, ${selectedBarangay.coordinates[0].toFixed(6)}</p>`);
-        
+        const el = document.createElement("div");
+        el.className = "marker";
+        el.style.width = "18px";
+        el.style.height = "18px";
+        el.style.borderRadius = "50%";
+        el.style.backgroundColor = "#10B981";
+        el.style.border = "3px solid white";
+        el.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
+
+        const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
+          <h3 class="font-bold text-green-600">${selectedBarangay.name}</h3>
+          <p class="text-sm">Coordinates: ${selectedBarangay.coordinates[1].toFixed(6)}, ${selectedBarangay.coordinates[0].toFixed(6)}</p>
+        `);
+
         markerRef.current = new mapboxgl.Marker(el)
           .setLngLat(selectedBarangay.coordinates)
           .setPopup(popup)
@@ -130,9 +124,8 @@ const UserMap = () => {
     });
   }, [mapStyle, lng, lat, zoom, selectedBarangay]);
 
-  // Add some CSS for Mapbox popups
   useEffect(() => {
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.innerHTML = `
       .mapboxgl-popup-content {
         padding: 12px;
@@ -141,7 +134,7 @@ const UserMap = () => {
       }
     `;
     document.head.appendChild(style);
-    
+
     return () => {
       document.head.removeChild(style);
     };
@@ -151,43 +144,66 @@ const UserMap = () => {
     <div className="relative h-screen w-screen">
       <div ref={mapContainer} className="h-full w-full" />
 
-      {/* Sidebar Panel */}
       <Sidebar
         mapStyles={mapStyles}
         setMapStyle={setMapStyle}
         showLayers={showLayers}
         setShowLayers={setShowLayers}
         zoomToBarangay={zoomToBarangay}
-        onBarangaySelect={handleBarangaySelect} // Pass the new handler
+        onBarangaySelect={handleBarangaySelect}
       />
 
-      {/* Map Style Switcher Toggle Button */}
-      <button
+      {/* Map Style Toggle Button */}
+      <div
         onClick={() => setIsSwitcherVisible(!isSwitcherVisible)}
-        className="absolute top-5 right-5 bg-green-600 text-white px-4 py-2 rounded-full shadow-lg z-10"
+        className="absolute top-5 right-5 w-[70px] h-[70px] bg-cover bg-center rounded-xl shadow-md cursor-pointer z-10 flex flex-col items-center justify-end p-1"
+        style={{ backgroundImage: `url(${SatelliteThumbnail})` }}
       >
-        {isSwitcherVisible ? "Hide Map Styles" : "Show Map Styles"}
-      </button>
+        <div className=" bg-opacity-50 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-4 w-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 10h18M3 6h18M3 14h18M3 18h18"
+            />
+          </svg>
+          Layers
+        </div>
+      </div>
 
-      {/* Map Style Switcher */}
+      {/* Map Style Switcher Panel */}
       {isSwitcherVisible && (
-        <div className="absolute top-16 right-5 bg-white p-2 rounded-lg shadow-lg z-10">
-          <h3 className="font-semibold">Map Styles</h3>
-          <div className="flex gap-4">
-            {Object.keys(mapStyles).map((styleKey) => (
+        <div className="absolute top-24 right-5 bg-white p-4 rounded-2xl shadow-lg flex space-x-3 items-center z-10">
+          {Object.entries(mapStyles).map(([styleName, styleData]) => (
+            <div key={styleName} className="flex flex-col items-center">
               <button
-                key={styleKey}
-                onClick={() => setMapStyle(mapStyles[styleKey].url)}
-                className="p-2 border rounded-lg"
+                onClick={() => setMapStyle(styleData.url)}
+                className={`rounded-xl overflow-hidden border-4 transition-all duration-300 shadow-md ${
+                  mapStyle === styleData.url ? "border-blue-500" : "border-transparent"
+                }`}
               >
                 <img
-                  src={mapStyles[styleKey].thumbnail}
-                  alt={styleKey}
-                  className="w-20 h-12 object-cover rounded"
+                  src={styleData.thumbnail}
+                  alt={styleName}
+                  className="w-16 h-16 object-cover"
                 />
               </button>
-            ))}
-          </div>
+              <span
+                className={`mt-1 text-xs font-semibold ${
+                  mapStyle === styleData.url ? "text-blue-600" : "text-gray-600"
+                }`}
+              >
+                {styleName}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
