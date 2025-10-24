@@ -77,39 +77,6 @@ const severityBadge = (sevText) => {
 };
 
 /* ---------- SMALL UI PRIMS ---------- */
-const SectionTitle = ({ children }) => (
-  <h4 className="text-sm font-semibold text-slate-700 mb-2">{children}</h4>
-);
-
-const Label = ({ htmlFor, children }) => (
-  <label htmlFor={htmlFor} className="text-xs font-medium text-slate-600">
-    {children}
-  </label>
-);
-
-const TextHelp = ({ children }) => <p className="text-[11px] text-slate-500">{children}</p>;
-
-const FieldWrap = ({ children, className = "" }) => (
-  <div className={`space-y-1.5 ${className}`}>{children}</div>
-);
-
-function PageBtn({ children, disabled, onClick, aria }) {
-  return (
-    <button
-      aria-label={aria}
-      disabled={disabled}
-      onClick={onClick}
-      className={`px-2.5 py-1.5 rounded-md border text-sm ${
-        disabled
-          ? "text-slate-400 border-slate-200 cursor-not-allowed"
-          : "text-slate-700 border-slate-300 hover:bg-slate-50 focus:ring-2 focus:ring-emerald-600"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
 const Chip = ({ active, children, onClick }) => (
   <button
     onClick={onClick}
@@ -153,6 +120,23 @@ function NoteClamp({ text, className = "" }) {
         </button>
       )}
     </div>
+  );
+}
+
+function PageBtn({ children, disabled, onClick, aria }) {
+  return (
+    <button
+      aria-label={aria}
+      disabled={disabled}
+      onClick={onClick}
+      className={`px-2.5 py-1.5 rounded-md border text-sm ${
+        disabled
+          ? "text-slate-400 border-slate-200 cursor-not-allowed"
+          : "text-slate-700 border-slate-300 hover:bg-slate-50 focus:ring-2 focus:ring-emerald-600"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -254,9 +238,9 @@ const ManageCalamity = () => {
     (async () => {
       try {
         const [ct, cv, eco] = await Promise.all([
-          axios.get("http://localhost:5000/api/crop-types").catch(() => ({ data: [] })),
-          axios.get("http://localhost:5000/api/crop-varieties").catch(() => ({ data: [] })),
-          axios.get("http://localhost:5000/api/ecosystems").catch(() => ({ data: [] })),
+          axios.get("http://localhost:5000/api/managecalamities/crop-types").catch(() => ({ data: [] })),
+          axios.get("http://localhost:5000/api/managecalamities/crop-varieties").catch(() => ({ data: [] })),
+          axios.get("http://localhost:5000/api/managecalamities/ecosystems").catch(() => ({ data: [] })),
         ]);
         setCropTypes(Array.isArray(ct.data) ? ct.data : []);
         setVarieties(Array.isArray(cv.data) ? cv.data : []);
@@ -398,6 +382,27 @@ const ManageCalamity = () => {
     });
   };
 
+  const coerceNum = (v) => {
+    if (v === "" || v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  /* ------- dependent dropdowns helpers ------- */
+  const filteredVarieties = useMemo(() => {
+    if (!Array.isArray(varieties)) return [];
+    const ct = editForm?.crop_type_id;
+    if (!ct) return [];
+    return varieties.filter((v) => String(v.crop_type_id) === String(ct));
+  }, [varieties, editForm?.crop_type_id]);
+
+  const filteredEcosystems = useMemo(() => {
+    if (!Array.isArray(ecosystems)) return [];
+    const ct = editForm?.crop_type_id;
+    if (!ct) return [];
+    return ecosystems.filter((e) => String(e.crop_type_id) === String(ct));
+  }, [ecosystems, editForm?.crop_type_id]);
+
   const handleEditChange = (e) => {
     const { name, value } = e.target;
 
@@ -409,13 +414,19 @@ const ManageCalamity = () => {
       }));
     }
 
-    setEditForm((prev) => ({ ...prev, [name]: value }));
-  };
+    if (name === "crop_type_id") {
+      // when crop changes, clear invalid ecosystem/variety selections
+      return setEditForm((prev) => {
+        const next = { ...prev, crop_type_id: value };
+        const ecoValid = filteredEcosystems.some((e) => String(e.id) === String(prev.ecosystem_id));
+        const varValid = filteredVarieties.some((v) => String(v.id) === String(prev.crop_variety_id));
+        if (!ecoValid) next.ecosystem_id = "";
+        if (!varValid) next.crop_variety_id = "";
+        return next;
+      });
+    }
 
-  const coerceNum = (v) => {
-    if (v === "" || v === null || v === undefined) return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+    setEditForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleUpdate = async () => {
@@ -448,6 +459,37 @@ const ManageCalamity = () => {
       alert("Failed to update incident.");
     }
   };
+
+  /* ------- map names→IDs after lookups arrive ------- */
+  useEffect(() => {
+    if (!editingIncident) return;
+    if (!cropTypes.length && !ecosystems.length && !varieties.length) return;
+
+    setEditForm((prev) => {
+      const next = { ...prev };
+
+      if (!next.crop_type_id && next.crop_type_name) {
+        const match = cropTypes.find((c) => c.name === next.crop_type_name);
+        if (match) next.crop_type_id = String(match.id);
+      }
+
+      if (!next.ecosystem_id && next.ecosystem_name) {
+        const match = ecosystems.find((e) => e.name === next.ecosystem_name);
+        if (match) next.ecosystem_id = String(match.id);
+      }
+
+      if (!next.crop_variety_id && next.variety_name) {
+        const candidates = varieties.filter(
+          (v) =>
+            v.name === next.variety_name &&
+            (!next.crop_type_id || String(v.crop_type_id) === String(next.crop_type_id))
+        );
+        if (candidates[0]) next.crop_variety_id = String(candidates[0].id);
+      }
+
+      return next;
+    });
+  }, [editingIncident, cropTypes, ecosystems, varieties]);
 
   /* ------- delete with confirm ------- */
   const confirmDelete = async () => {
@@ -502,7 +544,7 @@ const ManageCalamity = () => {
 
               <div className="flex items-end gap-3">
                 <div>
-                  <Label htmlFor="search">Search</Label>
+                  <label htmlFor="search" className="block text-xs font-medium text-slate-600 mb-1">Search</label>
                   <div className="relative">
                     <input
                       id="search"
@@ -517,7 +559,7 @@ const ManageCalamity = () => {
                 </div>
 
                 <div>
-                  <Label htmlFor="sort">Sort</Label>
+                  <label htmlFor="sort" className="block text-xs font-medium text-slate-600 mb-1">Sort</label>
                   <select
                     id="sort"
                     className="border border-slate-300 px-3 py-2 rounded-md w-56 focus:outline-none focus:ring-2 focus:ring-emerald-600"
@@ -658,8 +700,9 @@ const ManageCalamity = () => {
           {!isLoading && (
             <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="text-sm text-slate-600">
-                Showing <span className="font-medium">{total === 0 ? 0 : start + 1}</span>–<span className="font-medium">{Math.min(start + pageSize, total)}</span>{" "}
-                of <span className="font-medium">{total}</span>
+                Showing <span className="font-medium">{total === 0 ? 0 : start + 1}</span>–
+                <span className="font-medium">{Math.min(start + pageSize, total)}</span> of{" "}
+                <span className="font-medium">{total}</span>
               </div>
 
               <div className="flex items-center gap-3">
@@ -672,19 +715,11 @@ const ManageCalamity = () => {
                 </select>
 
                 <div className="inline-flex items-center gap-1">
-                  <PageBtn disabled={page === 1} onClick={() => setPage(1)} aria="First">
-                    «
-                  </PageBtn>
-                  <PageBtn disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria="Previous">
-                    ‹
-                  </PageBtn>
+                  <PageBtn disabled={page === 1} onClick={() => setPage(1)} aria="First">«</PageBtn>
+                  <PageBtn disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria="Previous">‹</PageBtn>
                   <span className="px-3 text-sm text-slate-700">Page {page} of {totalPages}</span>
-                  <PageBtn disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria="Next">
-                    ›
-                  </PageBtn>
-                  <PageBtn disabled={page === totalPages} onClick={() => setPage(totalPages)} aria="Last">
-                    »
-                  </PageBtn>
+                  <PageBtn disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria="Next">›</PageBtn>
+                  <PageBtn disabled={page === totalPages} onClick={() => setPage(totalPages)} aria="Last">»</PageBtn>
                 </div>
               </div>
             </div>
@@ -692,330 +727,333 @@ const ManageCalamity = () => {
         </div>
       </main>
 
-     {/* EDIT MODAL — styled like your “Report Calamity” form */}
-{/* EDIT MODAL — COMPACT */}
-{editingIncident && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
-      {/* Header */}
-      <div className="sticky top-0 flex items-center justify-between border-b px-5 py-3 bg-white">
-        <div>
-          <h3 className="text-lg font-semibold text-slate-900">Edit Incident Details</h3>
-          <p className="text-xs text-slate-600">Provide clear details so responders can act quickly.</p>
-        </div>
-        <button
-          onClick={() => setEditingIncident(null)}
-          aria-label="Close"
-          className="h-8 w-8 grid place-items-center rounded-md text-slate-600 hover:bg-slate-100"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Pills / quick info */}
-      <div className="border-b px-5 py-2">
-        <div className="flex flex-wrap gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-700">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
-            {editForm.latitude ? Number(editForm.latitude).toFixed(4) : "NaN"},{" "}
-            {editForm.longitude ? Number(editForm.longitude).toFixed(4) : "NaN"}
-          </span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            {editForm.affected_area ? `${editForm.affected_area} ha` : "— ha"}
-          </span>
-        </div>
-      </div>
-
-      {/* Body */}
-      <div className="max-h-[78vh] overflow-auto px-5 py-5 space-y-6">
-        {/* Incident details */}
-        <section>
-          <h4 className="text-sm font-semibold text-slate-900">Incident details</h4>
-          <p className="mt-0.5 text-[11px] text-slate-500">Basic information about the calamity.</p>
-
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
-              <label htmlFor="incident_type" className="text-xs font-medium text-slate-700">
-                Calamity Type <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="incident_type"
-                name="incident_type"
-                value={editForm.incident_type || ""}
-                onChange={handleEditChange}
-                placeholder="Select calamity type"
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="barangay" className="text-xs font-medium text-slate-700">
-                Barangay <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="barangay"
-                name="barangay"
-                value={editForm.barangay || ""}
-                onChange={handleEditChange}
-                placeholder="e.g., Brgy. San Isidro"
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="crop_stage" className="text-xs font-medium text-slate-700">
-                Crop Development Stage <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="crop_stage"
-                name="crop_stage"
-                value={editForm.crop_stage || ""}
-                onChange={handleEditChange}
-                placeholder="Select stage"
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="status" className="text-xs font-medium text-slate-700">
-                Status <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="status"
-                name="status"
-                value={editForm.status || ""}
-                onChange={handleEditChange}
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+      {/* EDIT MODAL — COMPACT */}
+      {editingIncident && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="sticky top-0 flex items-center justify-between border-b px-5 py-3 bg-white">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Edit Incident Details</h3>
+                <p className="text-xs text-slate-600">Provide clear details so responders can act quickly.</p>
+              </div>
+              <button
+                onClick={() => setEditingIncident(null)}
+                aria-label="Close"
+                className="h-8 w-8 grid place-items-center rounded-md text-slate-600 hover:bg-slate-100"
               >
-                <option value="">Pending</option>
-                <option value="Pending">Pending</option>
-                <option value="Verified">Verified</option>
-                <option value="Resolved">Resolved</option>
-                <option value="Rejected">Rejected</option>
-              </select>
+                ✕
+              </button>
             </div>
 
-            <div>
-              <label htmlFor="severity_text" className="text-xs font-medium text-slate-700">
-                Severity <span className="text-red-500">*</span>
-              </label>
-              <select
-                id="severity_text"
-                name="severity_text"
-                value={editForm.severity_text || ""}
-                onChange={handleEditChange}
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              >
-                <option value="">Select severity</option>
-                <option value="Low">Low</option>
-                <option value="Moderate">Moderate</option>
-                <option value="High">High</option>
-                <option value="Severe">Severe</option>
-              </select>
-              <p className="mt-1 text-[11px] text-slate-500">How intense is the incident?</p>
-            </div>
-
-            <div>
-              <label htmlFor="reported_at_input" className="text-xs font-medium text-slate-700">
-                Reported at <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="reported_at_input"
-                type="datetime-local"
-                name="reported_at_input"
-                value={editForm.reported_at_input || ""}
-                onChange={handleEditChange}
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-            </div>
-
-            {/* Description full width */}
-            <div className="md:col-span-2">
-              <label htmlFor="note" className="text-xs font-medium text-slate-700">
-                Description <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                id="note"
-                name="note"
-                value={editForm.note || ""}
-                onChange={handleEditChange}
-                placeholder="What happened? Any visible damage or hazards?"
-                className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                maxLength={1000}
-              />
-              <div className="mt-1 flex justify-between text-[11px] text-slate-500">
-                <span>Be concise and specific.</span>
-                <span>{(editForm.note?.length || 0)}/1000</span>
+            {/* Pills / quick info */}
+            <div className="border-b px-5 py-2">
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-700">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
+                  {editForm.latitude ? Number(editForm.latitude).toFixed(4) : "NaN"},{" "}
+                  {editForm.longitude ? Number(editForm.longitude).toFixed(4) : "NaN"}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  {editForm.affected_area ? `${editForm.affected_area} ha` : "— ha"}
+                </span>
               </div>
             </div>
+
+            {/* Body */}
+            <div className="max-h-[78vh] overflow-auto px-5 py-5 space-y-6">
+              {/* Incident details */}
+              <section>
+                <h4 className="text-sm font-semibold text-slate-900">Incident details</h4>
+                <p className="mt-0.5 text-[11px] text-slate-500">Basic information about the calamity.</p>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label htmlFor="incident_type" className="text-xs font-medium text-slate-700">
+                      Calamity Type <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="incident_type"
+                      name="incident_type"
+                      value={editForm.incident_type || ""}
+                      onChange={handleEditChange}
+                      placeholder="Select calamity type"
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="barangay" className="text-xs font-medium text-slate-700">
+                      Barangay <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="barangay"
+                      name="barangay"
+                      value={editForm.barangay || ""}
+                      onChange={handleEditChange}
+                      placeholder="e.g., Brgy. San Isidro"
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="crop_stage" className="text-xs font-medium text-slate-700">
+                      Crop Development Stage <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="crop_stage"
+                      name="crop_stage"
+                      value={editForm.crop_stage || ""}
+                      onChange={handleEditChange}
+                      placeholder="Select stage"
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="status" className="text-xs font-medium text-slate-700">
+                      Status <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      id="status"
+                      name="status"
+                      value={editForm.status || ""}
+                      onChange={handleEditChange}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    >
+                      <option value="">Pending</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Verified">Verified</option>
+                      <option value="Resolved">Resolved</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="severity_text" className="text-xs font-medium text-slate-700">
+                      Severity <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      id="severity_text"
+                      name="severity_text"
+                      value={editForm.severity_text || ""}
+                      onChange={handleEditChange}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    >
+                      <option value="">Select severity</option>
+                      <option value="Low">Low</option>
+                      <option value="Moderate">Moderate</option>
+                      <option value="High">High</option>
+                      <option value="Severe">Severe</option>
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">How intense is the incident?</p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="reported_at_input" className="text-xs font-medium text-slate-700">
+                      Reported at <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="reported_at_input"
+                      type="datetime-local"
+                      name="reported_at_input"
+                      value={editForm.reported_at_input || ""}
+                      onChange={handleEditChange}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+
+                  {/* Description full width */}
+                  <div className="md:col-span-2">
+                    <label htmlFor="note" className="text-xs font-medium text-slate-700">
+                      Description <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="note"
+                      name="note"
+                      value={editForm.note || ""}
+                      onChange={handleEditChange}
+                      placeholder="What happened? Any visible damage or hazards?"
+                      className="mt-1 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                      maxLength={1000}
+                    />
+                    <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+                      <span>Be concise and specific.</span>
+                      <span>{(editForm.note?.length || 0)}/1000</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Crop & ecosystem */}
+              <section>
+                <h4 className="text-sm font-semibold text-slate-900">Crop &amp; ecosystem</h4>
+                <p className="mt-0.5 text-[11px] text-slate-500">These fields tailor recommendations and analysis.</p>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {/* Crop Type */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-700">
+                      Crop Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="crop_type_id"
+                      value={editForm.crop_type_id ?? ""}
+                      onChange={handleEditChange}
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    >
+                      <option value="">Select crop type</option>
+                      {cropTypes.map((t) => (
+                        <option key={t.id} value={String(t.id)}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">Primary crop affected.</p>
+                  </div>
+
+                  {/* Ecosystem (filtered by crop type) */}
+                  <div>
+                    <label className="text-xs font-medium text-slate-700">
+                      Ecosystem Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="ecosystem_id"
+                      value={editForm.ecosystem_id ?? ""}
+                      onChange={handleEditChange}
+                      disabled={!editForm.crop_type_id || filteredEcosystems.length === 0}
+                      className={`mt-1 h-10 w-full rounded-md border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 ${
+                        !editForm.crop_type_id || filteredEcosystems.length === 0
+                          ? "border-slate-200 bg-slate-50 text-slate-400"
+                          : "border-slate-300"
+                      }`}
+                    >
+                      {!editForm.crop_type_id ? (
+                        <option value="">Select crop type first</option>
+                      ) : filteredEcosystems.length === 0 ? (
+                        <option value="">No ecosystems for selected crop</option>
+                      ) : (
+                        <>
+                          <option value="">Select ecosystem</option>
+                          {filteredEcosystems.map((e) => (
+                            <option key={e.id} value={String(e.id)}>
+                              {e.name}
+                            </option>
+                          ))}
+                        </>
+                      )}
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">Pick after crop type.</p>
+                  </div>
+
+                  {/* Variety (depends on crop type) */}
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-medium text-slate-700">Variety</label>
+                    <select
+                      name="crop_variety_id"
+                      value={editForm.crop_variety_id ?? ""}
+                      onChange={handleEditChange}
+                      disabled={!editForm.crop_type_id || filteredVarieties.length === 0}
+                      className={`mt-1 h-10 w-full rounded-md border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 ${
+                        !editForm.crop_type_id || filteredVarieties.length === 0
+                          ? "border-slate-200 bg-slate-50 text-slate-400"
+                          : "border-slate-300"
+                      }`}
+                    >
+                      {!editForm.crop_type_id ? (
+                        <option value="">Select crop type first</option>
+                      ) : filteredVarieties.length === 0 ? (
+                        <option value="">No varieties for selected crop</option>
+                      ) : (
+                        <>
+                          <option value="">Select variety</option>
+                          {filteredVarieties.map((v) => (
+                            <option key={v.id} value={String(v.id)}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
+              </section>
+
+              {/* Area & coordinates */}
+              <section>
+                <h4 className="text-sm font-semibold text-slate-900">Area &amp; coordinates</h4>
+                <p className="mt-0.5 text-[11px] text-slate-500">Geographic info of the incident.</p>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label htmlFor="affected_area" className="text-xs font-medium text-slate-700">Affected area (ha)</label>
+                    <input
+                      id="affected_area"
+                      type="number"
+                      inputMode="decimal"
+                      step="any"
+                      name="affected_area"
+                      value={editForm.affected_area ?? ""}
+                      onChange={handleEditChange}
+                      placeholder="0.00"
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+
+                  <div />
+
+                  <div>
+                    <label htmlFor="latitude" className="text-xs font-medium text-slate-700">Latitude</label>
+                    <input
+                      id="latitude"
+                      type="number"
+                      inputMode="decimal"
+                      step="any"
+                      name="latitude"
+                      value={editForm.latitude ?? ""}
+                      onChange={handleEditChange}
+                      placeholder="10.123456"
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="longitude" className="text-xs font-medium text-slate-700">Longitude</label>
+                    <input
+                      id="longitude"
+                      type="number"
+                      inputMode="decimal"
+                      step="any"
+                      name="longitude"
+                      value={editForm.longitude ?? ""}
+                      onChange={handleEditChange}
+                      placeholder="122.123456"
+                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t bg-white px-5 py-3">
+              <button
+                onClick={() => setEditingIncident(null)}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdate}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+              >
+                Update
+              </button>
+            </div>
           </div>
-        </section>
-
-        {/* Crop & ecosystem */}
-        <section>
-          <h4 className="text-sm font-semibold text-slate-900">Crop &amp; ecosystem</h4>
-          <p className="mt-0.5 text-[11px] text-slate-500">These fields tailor recommendations and analysis.</p>
-
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
-              <label className="text-xs font-medium text-slate-700">
-                Crop Type <span className="text-red-500">*</span>
-              </label>
-              {cropTypes.length > 0 ? (
-                <select
-                  name="crop_type_id"
-                  value={editForm.crop_type_id ?? ""}
-                  onChange={handleEditChange}
-                  className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                >
-                  <option value="">Select crop type</option>
-                  {cropTypes.map((t) => (
-                    <option key={t.id} value={String(t.id)}>{t.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  name="crop_type_name"
-                  value={editForm.crop_type_name ?? ""}
-                  onChange={handleEditChange}
-                  placeholder="Select crop type"
-                  className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
-              )}
-              <p className="mt-1 text-[11px] text-slate-500">Primary crop affected.</p>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-slate-700">
-                Ecosystem Type <span className="text-red-500">*</span>
-              </label>
-              {ecosystems.length > 0 ? (
-                <select
-                  name="ecosystem_id"
-                  value={editForm.ecosystem_id ?? ""}
-                  onChange={handleEditChange}
-                  className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                >
-                  <option value="">Select ecosystem</option>
-                  {ecosystems.map((e) => (
-                    <option key={e.id} value={String(e.id)}>{e.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  name="ecosystem_name"
-                  value={editForm.ecosystem_name ?? ""}
-                  onChange={handleEditChange}
-                  placeholder="Select ecosystem"
-                  className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
-              )}
-              <p className="mt-1 text-[11px] text-slate-500">Pick after crop type.</p>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="text-xs font-medium text-slate-700">Variety</label>
-              {varieties.length > 0 ? (
-                <select
-                  name="crop_variety_id"
-                  value={editForm.crop_variety_id ?? ""}
-                  onChange={handleEditChange}
-                  className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                >
-                  <option value="">Select variety</option>
-                  {varieties.map((v) => (
-                    <option key={v.id} value={String(v.id)}>{v.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  name="variety_name"
-                  value={editForm.variety_name ?? ""}
-                  onChange={handleEditChange}
-                  placeholder="Enter variety"
-                  className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                />
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Area & coordinates */}
-        <section>
-          <h4 className="text-sm font-semibold text-slate-900">Area &amp; coordinates</h4>
-          <p className="mt-0.5 text-[11px] text-slate-500">Geographic info of the incident.</p>
-
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
-              <label htmlFor="affected_area" className="text-xs font-medium text-slate-700">Affected area (ha)</label>
-              <input
-                id="affected_area"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                name="affected_area"
-                value={editForm.affected_area ?? ""}
-                onChange={handleEditChange}
-                placeholder="0.00"
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-            </div>
-
-            <div />
-
-            <div>
-              <label htmlFor="latitude" className="text-xs font-medium text-slate-700">Latitude</label>
-              <input
-                id="latitude"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                name="latitude"
-                value={editForm.latitude ?? ""}
-                onChange={handleEditChange}
-                placeholder="10.123456"
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="longitude" className="text-xs font-medium text-slate-700">Longitude</label>
-              <input
-                id="longitude"
-                type="number"
-                inputMode="decimal"
-                step="any"
-                name="longitude"
-                value={editForm.longitude ?? ""}
-                onChange={handleEditChange}
-                placeholder="122.123456"
-                className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* Footer */}
-      <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t bg-white px-5 py-3">
-        <button
-          onClick={() => setEditingIncident(null)}
-          className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleUpdate}
-          className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-        >
-          Update
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
+        </div>
+      )}
 
       {/* VIEW MODAL */}
       {viewingIncident && (
