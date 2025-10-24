@@ -1,15 +1,26 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { SaveIcon, ArrowRight, ArrowLeft } from "lucide-react";
 
+// Turf for spatial checks
+import centroid from "@turf/centroid";
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { point as turfPoint, polygon as turfPolygon, multiPolygon as turfMultiPolygon } from "@turf/helpers";
+
 /* ---------- CONFIG ---------- */
 const STANDARD_MATURITY_DAYS = { 1: 100, 2: 110, 3: 360, 4: 365, 5: 300, 6: 60 };
 const yieldUnitMap = { 1: "sacks", 2: "sacks", 3: "bunches", 4: "tons", 5: "tons", 6: "kg" };
 const yieldPerHectare = { 1: 80, 2: 85.4, 3: 150, 4: 80, 5: 70, 6: 100 };
-const barangayList = [
+
+// Fallback list (used only if `availableBarangays` prop or `barangaysFC` isn’t provided)
+const DEFAULT_BARANGAYS = [
   "Abuanan","Alianza","Atipuluan","Bacong","Bagroy","Balingasag","Binubuhan","Busay",
   "Calumangan","Caridad","Dulao","Ilijan","Lag-asan","Mailum","Ma-ao","Malingin",
   "Napoles","Pacol","Poblacion","Sagasa","Tabunan","Taloc"
 ];
+
+const MAX_PHOTO_MB = 10;
+const MAX_PHOTO_COUNT = 10;
+
 function addDaysToISO(dateStr, days) {
   if (!dateStr || !days) return "";
   const d = new Date(dateStr + "T00:00:00");
@@ -17,8 +28,75 @@ function addDaysToISO(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+/* ---------- Geo helpers using your barangay GeoJSON ---------- */
+function getBarangayName(props) {
+  return (
+    props?.Barangay ??
+    props?.barangay ??
+    props?.NAME ??
+    props?.name ??
+    ""
+  );
+}
+
+function listBarangayNamesFromFC(barangaysFC) {
+  const set = new Set();
+  for (const f of barangaysFC?.features || []) {
+    const n = getBarangayName(f.properties || {});
+    if (n) set.add(String(n));
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+/** Returns { name, feature } if centroid of farmGeometry is inside a barangay polygon */
+function detectBarangayFeature(farmGeometry, barangaysFC) {
+  if (!farmGeometry || !barangaysFC?.features?.length) return;
+  if (!(farmGeometry.type === "Polygon" || farmGeometry.type === "MultiPolygon")) return;
+
+  const farmFeature = { type: "Feature", geometry: farmGeometry, properties: {} };
+  const c = centroid(farmFeature);
+  const p = turfPoint(c.geometry.coordinates);
+
+  for (const f of barangaysFC.features) {
+    const g = f.geometry;
+    if (!g) continue;
+
+    const poly =
+      g.type === "Polygon"
+        ? turfPolygon(g.coordinates)
+        : g.type === "MultiPolygon"
+        ? turfMultiPolygon(g.coordinates)
+        : null;
+
+    if (!poly) continue;
+
+    if (booleanPointInPolygon(p, poly)) {
+      return {
+        name: getBarangayName(f.properties || {}),
+        feature: f,
+      };
+    }
+  }
+  return;
+}
+
 /* ---------- COMPONENT ---------- */
-const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, adminId }) => {
+const TagCropForm = ({
+  onCancel,
+  onSave,
+  defaultLocation,
+  adminId,
+
+  // NEW: pass your full Barangay FeatureCollection (Ma-ao, Taloc, Dulao, …)
+  barangaysFC,
+
+  // NEW: pass the drawn/edited farm polygon (GeoJSON Polygon or MultiPolygon)
+  farmGeometry,
+
+  // (kept for backward compatibility)
+  selectedBarangay,          // initial inferred barangay (optional)
+  availableBarangays,        // array of names (optional; auto-built from barangaysFC if provided)
+}) => {
   const formRef = useRef(null);
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -52,7 +130,45 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
   // Review Modal
   const [showConfirmation, setShowConfirmation] = useState(false);
 
+  // NEW: detected barangay feature
+  const [detectedBarangayName, setDetectedBarangayName] = useState("");
+  const [detectedBarangayFeature, setDetectedBarangayFeature] = useState(null);
+
   /* ---------- EFFECTS / DERIVED ---------- */
+
+  // Build the dropdown list:
+  // 1) prefer explicit availableBarangays
+  // 2) else derive from barangaysFC
+  // 3) else fallback constant
+  const availableFromFC = useMemo(
+    () => (barangaysFC ? listBarangayNamesFromFC(barangaysFC) : []),
+    [barangaysFC]
+  );
+
+  const mergedBarangays = useMemo(() => {
+    const base =
+      Array.isArray(availableBarangays) && availableBarangays.length
+        ? availableBarangays
+        : availableFromFC.length
+        ? availableFromFC
+        : DEFAULT_BARANGAYS;
+
+    const uniq = new Set(base.map((b) => String(b)));
+    const inferredTop = (detectedBarangayName || selectedBarangay || "").trim();
+    return inferredTop && !uniq.has(inferredTop) ? [inferredTop, ...base] : base;
+  }, [availableBarangays, availableFromFC, detectedBarangayName, selectedBarangay]);
+
+  // Try to detect barangay from the farm polygon
+  useEffect(() => {
+    const res = detectBarangayFeature(farmGeometry, barangaysFC);
+    if (res?.name) {
+      setDetectedBarangayName(res.name);
+      setDetectedBarangayFeature(res.feature || null);
+      setManualBarangay((cur) => cur || res.name); // fill only if empty
+    }
+  }, [farmGeometry, barangaysFC]);
+
+  // Load ecosystems for selected crop
   useEffect(() => {
     if (selectedCropType) {
       fetch(`http://localhost:5000/api/crops/ecosystems/${selectedCropType}`)
@@ -85,6 +201,7 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
     if (!volumeTouched) setEstimatedVolume(autoVolumeCandidate || "");
   }, [autoVolumeCandidate, volumeTouched]);
 
+  // Crop types
   useEffect(() => {
     fetch("http://localhost:5000/api/crops/types")
       .then((res) => res.json())
@@ -92,14 +209,17 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
       .catch((err) => console.error("Failed to load crop types:", err));
   }, []);
 
+  // Default hectares from defaultLocation
   useEffect(() => {
     if (defaultLocation?.hectares) setHectares(defaultLocation.hectares);
   }, [defaultLocation]);
 
+  // If caller gave an already-inferred barangay, set it (without overwriting detections)
   useEffect(() => {
-    if (selectedBarangay) setManualBarangay(selectedBarangay);
-  }, [selectedBarangay]);
+    if (selectedBarangay && !manualBarangay) setManualBarangay(selectedBarangay);
+  }, [selectedBarangay]); // eslint-disable-line
 
+  // Varieties for selected crop
   useEffect(() => {
     if (!selectedCropType) {
       setDynamicVarieties([]);
@@ -113,24 +233,53 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
   }, [selectedCropType]);
 
   /* ---------- VALIDATION ---------- */
-  const isStep1Valid = () => selectedCropType && plantedDate && hectares && manualBarangay;
+  const isStep1Valid = () =>
+    selectedCropType &&
+    plantedDate &&
+    hectares &&
+    manualBarangay &&
+    (!ecosystems.length || selectedEcosystem);
+
   const isStep2Valid = () =>
     farmerFirstName && farmerLastName && farmerMobile && farmerBarangay && farmerAddress;
 
   /* ---------- HANDLERS ---------- */
   const handleShowConfirmation = () => {
-    if (isStep2Valid()) setShowConfirmation(true);
+    if (!isStep2Valid()) return;
+    setShowConfirmation(true);
   };
   const handleNext = () => {
     if (currentStep === 1 && isStep1Valid()) setCurrentStep(2);
   };
-  const handleBack = () => {
-    if (currentStep > 1) setCurrentStep(currentStep - 1);
+  const handleBack = () => currentStep > 1 && setCurrentStep(currentStep - 1);
+
+  const handlePhotosChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > MAX_PHOTO_COUNT) {
+      alert(`Please select up to ${MAX_PHOTO_COUNT} photos.`);
+      return;
+    }
+    const tooBig = files.find((f) => f.size > MAX_PHOTO_MB * 1024 * 1024);
+    if (tooBig) {
+      alert(`Each photo must be ≤ ${MAX_PHOTO_MB}MB.`);
+      return;
+    }
+    setPhotos(e.target.files);
   };
 
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
     setShowConfirmation(false);
+
+    // Prefer caller-provided, else derive coordinates from farmGeometry (outer ring)
+    const coordsFromDefault = defaultLocation?.coordinates || [];
+    const coordsFromFarm =
+      farmGeometry?.type === "Polygon"
+        ? farmGeometry.coordinates?.[0] || []
+        : farmGeometry?.type === "MultiPolygon"
+        ? farmGeometry.coordinates?.[0]?.[0] || []
+        : [];
+    const farmCoords = coordsFromDefault.length ? coordsFromDefault : coordsFromFarm;
 
     const formData = new FormData();
     formData.append("ecosystem_id", selectedEcosystem || "");
@@ -141,8 +290,25 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
     formData.append("estimatedVolume", estimatedVolume || "");
     formData.append("estimatedHectares", hectares || "");
     formData.append("note", note || "");
-    formData.append("coordinates", JSON.stringify(defaultLocation?.coordinates || []));
-    formData.append("barangay", manualBarangay || selectedBarangay || "");
+
+    // keep your original coordinates field
+    formData.append("coordinates", JSON.stringify(farmCoords));
+
+    // prefer manual selection; fall back to detection
+    const finalBarangay = manualBarangay || detectedBarangayName || selectedBarangay || "";
+    formData.append("barangay", finalBarangay);
+
+    // NEW: include detected feature details (from your GeoJSON)
+    formData.append("detected_barangay_name", detectedBarangayName || "");
+    formData.append(
+      "detected_barangay_feature_properties",
+      JSON.stringify(detectedBarangayFeature?.properties || {})
+    );
+    formData.append(
+      "detected_barangay_feature_geometry",
+      JSON.stringify(detectedBarangayFeature?.geometry || {})
+    );
+
     if (adminId) formData.append("admin_id", String(adminId));
 
     formData.append("farmer_first_name", farmerFirstName || "");
@@ -163,7 +329,7 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
     setSelectedCropType("");
     setSelectedVarietyId("");
     setPlantedDate("");
-    setManualBarangay(selectedBarangay || "");
+    setManualBarangay(finalBarangay || "");
     setEstimatedHarvest("");
     setHarvestTouched(false);
     setEstimatedVolume("");
@@ -175,6 +341,7 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
     setFarmerMobile("");
     setFarmerBarangay("");
     setFarmerAddress("");
+    setSelectedEcosystem("");
   };
 
   const getCropTypeName = () => {
@@ -412,12 +579,16 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
                       className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     >
                       <option value="">Select Barangay</option>
-                      {barangayList.map((bgy) => (
+                      {mergedBarangays.map((bgy) => (
                         <option key={bgy} value={bgy}>
                           {bgy}
                         </option>
                       ))}
                     </select>
+                    {(detectedBarangayName || selectedBarangay) &&
+                      manualBarangay === (detectedBarangayName || selectedBarangay) && (
+                        <p className="mt-1 text-xs text-green-600">Auto-filled from map.</p>
+                      )}
                   </div>
 
                   <div>
@@ -437,10 +608,12 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
                       type="file"
                       accept="image/*"
                       multiple
-                      onChange={(e) => setPhotos(e.target.files)}
+                      onChange={handlePhotosChange}
                       className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg bg-white text-base file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100 cursor-pointer"
                     />
-                    <p className="text-xs text-gray-500 mt-1">JPG/PNG/WebP up to 10MB each</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      JPG/PNG/WebP up to {MAX_PHOTO_MB}MB each (max {MAX_PHOTO_COUNT} files)
+                    </p>
                   </div>
                 </div>
               </div>
@@ -489,6 +662,9 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
                   <input
                     type="text"
                     required
+                    inputMode="numeric"
+                    pattern="^09\\d{9}$"
+                    title="Use PH format: 09XXXXXXXXX"
                     value={farmerMobile}
                     onChange={(e) => setFarmerMobile(e.target.value)}
                     placeholder="09123456789"
@@ -507,7 +683,7 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
                     className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                   >
                     <option value="">Select Barangay</option>
-                    {barangayList.map((bgy) => (
+                    {mergedBarangays.map((bgy) => (
                       <option key={bgy} value={bgy}>
                         {bgy}
                       </option>
@@ -577,7 +753,7 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
         </div>
       </div>
 
-      {/* ---------- Review Modal: Minimal & Clean (with STICKY header/footer) ---------- */}
+      {/* ---------- Review Modal ---------- */}
       {showConfirmation && (
         <div
           className="fixed inset-0 z-[60] bg-black/60 p-4 flex items-center justify-center"
@@ -605,7 +781,7 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
                     ...(estimatedHarvest ? [["Harvest", new Date(estimatedHarvest).toLocaleDateString()]] : []),
                     ["Area", `${hectares} ha`],
                     ...(estimatedVolume ? [["Estimated Yield", `${estimatedVolume} ${yieldUnitMap[selectedCropType]}`]] : []),
-                    ["Location", manualBarangay],
+                    ["Location", manualBarangay || detectedBarangayName || "—"],
                     ...(selectedCropType && ecosystems.length > 0
                       ? [["Ecosystem", ecosystems.find((e) => e.id === parseInt(selectedEcosystem))?.name || "—"]]
                       : []),
@@ -616,6 +792,17 @@ const TagCropForm = ({ onCancel, onSave, defaultLocation, selectedBarangay, admi
                     </div>
                   ))}
                 </div>
+
+                {/* Show detected feature summary */}
+                {(detectedBarangayName || detectedBarangayFeature) && (
+                  <div className="mt-3 text-xs text-gray-600">
+                    <div><span className="font-semibold">Detected Barangay:</span> {detectedBarangayName || "—"}</div>
+                    <div className="mt-1">
+                      <span className="font-semibold">Feature properties:</span>{" "}
+                      <code className="break-all">{JSON.stringify(detectedBarangayFeature?.properties || {}, null, 0)}</code>
+                    </div>
+                  </div>
+                )}
               </section>
 
               {/* Farmer */}
