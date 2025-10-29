@@ -238,10 +238,10 @@ const CalamityFarmerMap = () => {
       el.style.border = "3px solid white";
       el.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
 
+      // ✅ Coordinates line removed from popup content
       const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
         <div class="text-sm">
           <h3 class="font-bold text-red-600 text-base">${barangayData.name}</h3>
-          <p><strong>Coordinates:</strong> ${barangayData.coordinates[1].toFixed(6)}, ${barangayData.coordinates[0].toFixed(6)}</p>
           ${barangayData.population ? `<p><strong>Population:</strong> ${barangayData.population}</p>` : ""}
           ${barangayData.hazards ? `<p><strong>Hazards:</strong> ${barangayData.hazards.join(", ")}</p>` : ""}
         </div>

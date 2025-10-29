@@ -1,5 +1,8 @@
 // components/User/TagCalamityForm.js
 import React, { useState, useEffect, useMemo } from "react";
+/* ✅ NEW: GIS helpers + your barangays FeatureCollection */
+import * as turf from "@turf/turf";
+import BARANGAYS_FC from "../Barangays/barangays.json";
 
 const Spinner = () => (
   <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
@@ -84,6 +87,54 @@ const TagCalamityForm = ({
       setNewTagLocation?.((prev) => ({ ...(prev || {}), hectares: Number(val) }));
     }
   }, [defaultLocation?.hectares, setNewTagLocation]);
+
+  // ✅ Auto-prefill barangay from the drawn polygon using barangays.json
+  useEffect(() => {
+    // If barangay already set (from props or user typing), do not override
+    if (barangay || selectedBarangay) return;
+
+    const ring = defaultLocation?.coordinates;
+    if (!Array.isArray(ring) || ring.length < 3) return;
+
+    try {
+      // Ensure polygon is closed
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      const closedRing =
+        JSON.stringify(first) === JSON.stringify(last) ? ring : [...ring, first];
+
+      const poly = turf.polygon([closedRing]);
+      // Robust representative point
+      let center = turf.centerOfMass(poly);
+      if (!center?.geometry?.coordinates) center = turf.pointOnFeature(poly);
+
+      // Find containing barangay
+      const hit = (BARANGAYS_FC?.features || []).find((f) => {
+        try {
+          return turf.booleanPointInPolygon(center, f);
+        } catch {
+          return false;
+        }
+      });
+
+      if (hit) {
+        const props = hit.properties || {};
+        const nameCandidate =
+          props.barangay ||
+          props.Barangay ||
+          props.name ||
+          props.NAME ||
+          props.NAME_1 ||
+          props.NAME_2 ||
+          props.brgy_name ||
+          props.BRGY_NAME;
+
+        if (nameCandidate) setBarangay(String(nameCandidate));
+      }
+    } catch (e) {
+      console.warn("Barangay autofill failed:", e);
+    }
+  }, [defaultLocation?.coordinates, barangay, selectedBarangay]);
 
   // fetch ecosystems + crops
   useEffect(() => {

@@ -44,30 +44,30 @@ const CALAMITY_COLORS = {
   Pest: "#16a34a",
 };
 
-// Barangay -> coords
+/* ✅ Your provided barangay coordinates (Mapbox uses [lng, lat]) */
 const BARANGAY_COORDS = {
-  Abuanan: [122.9844, 10.5275],
-  Alianza: [122.92424927088227, 10.471876805354725],
-  Atipuluan: [122.94997254227323, 10.51054338526979],
-  Bacong: [123.03026270744279, 10.520037893339277],
-  Bagroy: [122.87467558102158, 10.47702885963125],
-  Balingasag: [122.84330579876998, 10.528672212250575],
-  Binubuhan: [122.98236293756698, 10.457428765280468],
-  Busay: [122.8936085581886, 10.536447801424544],
-  Calumangan: [122.8857773056537, 10.55943773159997],
-  Caridad: [122.89676017560787, 10.484855427956782],
-  Dulao: [122.94775786836688, 10.549767917490168],
-  Ilijan: [123.04567999131407, 10.44537414453059],
-  "Lag-asan": [122.84543167453091, 10.519843756585255],
-  Mailum: [123.05148249170527, 10.469013722796765],
-  "Ma-ao": [123.018102985426, 10.508962844307234],
-  Malingin: [122.92533490443519, 10.51102316577104],
-  Napoles: [122.86024955431672, 10.510195807139885],
-  Pacol: [122.86326134780008, 10.48966963268301],
-  Poblacion: [122.83378471878187, 10.535871883140523],
-  Sagasa: [122.89592554988106, 10.465232192594353],
-  Tabunan: [122.93868999567334, 10.570304584775227],
-  Taloc: [122.9100707275183, 10.57850192116514],
+  Abuanan: [122.9931029999093, 10.524206390699248],
+  Alianza: [122.92988862768476, 10.47340168422538],
+  Atipuluan: [122.9562576950126, 10.510953164592365],
+  Bacong: [123.03441588617568, 10.518873221163915],
+  Bagroy: [122.87236817323469, 10.477025471408794],
+  Balingasag: [122.84582810383534, 10.531277226745061],
+  Binubuhan: [123.00741197236749, 10.457215434189976],
+  Busay: [122.88838003856415, 10.53684669218299],
+  Calumangan: [122.8770489430554, 10.559875025008566],
+  Caridad: [122.90583327034744, 10.481478383788584],
+  Dulao: [122.95143518662286, 10.54852750565594],
+  Ilijan: [123.0551933861205, 10.452616250029052],
+  "Lag-asan": [122.83944999966644, 10.52329196247021],
+  Mailum: [123.04961976326507, 10.46172003496254],
+  "Ma-ao": [122.99162485502836, 10.489108815179577],
+  Malingin: [122.91732682101116, 10.49342702997562],
+  Napoles: [122.8977005416998, 10.512649251194247],
+  Pacol: [122.86745725376312, 10.494317122191205],
+  Poblacion: [122.83607481992988, 10.537613805073846],
+  Sagasa: [122.89308125259942, 10.469662308087592],
+  Tabunan: [122.93749999344345, 10.576637884752756],
+  Taloc: [122.90937045803548, 10.57850192116514],
 };
 
 // Status badge classes
@@ -95,6 +95,13 @@ const severityBadge = (severity) => {
 // Optional: a list for status filtering
 const STATUS_FILTERS = ["Pending", "Verified", "Resolved", "Rejected"];
 
+/* ✅ Helper: normalize barangay to a plain string */
+const normalizeBarangayName = (v) => {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object" && typeof v.name === "string") return v.name;
+  return "";
+};
+
 const CalamitySidebar = ({
   visible,
   setEnlargedImage,
@@ -111,7 +118,9 @@ const CalamitySidebar = ({
 
   selectedBarangay: selectedBarangayProp = "",
 }) => {
-  const [selectedBarangay, setSelectedBarangay] = useState(selectedBarangayProp || "");
+  const [selectedBarangay, setSelectedBarangay] = useState(
+    normalizeBarangayName(selectedBarangayProp)
+  );
   const [selectedStatus, setSelectedStatus] = useState("All");
   const [cropMap, setCropMap] = useState({});
   const [ecosystemMap, setEcosystemMap] = useState({});
@@ -162,33 +171,37 @@ const CalamitySidebar = ({
     };
   }, [selectedCalamity?.crop_type_id]);
 
-  // sync preselected barangay
+  // sync preselected barangay from parent (normalize to string)
   useEffect(() => {
-    if (selectedBarangayProp && selectedBarangayProp !== selectedBarangay) {
-      setSelectedBarangay(selectedBarangayProp);
+    const next = normalizeBarangayName(selectedBarangayProp);
+    if (next !== normalizeBarangayName(selectedBarangay)) {
+      setSelectedBarangay(next);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBarangayProp]);
 
   const handleBarangayChange = (e) => {
-    const brgy = e.target.value;
+    const brgy = e.target.value; // string
     setSelectedBarangay(brgy);
     if (BARANGAY_COORDS[brgy]) {
-      const coordinates = BARANGAY_COORDS[brgy];
+      const coordinates = BARANGAY_COORDS[brgy]; // [lng, lat]
       zoomToBarangay?.(coordinates);
       onBarangaySelect?.({ name: brgy, coordinates });
     }
   };
 
-  // filter list by type + barangay + status
+  // filter list by type + barangay + status (robust lower-casing)
   const filteredCalamities = useMemo(() => {
     const byType =
       selectedCalamityType === "All"
         ? calamities
         : calamities.filter((c) => c.calamity_type === selectedCalamityType);
 
-    const byBarangay = selectedBarangay
-      ? byType.filter((c) => (c.location || "").toLowerCase() === selectedBarangay.toLowerCase())
+    const selectedBarangayStr = normalizeBarangayName(selectedBarangay);
+    const byBarangay = selectedBarangayStr
+      ? byType.filter(
+          (c) => String(c.location || "").toLowerCase() === selectedBarangayStr.toLowerCase()
+        )
       : byType;
 
     const byStatus =
@@ -358,7 +371,7 @@ const CalamitySidebar = ({
                 Barangay
               </label>
               <select
-                value={selectedBarangay}
+                value={normalizeBarangayName(selectedBarangay)}
                 onChange={handleBarangayChange}
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
@@ -456,19 +469,7 @@ const CalamitySidebar = ({
               <KV label="Ecosystem" value={fmt(ecoName(selectedCalamity.ecosystem_id))} />
               <KV label="Variety" value={fmt(varietyName(selectedCalamity.crop_variety_id))} />
               <KV label="Affected Area" value={fmtHa(selectedCalamity.affected_area)} />
-              <KV
-            label="Severity"
-            value={
-              (() => {
-                const raw =
-                  (selectedCalamity?.severity_level ?? "").toString().trim() ||
-                  (selectedCalamity?.severity ?? "").toString().trim();
-                if (!raw) return "—";
-                const cap = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
-                return cap; // Low / Moderate / High / Severe
-              })()
-            }
-          />
+              <KV label="Severity" value={fmt(selectedCalamity.severity_level || selectedCalamity.severity)} />
               <KV label="Location (Barangay)" value={fmt(selectedCalamity.location)} />
               <KV label="Reported By" value={fmt(adminFullName)} />
               <KV
