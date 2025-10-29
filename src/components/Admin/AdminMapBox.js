@@ -51,7 +51,7 @@ const addPulseStylesOnce = () => {
 // Helper: accuracy ring (meters → km)
 function makeAccuracyCircle([lng, lat], accuracy) {
   const radiusKm = Math.max(accuracy, 10) / 1000;
-  return turf.circle([lng, lat], radiusKm, { steps: 64, units: "kilometers" });
+  return turf.circle([lng, lat], { radius: radiusKm, steps: 64, units: "kilometers" });
 }
 
 // Bounds helpers
@@ -144,23 +144,42 @@ function IconButton({ title, active, onClick, children }) {
 function getBarangayName(props) {
   return props?.Barangay ?? props?.barangay ?? props?.NAME ?? props?.name ?? "";
 }
-function detectBarangayForGeometry(geom, barangaysFC) {
+
+/** Strict check: polygon must be FULLY inside ONE barangay feature */
+function strictDetectBarangayForGeometry(geom, barangaysFC) {
   if (!geom || !barangaysFC?.features?.length) return null;
   if (!(geom.type === "Polygon" || geom.type === "MultiPolygon")) return null;
 
-  const center = turf.centroid({ type: "Feature", properties: {}, geometry: geom });
-  const pt = center.geometry;
+  const farmFeat = { type: "Feature", properties: {}, geometry: geom };
+  const center = turf.centroid(farmFeat);
+  const centerPt = center.geometry;
 
   for (const f of barangaysFC.features) {
     const g = f.geometry;
     if (!g) continue;
-    if (turf.booleanPointInPolygon(pt, g)) {
-      return {
-        name: getBarangayName(f.properties || {}),
-        feature: f,
-        centroid: center.geometry.coordinates,
-      };
-    }
+
+    // centroid must be inside this barangay
+    if (!turf.booleanPointInPolygon(centerPt, g)) continue;
+
+    // all vertices (first outer ring only) must be inside the SAME barangay
+    const ring =
+      geom.type === "Polygon"
+        ? geom.coordinates?.[0] || []
+        : geom.coordinates?.[0]?.[0] || [];
+    const allInside = ring.every((coord) => {
+      try {
+        return turf.booleanPointInPolygon(turf.point(coord), g);
+      } catch {
+        return false;
+      }
+    });
+    if (!allInside) continue;
+
+    return {
+      name: getBarangayName(f.properties || {}),
+      feature: f,
+      centroid: center.geometry.coordinates,
+    };
   }
   return null;
 }
@@ -271,7 +290,6 @@ const AdminMapBox = () => {
       const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
         <div class="text-sm">
           <h3 class="font-bold text-green-600 text-base">${barangayData.name}</h3>
-          <p><strong>Coordinates:</strong> ${barangayData.coordinates[1].toFixed(6)}, ${barangayData.coordinates[0].toFixed(6)}</p>
           ${barangayData.population ? `<p><strong>Population:</strong> ${barangayData.population}</p>` : ""}
           ${barangayData.crops ? `<p><strong>Crops:</strong> ${barangayData.crops.join(", ")}</p>` : ""}
         </div>
@@ -746,27 +764,53 @@ const AdminMapBox = () => {
         }
       });
 
-      // DRAW: when user creates a polygon, detect barangay + open form
+      /** ---------- ENFORCE: polygon must be within a barangay boundary ---------- */
+      const handleDrawAttempt = (feature) => {
+        if (!feature || !feature.geometry) return;
+
+        if (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon") return;
+
+        const poly = feature.geometry;
+
+        // Strict detection: centroid + ALL vertices must be inside the SAME barangay polygon
+        const detection = strictDetectBarangayForGeometry(poly, BARANGAYS_FC);
+
+        if (!detection) {
+          // Block tagging
+          try { drawRef.current?.delete(feature.id); } catch {}
+          setIsTagging(false);
+          setNewTagLocation(null);
+          toast.error("The tagged area is outside of a single barangay boundary. Please draw entirely within one barangay.");
+          return false;
+        }
+
+        // OK → proceed to form (pre-fill barangay)
+        const ring =
+          poly.type === "Polygon"
+            ? poly.coordinates?.[0]
+            : poly.coordinates?.[0]?.[0];
+
+        const area = turf.area({ type: "Feature", geometry: poly, properties: {} });
+        const hectares = +(area / 10000).toFixed(2);
+
+        setSelectedBarangay({ name: detection.name, coordinates: detection.centroid });
+        setNewTagLocation({ coordinates: ring, hectares, farmGeometry: poly });
+        setIsTagging(true);
+        return true;
+      };
+
       map.current.on("draw.create", (e) => {
-        const feature = e.features[0];
-        if (feature.geometry.type === "Polygon" || feature.geometry.type === "MultiPolygon") {
-          const poly = feature.geometry;
-          const ring = feature.geometry.type === "Polygon" ? feature.geometry.coordinates[0] : feature.geometry.coordinates?.[0]?.[0];
-          if (!Array.isArray(ring) || ring.length < 3) return;
+        const feature = e.features?.[0];
+        handleDrawAttempt(feature);
+      });
 
-          const area = turf.area(feature);
-          const hectares = +(area / 10000).toFixed(2);
-
-          // Detect barangay from centroid of the drawn geometry
-          const detection = detectBarangayForGeometry(poly, BARANGAYS_FC);
-          if (detection?.name) {
-            setSelectedBarangay({ name: detection.name, coordinates: detection.centroid });
-          } else {
-            setSelectedBarangay(null);
-          }
-
-          setNewTagLocation({ coordinates: ring, hectares, farmGeometry: poly });
-          setIsTagging(true);
+      map.current.on("draw.update", (e) => {
+        const feature = e.features?.[0];
+        // If officer edits and drags it across borders, block & revert (delete)
+        const ok = handleDrawAttempt(feature);
+        if (!ok) {
+          // try to revert by deleting the invalid edit; user can redraw
+          try { drawRef.current?.delete(feature.id); } catch {}
         }
       });
     } else {
