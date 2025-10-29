@@ -6,6 +6,18 @@ import centroid from "@turf/centroid";
 import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
 import { point as turfPoint, polygon as turfPolygon, multiPolygon as turfMultiPolygon } from "@turf/helpers";
 
+/* ---------- THEME (anchor to your look) ---------- */
+const THEME = {
+  primary: "green-600",
+  primaryHover: "green-700",
+  subtle: "green-100",
+  text: "gray-900",
+  subtext: "gray-600",
+  border: "gray-200",
+  panel: "white",
+  overlay: "black/40",
+};
+
 /* ---------- CONFIG ---------- */
 const STANDARD_MATURITY_DAYS = { 1: 100, 2: 110, 3: 360, 4: 365, 5: 300, 6: 60 };
 const yieldUnitMap = { 1: "sacks", 2: "sacks", 3: "bunches", 4: "tons", 5: "tons", 6: "kg" };
@@ -80,6 +92,56 @@ function detectBarangayFeature(farmGeometry, barangaysFC) {
   return;
 }
 
+/* ---------- REUSABLE FIELD WRAPPERS (tiny, no logic change) ---------- */
+const Field = ({ label, required, hint, children }) => (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+      {label} {required && <span className="text-red-500">*</span>}
+    </label>
+    {children}
+    {hint ? <p className="mt-1 text-xs text-gray-500">{hint}</p> : null}
+  </div>
+);
+
+const Input = (props) => (
+  <input
+    {...props}
+    className={[
+      "w-full border-2 rounded-xl px-4 py-3 bg-white text-base",
+      "focus:outline-none focus:ring-2",
+      `focus:ring-${THEME.primary} focus:border-${THEME.primary}`,
+      `border-${THEME.border}`,
+      props.className || "",
+    ].join(" ")}
+  />
+);
+
+const Select = (props) => (
+  <select
+    {...props}
+    className={[
+      "w-full border-2 rounded-xl px-4 py-3 bg-white text-base",
+      "focus:outline-none focus:ring-2",
+      `focus:ring-${THEME.primary} focus:border-${THEME.primary}`,
+      `border-${THEME.border}`,
+      props.className || "",
+    ].join(" ")}
+  />
+);
+
+const Textarea = (props) => (
+  <textarea
+    {...props}
+    className={[
+      "w-full border-2 rounded-xl px-4 py-3 bg-white text-base resize-none",
+      "focus:outline-none focus:ring-2",
+      `focus:ring-${THEME.primary} focus:border-${THEME.primary}`,
+      `border-${THEME.border}`,
+      props.className || "",
+    ].join(" ")}
+  />
+);
+
 /* ---------- COMPONENT ---------- */
 const TagCropForm = ({
   onCancel,
@@ -136,10 +198,7 @@ const TagCropForm = ({
 
   /* ---------- EFFECTS / DERIVED ---------- */
 
-  // Build the dropdown list:
-  // 1) prefer explicit availableBarangays
-  // 2) else derive from barangaysFC
-  // 3) else fallback constant
+  // Build the dropdown list
   const availableFromFC = useMemo(
     () => (barangaysFC ? listBarangayNamesFromFC(barangaysFC) : []),
     [barangaysFC]
@@ -291,14 +350,14 @@ const TagCropForm = ({
     formData.append("estimatedHectares", hectares || "");
     formData.append("note", note || "");
 
-    // keep your original coordinates field
+    // keep your original coordinates field (not displayed in UI)
     formData.append("coordinates", JSON.stringify(farmCoords));
 
     // prefer manual selection; fall back to detection
     const finalBarangay = manualBarangay || detectedBarangayName || selectedBarangay || "";
     formData.append("barangay", finalBarangay);
 
-    // NEW: include detected feature details (from your GeoJSON)
+    // include detected feature details
     formData.append("detected_barangay_name", detectedBarangayName || "");
     formData.append(
       "detected_barangay_feature_properties",
@@ -355,76 +414,71 @@ const TagCropForm = ({
 
   /* ---------- UI ---------- */
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[86vh] overflow-hidden flex flex-col">
+    <div className={`fixed inset-0 bg-${THEME.overlay} backdrop-blur-sm z-50 flex items-center justify-center p-4`}>
+      <div className={`bg-${THEME.panel} rounded-2xl shadow-2xl w-full max-w-2xl max-h-[86vh] overflow-hidden flex flex-col`}>
         {/* Header (STICKY) */}
-        <div className="sticky top-0 z-10 px-8 pt-6 pb-4 bg-white/95 backdrop-blur border-b">
-          <h2 className="text-2xl font-bold text-gray-900 text-center">Tag Crop</h2>
+        <div className={`sticky top-0 z-10 px-6 md:px-8 pt-6 pb-4 bg-white/95 backdrop-blur border-b`}>
+          <h2 className={`text-xl md:text-2xl font-bold text-${THEME.text} text-center`}>Tag Crop</h2>
 
-          {/* Stepper + progress */}
-          <div className="mt-4 mx-auto w-full max-w-sm">
-            <div className="flex items-center justify-center gap-3">
+          {/* Stepper */}
+          <div className="mt-3 mx-auto w-full max-w-sm">
+            <div className="flex items-center justify-center gap-2 md:gap-3">
               <div
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
-                  currentStep === 1 ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-400"
+                  currentStep === 1 ? `bg-${THEME.subtle} text-${THEME.primary}` : "bg-gray-100 text-gray-400"
                 }`}
               >
                 <span
                   className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
-                    currentStep === 1 ? "bg-green-600 text-white" : "bg-gray-300 text-gray-600"
+                    currentStep === 1 ? `bg-${THEME.primary} text-white` : "bg-gray-300 text-gray-600"
                   }`}
                 >
                   1
                 </span>
-                <span className="text-sm font-semibold">Crop Details</span>
+                <span className="text-sm font-semibold">Crop</span>
               </div>
 
               <div className="h-px w-8 bg-gray-200" />
 
               <div
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
-                  currentStep === 2 ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-400"
+                  currentStep === 2 ? `bg-${THEME.subtle} text-${THEME.primary}` : "bg-gray-100 text-gray-400"
                 }`}
               >
                 <span
                   className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
-                    currentStep === 2 ? "bg-green-600 text-white" : "bg-gray-300 text-gray-600"
+                    currentStep === 2 ? `bg-${THEME.primary} text-white` : "bg-gray-300 text-gray-600"
                   }`}
                 >
                   2
                 </span>
-                <span className="text-sm font-semibold">Farmer Info</span>
+                <span className="text-sm font-semibold">Farmer</span>
               </div>
             </div>
             <div className="mt-3 h-1 rounded bg-gray-100">
               <div
-                className={`h-1 rounded bg-green-500 transition-all duration-300 ${
+                className={`h-1 rounded bg-${THEME.primary} transition-all duration-300 ${
                   currentStep === 1 ? "w-1/2" : "w-full"
                 }`}
               />
             </div>
             <p className="mt-2 text-center text-sm text-gray-500">
-              {currentStep === 1 ? "Enter basic crop information" : "Enter farmer details"}
+              {currentStep === 1 ? "Enter crop details" : "Enter farmer details"}
             </p>
           </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-8 pb-2">
+        <div className="flex-1 overflow-y-auto px-6 md:px-8 pb-3">
           <form onSubmit={handleSubmit} ref={formRef} className="space-y-2">
             {currentStep === 1 && (
               <div className="space-y-6 animate-fadeIn">
                 {/* Section: Crop Basics */}
-                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                  Crop Basics
-                </h5>
+                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">Crop Basics</h5>
 
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      Crop Type <span className="text-red-500">*</span>
-                    </label>
-                    <select
+                  <Field label="Crop Type" required>
+                    <Select
                       required
                       value={selectedCropType}
                       onChange={(e) => {
@@ -432,7 +486,6 @@ const TagCropForm = ({
                         setSelectedCropType(Number.isFinite(id) ? id : "");
                         setSelectedVarietyId("");
                       }}
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     >
                       <option value="">Select Crop Type</option>
                       {cropTypes.map((type) => (
@@ -440,18 +493,14 @@ const TagCropForm = ({
                           {type.name}
                         </option>
                       ))}
-                    </select>
-                  </div>
+                    </Select>
+                  </Field>
 
                   {selectedCropType && ecosystems.length > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Ecosystem <span className="text-red-500">*</span>
-                      </label>
-                      <select
+                    <Field label="Ecosystem" required hint="Required for reporting and maps.">
+                      <Select
                         value={selectedEcosystem}
                         onChange={(e) => setSelectedEcosystem(e.target.value)}
-                        className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                       >
                         <option value="">Select Ecosystem</option>
                         {ecosystems.map((ecosystem) => (
@@ -459,19 +508,14 @@ const TagCropForm = ({
                             {ecosystem.name}
                           </option>
                         ))}
-                      </select>
-                      <p className="mt-1 text-xs text-gray-500">
-                        Required for reporting and maps.
-                      </p>
-                    </div>
+                      </Select>
+                    </Field>
                   )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Variety</label>
-                    <select
+                  <Field label="Variety">
+                    <Select
                       value={selectedVarietyId}
                       onChange={(e) => setSelectedVarietyId(e.target.value)}
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     >
                       <option value="">Select Variety (Optional)</option>
                       {dynamicVarieties.map((v) => (
@@ -479,8 +523,8 @@ const TagCropForm = ({
                           {v.name}
                         </option>
                       ))}
-                    </select>
-                  </div>
+                    </Select>
+                  </Field>
                 </div>
 
                 <div className="my-2 h-px bg-gray-100" />
@@ -488,30 +532,25 @@ const TagCropForm = ({
                 {/* Section: Dates */}
                 <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">Dates</h5>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      Date Planted <span className="text-red-500">*</span>
-                    </label>
-                    <input
+                  <Field label="Date Planted" required>
+                    <Input
                       type="date"
                       required
                       value={plantedDate}
                       onChange={(e) => setPlantedDate(e.target.value)}
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Est. Harvest</label>
-                    <input
+                  </Field>
+
+                  <Field label="Est. Harvest" hint="Auto-fills based on crop maturity; you can override.">
+                    <Input
                       type="date"
                       value={estimatedHarvest}
                       onChange={(e) => {
                         setHarvestTouched(true);
                         setEstimatedHarvest(e.target.value);
                       }}
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     />
-                  </div>
+                  </Field>
                 </div>
 
                 <div className="my-2 h-px bg-gray-100" />
@@ -522,42 +561,42 @@ const TagCropForm = ({
                 </h5>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      Area (ha) <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      required
-                      value={hectares}
-                      onChange={(e) => setHectares(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full border-2 border-gray-200 px-4 py-3 pr-14 rounded-lg text-right focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
-                    />
-                    <span className="absolute right-3 bottom-3 text-sm text-gray-500">ha</span>
+                    <Field label="Area (ha)" required>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        required
+                        value={hectares}
+                        onChange={(e) => setHectares(e.target.value)}
+                        placeholder="0.00"
+                        className="text-right pr-14"
+                      />
+                      <span className="absolute right-3 bottom-3 text-sm text-gray-500">ha</span>
+                    </Field>
                   </div>
 
                   <div className="relative">
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      Est. Yield{" "}
-                      {yieldUnitMap[selectedCropType] ? `(${yieldUnitMap[selectedCropType]})` : ""}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={estimatedVolume}
-                      onChange={(e) => {
-                        setVolumeTouched(true);
-                        setEstimatedVolume(e.target.value);
-                      }}
-                      placeholder="Auto-calculated"
-                      className="w-full border-2 border-gray-200 px-4 py-3 pr-20 rounded-lg text-right focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
-                    />
-                    <span className="absolute right-3 bottom-3 text-sm text-gray-500">
-                      {yieldUnitMap[selectedCropType] || "units"}
-                    </span>
+                    <Field
+                      label={`Est. Yield ${yieldUnitMap[selectedCropType] ? `(${yieldUnitMap[selectedCropType]})` : ""}`}
+                      hint="We estimate from area × typical yield. You can override."
+                    >
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={estimatedVolume}
+                        onChange={(e) => {
+                          setVolumeTouched(true);
+                          setEstimatedVolume(e.target.value);
+                        }}
+                        placeholder="Auto-calculated"
+                        className="text-right pr-20"
+                      />
+                      <span className="absolute right-3 bottom-3 text-sm text-gray-500">
+                        {yieldUnitMap[selectedCropType] || "units"}
+                      </span>
+                    </Field>
                   </div>
                 </div>
 
@@ -568,15 +607,11 @@ const TagCropForm = ({
                   Location &amp; Notes
                 </h5>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      Barangay <span className="text-red-500">*</span>
-                    </label>
-                    <select
+                  <Field label="Barangay" required>
+                    <Select
                       required
                       value={manualBarangay}
                       onChange={(e) => setManualBarangay(e.target.value)}
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     >
                       <option value="">Select Barangay</option>
                       {mergedBarangays.map((bgy) => (
@@ -584,37 +619,39 @@ const TagCropForm = ({
                           {bgy}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                     {(detectedBarangayName || selectedBarangay) &&
                       manualBarangay === (detectedBarangayName || selectedBarangay) && (
-                        <p className="mt-1 text-xs text-green-600">Auto-filled from map.</p>
+                        <div className={`mt-1 inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-${THEME.subtle} text-${THEME.primary}`}>
+                          Auto-filled from map
+                        </div>
                       )}
-                  </div>
+                  </Field>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
-                    <textarea
-                      rows="3"
+                  <Field label="Notes">
+                    <Textarea
+                      rows={3}
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                       placeholder="Any observations or notes..."
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     />
-                  </div>
+                  </Field>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Photos</label>
+                  <Field label="Photos" hint={`JPG/PNG/WebP up to ${MAX_PHOTO_MB}MB each (max ${MAX_PHOTO_COUNT} files)`}>
                     <input
                       type="file"
                       accept="image/*"
                       multiple
                       onChange={handlePhotosChange}
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg bg-white text-base file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100 cursor-pointer"
+                      className={[
+                        "w-full border-2 rounded-xl px-4 py-3 bg-white text-base cursor-pointer",
+                        `border-${THEME.border}`,
+                        "file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:font-medium",
+                        `file:bg-${THEME.subtle} file:text-${THEME.primary}`,
+                        `hover:file:bg-${THEME.subtle}`,
+                      ].join(" ")}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
-                      JPG/PNG/WebP up to {MAX_PHOTO_MB}MB each (max {MAX_PHOTO_COUNT} files)
-                    </p>
-                  </div>
+                  </Field>
                 </div>
               </div>
             )}
@@ -626,40 +663,29 @@ const TagCropForm = ({
                 </h5>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      First Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
+                  <Field label="First Name" required>
+                    <Input
                       type="text"
                       required
                       value={farmerFirstName}
                       onChange={(e) => setFarmerFirstName(e.target.value)}
                       placeholder="Juan"
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     />
-                  </div>
+                  </Field>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      Last Name <span className="text-red-500">*</span>
-                    </label>
-                    <input
+                  <Field label="Last Name" required>
+                    <Input
                       type="text"
                       required
                       value={farmerLastName}
                       onChange={(e) => setFarmerLastName(e.target.value)}
                       placeholder="Dela Cruz"
-                      className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                     />
-                  </div>
+                  </Field>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Mobile Number <span className="text-red-500">*</span>
-                  </label>
-                  <input
+                <Field label="Mobile Number" required>
+                  <Input
                     type="text"
                     required
                     inputMode="numeric"
@@ -668,19 +694,14 @@ const TagCropForm = ({
                     value={farmerMobile}
                     onChange={(e) => setFarmerMobile(e.target.value)}
                     placeholder="09123456789"
-                    className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                   />
-                </div>
+                </Field>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Barangay <span className="text-red-500">*</span>
-                  </label>
-                  <select
+                <Field label="Barangay" required>
+                  <Select
                     required
                     value={farmerBarangay}
                     onChange={(e) => setFarmerBarangay(e.target.value)}
-                    className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                   >
                     <option value="">Select Barangay</option>
                     {mergedBarangays.map((bgy) => (
@@ -688,33 +709,29 @@ const TagCropForm = ({
                         {bgy}
                       </option>
                     ))}
-                  </select>
-                </div>
+                  </Select>
+                </Field>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Complete Address <span className="text-red-500">*</span>
-                  </label>
-                  <input
+                <Field label="Complete Address" required>
+                  <Input
                     type="text"
                     required
                     value={farmerAddress}
                     onChange={(e) => setFarmerAddress(e.target.value)}
                     placeholder="House No., Street, Purok/Sitio"
-                    className="w-full border-2 border-gray-200 px-4 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white transition text-base"
                   />
-                </div>
+                </Field>
               </div>
             )}
           </form>
         </div>
 
         {/* Footer (STICKY) */}
-        <div className="sticky bottom-0 z-10 px-8 py-5 bg-white/95 backdrop-blur border-t border-gray-200 flex justify-between items-center gap-3">
+        <div className="sticky bottom-0 z-10 px-6 md:px-8 py-4 bg-white/95 backdrop-blur border-t border-gray-200 flex justify-between items-center gap-3">
           <button
             type="button"
             onClick={onCancel}
-            className="px-6 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition"
+            className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition"
           >
             Cancel
           </button>
@@ -724,7 +741,7 @@ const TagCropForm = ({
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex items-center gap-2 px-6 py-2.5 bg-white border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium"
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition font-medium"
               >
                 <ArrowLeft size={18} /> Back
               </button>
@@ -735,7 +752,7 @@ const TagCropForm = ({
                 type="button"
                 onClick={handleNext}
                 disabled={!isStep1Valid()}
-                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-600"
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-medium transition disabled:opacity-40 disabled:cursor-not-allowed bg-${THEME.primary} hover:bg-${THEME.primaryHover}`}
               >
                 Next <ArrowRight size={18} />
               </button>
@@ -744,7 +761,7 @@ const TagCropForm = ({
                 type="button"
                 onClick={handleShowConfirmation}
                 disabled={!isStep2Valid()}
-                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-green-600"
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-medium transition disabled:opacity-40 disabled:cursor-not-allowed bg-${THEME.primary} hover:bg-${THEME.primaryHover}`}
               >
                 <SaveIcon size={18} /> Save
               </button>
@@ -793,7 +810,7 @@ const TagCropForm = ({
                   ))}
                 </div>
 
-                {/* Show detected feature summary */}
+                {/* Show detected feature summary (no coordinates shown) */}
                 {(detectedBarangayName || detectedBarangayFeature) && (
                   <div className="mt-3 text-xs text-gray-600">
                     <div><span className="font-semibold">Detected Barangay:</span> {detectedBarangayName || "—"}</div>
@@ -830,13 +847,13 @@ const TagCropForm = ({
             <div className="sticky bottom-0 z-10 px-6 py-4 bg-white/95 backdrop-blur border-t flex gap-3">
               <button
                 onClick={() => setShowConfirmation(false)}
-                className="flex-1 px-4 py-2.5 rounded-lg border text-gray-700 hover:bg-gray-50 transition"
+                className="flex-1 px-4 py-2.5 rounded-xl border text-gray-700 hover:bg-gray-50 transition"
               >
                 Go Back
               </button>
               <button
                 onClick={handleSubmit}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold transition"
+                className={`flex-1 px-4 py-2.5 rounded-xl bg-${THEME.primary} hover:bg-${THEME.primaryHover} text-white font-semibold transition`}
               >
                 Confirm &amp; Save
               </button>
@@ -846,8 +863,8 @@ const TagCropForm = ({
       )}
 
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px);} to { opacity: 1; transform: translateY(0);} }
-        .animate-fadeIn { animation: fadeIn 0.25s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: translateY(0);} }
+        .animate-fadeIn { animation: fadeIn 0.20s ease-out; }
       `}</style>
     </div>
   );
