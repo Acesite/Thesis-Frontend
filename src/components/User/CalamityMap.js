@@ -1,3 +1,4 @@
+// components/User/CalamityFarmerMap.jsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -17,8 +18,10 @@ import LightThumbnail from "../MapboxImages/map-light.png";
 import SidebarToggleButton from "./MapControls/SidebarToggleButton";
 import TagCalamityForm from "./TagCalamityForm";
 import { useLocation, useSearchParams } from "react-router-dom";
+import BARANGAYS_FC from "../Barangays/barangays.json";
 
-mapboxgl.accessToken = "pk.eyJ1Ijoid29tcHdvbXAtNjkiLCJhIjoiY204emxrOHkwMGJsZjJrcjZtZmN4YXdtNSJ9.LIMPvoBNtGuj4O36r3F72w";
+mapboxgl.accessToken =
+  "pk.eyJ1Ijoid29tcHdvbXAtNjkiLCJhIjoiY204emxrOHkwMGJsZjJrcjZtZmN4YXdtNSJ9.LIMPvoBNtGuj4O36r3F72w";
 
 /** --------- constants to replace unused lng/lat/zoom state --------- **/
 const INIT_CENTER = [122.9616, 10.5074];
@@ -149,6 +152,50 @@ function expandBoundsToIncludePoint(bounds, [lng, lat], pad = 0.05) {
     [Math.min(minLng, lng) - pad, Math.min(minLat, lat) - pad],
     [Math.max(maxLng, lng) + pad, Math.max(maxLat, lat) + pad],
   ];
+}
+
+/* ---------- Barangay helpers (strict) ---------- */
+function getBarangayName(props) {
+  return props?.Barangay ?? props?.barangay ?? props?.NAME ?? props?.name ?? "";
+}
+
+/** Strict check: polygon must be FULLY inside ONE barangay feature */
+function strictDetectBarangayForGeometry(geom, barangaysFC) {
+  if (!geom || !barangaysFC?.features?.length) return null;
+  if (!(geom.type === "Polygon" || geom.type === "MultiPolygon")) return null;
+
+  const feat = { type: "Feature", properties: {}, geometry: geom };
+  const center = turf.centroid(feat).geometry;
+
+  for (const f of barangaysFC.features) {
+    const g = f.geometry;
+    if (!g) continue;
+
+    // centroid must be inside this barangay
+    if (!turf.booleanPointInPolygon(center, g)) continue;
+
+    // all vertices (outer ring) must be inside the SAME barangay
+    const ring =
+      geom.type === "Polygon"
+        ? geom.coordinates?.[0] || []
+        : geom.coordinates?.[0]?.[0] || [];
+
+    const allInside = ring.every((coord) => {
+      try {
+        return turf.booleanPointInPolygon(turf.point(coord), g);
+      } catch {
+        return false;
+      }
+    });
+    if (!allInside) continue;
+
+    return {
+      name: getBarangayName(f.properties || {}),
+      centroid: turf.centroid(f).geometry.coordinates,
+      feature: f,
+    };
+  }
+  return null;
 }
 
 const CalamityFarmerMap = () => {
@@ -637,6 +684,25 @@ const CalamityFarmerMap = () => {
     setUserMarker(glng, glat, accuracy);
   }, [lockToBago, setUserMarker]);
 
+  /** --- OPTIONAL: draw barangay outlines for visual guidance --- */
+  const ensureBarangayLayers = useCallback(() => {
+    if (!map.current) return;
+    if (!BARANGAYS_FC?.features?.length) return;
+
+    const m = map.current;
+    if (!m.getSource("barangays-src")) {
+      m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
+    }
+    if (!m.getLayer("barangays-line")) {
+      m.addLayer({
+        id: "barangays-line",
+        type: "line",
+        source: "barangays-src",
+        paint: { "line-color": "#1f2937", "line-width": 1.5, "line-opacity": 0.7 },
+      });
+    }
+  }, []);
+
   /** ---------------- map init / lifecycle ---------------- **/
   useEffect(() => {
     if (!map.current) {
@@ -679,7 +745,7 @@ const CalamityFarmerMap = () => {
               source: "calamity-polygons",
               paint: {
                 "fill-color": "#ef4444",
-                "fill-opacity": 0.4,
+                "fill-opacity": 0.4
               },
             });
 
@@ -691,7 +757,7 @@ const CalamityFarmerMap = () => {
                 "line-color": "#7f1d1d",
                 "line-width": 2,
               },
-              
+
             });
           }
         } catch (err) {
@@ -700,6 +766,8 @@ const CalamityFarmerMap = () => {
 
         // GPS layers
         ensureUserAccuracyLayers();
+        // OPTIONAL barangay outlines
+        ensureBarangayLayers();
 
         // polygon interactivity
         attachPolygonInteractivity();
@@ -729,22 +797,60 @@ const CalamityFarmerMap = () => {
             map.current.flyTo({ center: focus, zoom: target.zoom, essential: true });
           }
         }
-      });
 
-      map.current.on("draw.create", (e) => {
-        const feature = e.features[0];
-        if (feature.geometry.type === "Polygon") {
-          const coordinates = feature.geometry.coordinates[0];
-          const area = turf.area(feature);
+        /** ---------- ENFORCE barangay boundary on draw ---------- */
+        const handleDrawAttempt = (feature) => {
+          if (!feature || !feature.geometry) return;
+
+          if (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon") return;
+
+          const poly = feature.geometry;
+
+          // Strict detection: centroid + ALL vertices inside same barangay
+          const detection = strictDetectBarangayForGeometry(poly, BARANGAYS_FC);
+
+          if (!detection) {
+            // Block tagging
+            try { drawRef.current?.delete(feature.id); } catch {}
+            setIsTagging(false);
+            setNewTagLocation(null);
+            toast.error("The tagged area must be entirely inside a single barangay. Please redraw within one barangay.");
+            return false;
+          }
+
+          // OK → proceed to form (pre-fill barangay + hectares)
+          const ring =
+            poly.type === "Polygon"
+              ? poly.coordinates?.[0]
+              : poly.coordinates?.[0]?.[0];
+
+          const area = turf.area({ type: "Feature", geometry: poly, properties: {} });
           const hectares = +(area / 10000).toFixed(2);
-          setNewTagLocation({ coordinates, hectares });
+
+          setSelectedBarangay({ name: detection.name, coordinates: detection.centroid });
+          setNewTagLocation({ coordinates: ring, hectares });
           setIsTagging(true);
-        }
+          return true;
+        };
+
+        map.current.on("draw.create", (e) => {
+          const feature = e.features?.[0];
+          handleDrawAttempt(feature);
+        });
+
+        map.current.on("draw.update", (e) => {
+          const feature = e.features?.[0];
+          const ok = handleDrawAttempt(feature);
+          if (!ok) {
+            try { drawRef.current?.delete(feature.id); } catch {}
+          }
+        });
       });
     } else {
       map.current.setStyle(mapStyle);
       map.current.once("style.load", async () => {
         ensureUserAccuracyLayers();
+        ensureBarangayLayers();
         if (userLoc) {
           updateUserAccuracyCircle(userLoc.lng, userLoc.lat, userLoc.acc);
           if (userMarkerRef.current)
@@ -777,7 +883,7 @@ const CalamityFarmerMap = () => {
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapStyle, ensureUserAccuracyLayers, loadPolygons, renderSavedMarkers, highlightSelection]);
+  }, [mapStyle, ensureUserAccuracyLayers, ensureBarangayLayers, loadPolygons, renderSavedMarkers, highlightSelection]);
 
   // Deep-link effect after markers/data ready
   useEffect(() => {
@@ -1281,11 +1387,11 @@ const CalamityFarmerMap = () => {
             ×
           </button>
 
-          <img
-            src={enlargedImage}
-            alt="Fullscreen Calamity"
-            className="max-w-full max-h-full object-contain"
-          />
+        <img
+          src={enlargedImage}
+          alt="Fullscreen Calamity"
+          className="max-w-full max-h-full object-contain"
+        />
         </div>
       )}
     </div>
