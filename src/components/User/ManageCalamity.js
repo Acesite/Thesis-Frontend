@@ -590,54 +590,62 @@ const ManageCalamity = () => {
                 return (
                   <div key={inc.id} className="rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-sm transition relative" data-aos="fade-up">
                     {/* Actions */}
-                    <div className="absolute top-3 right-3">
+                   {/* Header — title left, badges + kebab right */}
+            <div className="flex items-center justify-between gap-3">
+              {/* left: type */}
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                <h3 className="text-[20px] font-semibold text-slate-900 truncate">{type}</h3>
+              </div>
+
+              {/* right: badges + kebab in one horizontal row */}
+              <div className="flex items-center gap-2 shrink-0">
+                {inc.status && (
+                  <span className={`px-2.5 py-1 rounded-full text-xs ${statusBadge(inc.status)}`}>
+                    {inc.status}
+                  </span>
+                )}
+                {(inc.severity_level || inc.severity_text) && (
+                  <span className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(inc.severity_level || inc.severity_text)}`}>
+                    {inc.severity_level || inc.severity_text}
+                  </span>
+                )}
+
+                {/* kebab + dropdown */}
+                <div className="relative">
+                  <button
+                    aria-label="More actions"
+                    aria-expanded={activeActionId === inc.id}
+                    onClick={() => setActiveActionId(id => id === inc.id ? null : inc.id)}
+                    className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  >
+                    {/* horizontal three dots for crisp alignment */}
+                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                      <circle cx="5"  cy="10" r="1.6" />
+                      <circle cx="10" cy="10" r="1.6" />
+                      <circle cx="15" cy="10" r="1.6" />
+                    </svg>
+                  </button>
+
+                  {activeActionId === inc.id && (
+                    <div className="absolute right-0 mt-2 w-36 rounded-xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 overflow-hidden">
                       <button
-                        aria-label="More actions"
-                        onClick={() => setActiveActionId((id) => (id === inc.id ? null : inc.id))}
-                        className="p-2 -m-2 rounded-md hover:bg-slate-50 text-slate-700 focus:ring-2 focus:ring-emerald-600"
+                        onClick={() => { setActiveActionId(null); handleEdit(inc); }}
+                        className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
                       >
-                        ⋯
+                        Edit
                       </button>
-                      {activeActionId === inc.id && (
-                        <div className="absolute right-0 mt-2 w-36 bg-white border rounded-xl shadow-xl z-50 overflow-hidden">
-                          <button
-                            onClick={() => {
-                              setActiveActionId(null);
-                              handleEdit(inc);
-                            }}
-                            className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => {
-                              setActiveActionId(null);
-                              setPendingDelete(inc);
-                            }}
-                            className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
+                      <button
+                        onClick={() => { setActiveActionId(null); setPendingDelete(inc); }}
+                        className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
                     </div>
-
-                    {/* Header */}
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-                        <h3 className="text-[20px] font-semibold text-slate-900">{type}</h3>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {inc.status && <span className={`px-2.5 py-1 rounded-full text-xs ${statusBadge(inc.status)}`}>{inc.status}</span>}
-                        {(inc.severity_level || inc.severity_text) && (
-                          <span className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(inc.severity_level || inc.severity_text)}`}>
-                            {inc.severity_level || inc.severity_text}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
+                  )}
+                </div>
+              </div>
+            </div>
                     {/* Meta */}
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
                       <Stat label="Reported" value={fmtDate(inc.date_reported || inc.reported_at)} />

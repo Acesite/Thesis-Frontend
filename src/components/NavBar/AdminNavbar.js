@@ -168,6 +168,15 @@ const AdminNavBar = () => {
           >
             Crops
           </a>
+
+          <a
+            href="/ManageCalamity"
+            className={`tracking-wide font-light hover:text-emerald-700 ${
+              location.pathname === "/ManageCalamity" ? "text-emerald-700 font-medium" : "text-gray-800"
+            }`}
+          >
+            Calamity
+          </a>
         </nav>
 
         {/* Avatar & dropdown */}

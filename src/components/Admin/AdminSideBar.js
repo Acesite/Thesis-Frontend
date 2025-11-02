@@ -362,9 +362,11 @@ const AdminSideBar = ({
         </Section>
 
         {/* Home button */}
-        <div className="mt-5">
-          <Button to="/AdminLanding" label="Home" />
-        </div>
+          <div className="mt-5">
+                  <Button to="/AdminLanding" variant="outline" size="md">
+                    Home
+                  </Button>
+                </div>
       </div>
     </div>
   );

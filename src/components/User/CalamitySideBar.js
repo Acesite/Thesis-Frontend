@@ -158,7 +158,9 @@ const CalamitySidebar = ({
     if (!cropTypeId) return;
     (async () => {
       try {
-        const res = await fetch(`http://localhost:5000/api/calamities/crops/${cropTypeId}/varieties`);
+        const res = await fetch(
+          `http://localhost:5000/api/calamities/crops/${cropTypeId}/varieties`
+        );
         const data = (await res.json()) || [];
         if (abort) return;
         const vm = {};
@@ -200,7 +202,9 @@ const CalamitySidebar = ({
     const selectedBarangayStr = normalizeBarangayName(selectedBarangay);
     const byBarangay = selectedBarangayStr
       ? byType.filter(
-          (c) => String(c.location || "").toLowerCase() === selectedBarangayStr.toLowerCase()
+          (c) =>
+            String(c.location || "").toLowerCase() ===
+            selectedBarangayStr.toLowerCase()
         )
       : byType;
 
@@ -301,7 +305,8 @@ const CalamitySidebar = ({
 
   // Robust severity value (handles severity_level or legacy severity)
   const severityValue = useMemo(() => {
-    const raw = selectedCalamity?.severity_level ?? selectedCalamity?.severity ?? null;
+    const raw =
+      selectedCalamity?.severity_level ?? selectedCalamity?.severity ?? null;
     if (!raw) return null;
     const s = String(raw).trim();
     if (!s) return null;
@@ -417,41 +422,31 @@ const CalamitySidebar = ({
 
               {selectedCalamity.status && (
                 <span
-                  className={clsx(
-                    "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border",
-                    statusBadge(selectedCalamity.status).replace("text-", "border-")
-                  )}
-                >
-                  <span
-                    className={clsx(
-                      "h-1.5 w-1.5 rounded-full",
-                      statusBadge(selectedCalamity.status).split(" ")[0]
-                    )}
-                  />
-                  <span className={statusBadge(selectedCalamity.status).split(" ")[1]}>
-                    {selectedCalamity.status}
-                  </span>
-                </span>
+  className={clsx(
+    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
+    statusBadge(selectedCalamity.status).replace("text-", "border-")
+  )}
+>
+  <span className={statusBadge(selectedCalamity.status).split(" ")[1]}>
+    {selectedCalamity.status}
+  </span>
+</span>
+
               )}
 
               {severityValue && (
                 <span
-                  className={clsx(
-                    "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border",
-                    severityBadge(severityValue).replace("text-", "border-")
-                  )}
-                  title="Severity"
-                >
-                  <span
-                    className={clsx(
-                      "h-1.5 w-1.5 rounded-full",
-                      severityBadge(severityValue).split(" ")[0]
-                    )}
-                  />
-                  <span className={severityBadge(severityValue).split(" ")[1]}>
-                    {severityValue}
-                  </span>
-                </span>
+  className={clsx(
+    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
+    severityBadge(severityValue).replace("text-", "border-")
+  )}
+  title="Severity"
+>
+  <span className={severityBadge(severityValue).split(" ")[1]}>f
+    {severityValue}
+  </span>
+</span>
+
               )}
 
               {selectedCalamity.affected_area && (
@@ -469,12 +464,19 @@ const CalamitySidebar = ({
               <KV label="Ecosystem" value={fmt(ecoName(selectedCalamity.ecosystem_id))} />
               <KV label="Variety" value={fmt(varietyName(selectedCalamity.crop_variety_id))} />
               <KV label="Affected Area" value={fmtHa(selectedCalamity.affected_area)} />
-              <KV label="Severity" value={fmt(selectedCalamity.severity_level || selectedCalamity.severity)} />
+              <KV
+                label="Severity" 
+                value={fmt(
+                  selectedCalamity.severity_level || selectedCalamity.severity
+                )}
+              />
               <KV label="Location (Barangay)" value={fmt(selectedCalamity.location)} />
               <KV label="Reported By" value={fmt(adminFullName)} />
               <KV
                 label="Reported"
-                value={fmtDate(selectedCalamity.date_reported || selectedCalamity.created_at)}
+                value={fmtDate(
+                  selectedCalamity.date_reported || selectedCalamity.created_at
+                )}
               />
               <div className="col-span-2">
                 <span
@@ -489,7 +491,9 @@ const CalamitySidebar = ({
             </dl>
 
             <div className="mt-3">
-              <div className="text-xs uppercase tracking-wide text-gray-500">Description</div>
+              <div className="text-xs uppercase tracking-wide text-gray-500">
+                Description
+              </div>
               <p className="text-sm text-gray-900 mt-1">
                 {selectedCalamity.description?.trim() || "—"}
               </p>
@@ -497,7 +501,9 @@ const CalamitySidebar = ({
 
             {photoUrls.length > 0 && (
               <div className="mt-4">
-                <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">Photos</div>
+                <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                  Photos
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   {photoUrls.map((url, idx) => (
                     <button
@@ -524,7 +530,9 @@ const CalamitySidebar = ({
         {/* Legend */}
         <Section title="Legend">
           <details className="text-sm">
-            <summary className="cursor-pointer select-none text-gray-900">Show colors</summary>
+            <summary className="cursor-pointer select-none text-gray-900">
+              Show colors
+            </summary>
             <ul className="mt-2 space-y-1">
               {Object.entries(CALAMITY_COLORS).map(([label, color]) => (
                 <li key={label} className="flex items-center">
@@ -540,7 +548,9 @@ const CalamitySidebar = ({
         </Section>
 
         <div className="mt-5">
-          <Button to="/AdminLanding" label="Home" />
+          <Button to="/AdminLanding" variant="outline" size="md">
+            Home
+          </Button>
         </div>
       </div>
     </div>
