@@ -3,38 +3,70 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import AdminProfileForm from "../Admin/AdminProfileForm";
 
-/* -------------------------- Reusable Avatar Button ------------------------- */
 function AvatarButton({ profilePicture, initials, onClick }) {
-  const [imgError, setImgError] = useState(false);
+  const [imgError, setImgError] = React.useState(false);
 
-  const base =
+  const API_BASE =
     (import.meta?.env && import.meta.env.VITE_API_URL) ||
     process.env.REACT_APP_API_URL ||
     "http://localhost:5000";
 
-  const raw = profilePicture;
-  const hasValue =
-    raw && raw !== "null" && raw !== "undefined" && String(raw).trim() !== "";
+  const normalizeUploadPath = (p) => {
+    // remove leading ./ or public/ if present; normalize to /uploads/...
+    let s = p.replace(/\\/g, "/").trim();
+    s = s.replace(/^\.?\/*/,""); // strip leading ./ or /
+    s = s.replace(/^public\//i, ""); // public/uploads/x.jpg -> uploads/x.jpg
+    if (s.startsWith("uploads/")) return `/${s}`;
+    if (s.startsWith("/uploads/")) return s;
+    // bare filename (abc.jpg) -> /uploads/abc.jpg
+    if (!s.includes("/")) return `/uploads/${s}`;
+    // already a relative path elsewhere -> prefix with /
+    return s.startsWith("/") ? s : `/${s}`;
+  };
 
-  const src = hasValue
-    ? raw.startsWith("http")
-      ? raw
-      : `${base}${raw.startsWith("/") ? raw : `/${raw}`}`
-    : "";
+  const buildSrc = (raw) => {
+    const v = String(raw || "").trim();
+    if (!v) return "";
+
+    // data URI already complete
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(v)) return v;
+
+    // raw base64 blob (short or long)
+    if (!v.includes("/") && /^[A-Za-z0-9+/=]+$/.test(v) && v.length >= 50) {
+      return `data:image/jpeg;base64,${v}`;
+    }
+
+    // absolute URL stays as is
+    if (/^https?:\/\//i.test(v)) return v;
+
+    // anything else -> normalize to /uploads/...
+    const rel = normalizeUploadPath(v);
+    return `${API_BASE}${rel}`;
+  };
+
+  const src = buildSrc(profilePicture);
+
+  // Reset error flag whenever input changes
+  React.useEffect(() => {
+    setImgError(false);
+  }, [profilePicture]);
 
   return (
     <button
       onClick={onClick}
-      className="h-10 w-10 overflow-hidden rounded-full ring-1 ring-gray-200 transition hover:ring-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-      aria-label="Open user menu"
       type="button"
+      aria-label="Open user menu"
+      className="h-10 w-10 overflow-hidden rounded-full ring-1 ring-gray-200 transition hover:ring-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-400"
     >
-      {hasValue && !imgError ? (
+      {src && !imgError ? (
         <img
           src={src}
           alt="Profile"
           className="h-full w-full object-cover"
-          onError={() => setImgError(true)}
+          onError={() => {
+            console.log("[Avatar] failed to load:", src, "raw:", profilePicture);
+            setImgError(true);
+          }}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center bg-emerald-600 text-sm font-semibold text-white">

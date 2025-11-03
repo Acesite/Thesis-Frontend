@@ -37,27 +37,32 @@ const Login = () => {
           first_name = "",
           last_name = "",
           profile_picture = "",
-          // if your backend later sends `full_name`, we’ll prefer it:
+          email: emailFromApi,
           full_name: fullNameFromApi,
         } = data;
 
         // Compute full name safely
-        const computedFullName = (fullNameFromApi && String(fullNameFromApi).trim())
-          || [first_name, last_name].map((s) => (s || "").trim()).filter(Boolean).join(" ");
+        const computedFullName =
+          (fullNameFromApi && String(fullNameFromApi).trim()) ||
+          [first_name, last_name]
+            .map((s) => (s || "").trim())
+            .filter(Boolean)
+            .join(" ");
 
-        // Base user info
+        // 🔐 Persist for navbar/AdminProfileForm (keys must match what your navbar reads)
         localStorage.setItem("token", token);
-        localStorage.setItem("role", role);
+        localStorage.setItem("role", role || "");
         localStorage.setItem("first_name", first_name || "");
         localStorage.setItem("last_name", last_name || "");
-        localStorage.setItem("full_name", computedFullName || ""); // ✅ for all users
-        localStorage.setItem("profile_picture", profile_picture || "");
+        localStorage.setItem("full_name", computedFullName || "");
+        localStorage.setItem("profile_picture", profile_picture || ""); // ← avatar depends on this
         localStorage.setItem("user_id", String(id));
+        localStorage.setItem("email", (emailFromApi || "").trim());
 
-        // Admin-specific keys
+        // Admin-specific keys (optional, kept from your logic)
         if (role === "admin" || role === "super_admin") {
           localStorage.setItem("admin_id", String(id));
-          localStorage.setItem("admin_full_name", computedFullName || ""); // ✅ store admin full name
+          localStorage.setItem("admin_full_name", computedFullName || "");
         } else {
           localStorage.removeItem("admin_id");
           localStorage.removeItem("admin_full_name");
