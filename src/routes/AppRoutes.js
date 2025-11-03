@@ -20,6 +20,7 @@ import ChooseMap from "../components/ChooseRole/ChooseMap";
 import ChooseRoleLogin from "../components/ChooseRole/ChooseRoleLogin";
 import LoginFarmer from "../components/Login/LoginFarmer";
 import ManageCalamity from "../components/User/ManageCalamity";
+import AdminManageCalamity from "../components/Admin/AdminManageCalamity";
 
 
 const AppRoutes = () => {
@@ -52,6 +53,7 @@ const AppRoutes = () => {
       <Route path="/AdminLanding" element={<AdminLanding />} />
       <Route path="/ManageCrops" element={<ManageCrop />} />
       <Route path="/ManageCalamity" element={<ManageCalamity />} />
+        <Route path="/AdminManageCalamity" element={<AdminManageCalamity />} />
     </Routes>
   );
 };

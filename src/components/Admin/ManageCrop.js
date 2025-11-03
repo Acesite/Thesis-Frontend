@@ -18,29 +18,34 @@ const colorByCrop = {
 
 const SORT_OPTIONS = [
   { value: "harvest_desc", label: "Harvest: Newest" },
-  { value: "harvest_asc",  label: "Harvest: Oldest" },
-  { value: "volume_desc",  label: "Volume: High → Low" },
-  { value: "volume_asc",   label: "Volume: Low → High" },
+  { value: "harvest_asc", label: "Harvest: Oldest" },
+  { value: "volume_desc", label: "Volume: High → Low" },
+  { value: "volume_asc", label: "Volume: Low → High" },
 ];
 
 const yieldUnitMap = {
-  1: "sacks",   // Corn (adjust if your ids differ)
-  2: "sacks",   // Rice
-  3: "bunches", // Banana
-  4: "tons",    // Sugarcane
-  5: "tons",    // Cassava
-  6: "kg",      // Vegetables
+  1: "sacks",
+  2: "sacks",
+  3: "bunches",
+  4: "tons",
+  5: "tons",
+  6: "kg",
 };
 
 /* ---------- UTILS ---------- */
 const nf2 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-const fmtNum = (v) => (v === null || v === undefined || v === "" ? "N/A" : nf2.format(Number(v)));
+const fmtNum = (v) =>
+  v === null || v === undefined || v === "" ? "N/A" : nf2.format(Number(v));
 const fmtDate = (date) => {
   if (!date) return "N/A";
   const t = new Date(date);
   return isNaN(t.getTime())
     ? "N/A"
-    : t.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+    : t.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
 };
 
 /* ---------- PAGE ---------- */
@@ -65,7 +70,6 @@ const ManageCrop = () => {
   const [pageSize, setPageSize] = useState(8);
   const [pendingDelete, setPendingDelete] = useState(null);
 
-  // NEW: modal for viewing full details
   const [viewingCrop, setViewingCrop] = useState(null);
 
   useEffect(() => {
@@ -90,9 +94,13 @@ const ManageCrop = () => {
   useEffect(() => {
     if (editForm.crop_type_id) {
       axios
-        .get(`http://localhost:5000/api/crops/varieties/${editForm.crop_type_id}`)
+        .get(
+          `http://localhost:5000/api/crops/varieties/${editForm.crop_type_id}`
+        )
         .then((res) => setVarieties(res.data))
         .catch((err) => console.error("Failed to load varieties:", err));
+    } else {
+      setVarieties([]);
     }
   }, [editForm.crop_type_id]);
 
@@ -142,19 +150,40 @@ const ManageCrop = () => {
     };
     switch (sort) {
       case "harvest_asc":
-        arr.sort((a, b) => (toTime(a.estimated_harvest) ?? Infinity) - (toTime(b.estimated_harvest) ?? Infinity)); break;
+        arr.sort(
+          (a, b) =>
+            (toTime(a.estimated_harvest) ?? Infinity) -
+            (toTime(b.estimated_harvest) ?? Infinity)
+        );
+        break;
       case "harvest_desc":
-        arr.sort((a, b) => (toTime(b.estimated_harvest) ?? -Infinity) - (toTime(a.estimated_harvest) ?? -Infinity)); break;
+        arr.sort(
+          (a, b) =>
+            (toTime(b.estimated_harvest) ?? -Infinity) -
+            (toTime(a.estimated_harvest) ?? -Infinity)
+        );
+        break;
       case "volume_asc":
-        arr.sort((a, b) => (Number(a.estimated_volume) || 0) - (Number(b.estimated_volume) || 0)); break;
+        arr.sort(
+          (a, b) =>
+            (Number(a.estimated_volume) || 0) - (Number(b.estimated_volume) || 0)
+        );
+        break;
       case "volume_desc":
-        arr.sort((a, b) => (Number(b.estimated_volume) || 0) - (Number(a.estimated_volume) || 0)); break;
-      default: break;
+        arr.sort(
+          (a, b) =>
+            (Number(b.estimated_volume) || 0) - (Number(a.estimated_volume) || 0)
+        );
+        break;
+      default:
+        break;
     }
     return arr;
   }, [filtered, sort]);
 
-  useEffect(() => { setPage(1); }, [selectedCropTypeId, search, sort, pageSize]);
+  useEffect(() => {
+    setPage(1);
+  }, [selectedCropTypeId, search, sort, pageSize]);
 
   /* ------- pagination ------- */
   const total = sorted.length;
@@ -162,20 +191,29 @@ const ManageCrop = () => {
   const start = (page - 1) * pageSize;
   const pageItems = sorted.slice(start, start + pageSize);
 
-  /* ------- edit/update ------- */
   const handleEdit = (crop) => {
+    const initialName = [crop.farmer_first_name, crop.farmer_last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
     setEditingCrop(crop);
     setEditForm({
       ...crop,
       crop_type_id: crop.crop_type_id || "",
       variety_id: crop.variety_id || "",
-      farmer_id: crop.farmer_id || "",
+      farmer_id: crop.farmer_id ? String(crop.farmer_id) : "",
       planted_date: crop.planted_date || "",
       estimated_harvest: crop.estimated_harvest || "",
       estimated_volume: crop.estimated_volume || "",
       estimated_hectares: crop.estimated_hectares || "",
       note: crop.note || "",
       barangay: crop.crop_barangay || "",
+      farmer_full_name: initialName || "",
+
+      // NEW: simple text inputs for farmer name
+      farmer_first_name: crop.farmer_first_name || "",
+      farmer_last_name: crop.farmer_last_name || "",
     });
   };
 
@@ -186,20 +224,55 @@ const ManageCrop = () => {
 
   const handleUpdate = async () => {
     try {
-      await axios.put(`http://localhost:5000/api/managecrops/${editingCrop.id}`, editForm);
+      // 1) If a farmer is linked and the name changed, update farmer first
+      const hasFarmer = !!editForm.farmer_id;
+      const nameChanged =
+        (editingCrop?.farmer_first_name || "") !==
+          (editForm.farmer_first_name || "") ||
+        (editingCrop?.farmer_last_name || "") !==
+          (editForm.farmer_last_name || "");
+
+      if (hasFarmer && nameChanged) {
+        await axios.put(
+          `http://localhost:5000/api/managecrops/farmer/${editForm.farmer_id}`,
+          {
+            first_name: editForm.farmer_first_name || "",
+            last_name: editForm.farmer_last_name || "",
+          }
+        );
+      }
+
+      // 2) Update crop (don’t re-link farmer here)
+      const payload = { ...editForm };
+      delete payload.farmer_full_name;
+      delete payload.farmer_id;
+      delete payload.farmer_first_name;
+      delete payload.farmer_last_name;
+
+      const { data } = await axios.put(
+        `http://localhost:5000/api/managecrops/${editingCrop.id}`,
+        payload
+      );
+
       await fetchCrops();
       setEditingCrop(null);
-      alert("Crop updated successfully!");
+
+      alert(
+        data?.message ||
+          (nameChanged ? "Farmer and crop updated." : "Crop updated.")
+      );
     } catch (err) {
       console.error("Update error:", err);
-      alert("Failed to update crop.");
+      alert(err?.response?.data?.message || "Failed to update.");
     }
   };
 
   /* ------- delete with confirm ------- */
   const confirmDelete = async () => {
     try {
-      await axios.delete(`http://localhost:5000/api/managecrops/${pendingDelete.id}`);
+      await axios.delete(
+        `http://localhost:5000/api/managecrops/${pendingDelete.id}`
+      );
       setCrops((prev) => prev.filter((c) => c.id !== pendingDelete.id));
       setPendingDelete(null);
       alert("Crop deleted successfully!");
@@ -219,20 +292,33 @@ const ManageCrop = () => {
           <div className="mb-6 space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-[34px] leading-tight font-bold text-slate-900">Crop Management</h1>
-                <p className="text-[15px] text-slate-600">View, filter, and update crop records from field officers.</p>
+                <h1 className="text-[34px] leading-tight font-bold text-slate-900">
+                  Crop Management
+                </h1>
+                <p className="text-[15px] text-slate-600">
+                  View, filter, and update crop records from field officers.
+                </p>
               </div>
             </div>
 
             {/* Tools Row */}
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
               <div className="flex flex-wrap gap-2">
-                <Chip active={!selectedCropTypeId} onClick={() => setSelectedCropTypeId(null)}>All</Chip>
+                <Chip
+                  active={!selectedCropTypeId}
+                  onClick={() => setSelectedCropTypeId(null)}
+                >
+                  All
+                </Chip>
                 {cropTypes.map((t) => (
                   <Chip
                     key={t.id}
                     active={selectedCropTypeId === t.id}
-                    onClick={() => setSelectedCropTypeId(selectedCropTypeId === t.id ? null : t.id)}
+                    onClick={() =>
+                      setSelectedCropTypeId(
+                        selectedCropTypeId === t.id ? null : t.id
+                      )
+                    }
                   >
                     {t.name}
                   </Chip>
@@ -241,7 +327,9 @@ const ManageCrop = () => {
 
               <div className="flex items-end gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Search</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Search
+                  </label>
                   <div className="relative">
                     <input
                       type="text"
@@ -250,19 +338,25 @@ const ManageCrop = () => {
                       placeholder="Crop, variety, farmer, barangay…"
                       className="border border-slate-300 pl-9 pr-3 py-2 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                     />
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">🔎</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
+                      🔎
+                    </span>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Sort</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Sort
+                  </label>
                   <select
                     className="border border-slate-300 px-3 py-2 rounded-md w-56 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                     value={sort}
                     onChange={(e) => setSort(e.target.value)}
                   >
                     {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -273,7 +367,9 @@ const ManageCrop = () => {
           {/* Grid of cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {isLoading ? (
-              Array.from({ length: pageSize }).map((_, i) => <SkeletonCard key={i} />)
+              Array.from({ length: pageSize }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))
             ) : pageItems.length > 0 ? (
               pageItems.map((crop) => {
                 const color = colorByCrop[crop.crop_name] || "#16a34a";
@@ -288,21 +384,41 @@ const ManageCrop = () => {
                     <div className="absolute top-3 right-3">
                       <button
                         aria-label="More actions"
-                        onClick={() => setActiveActionId((id) => (id === crop.id ? null : crop.id))}
-                        className="p-2 -m-2 rounded-md hover:bg-slate-50 text-slate-700 focus:ring-2 focus:ring-emerald-600"
+                        aria-expanded={activeActionId === crop.id}
+                        onClick={() =>
+                          setActiveActionId((id) =>
+                            id === crop.id ? null : crop.id
+                          )
+                        }
+                        className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                       >
-                        ⋯
+                        <svg
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className="h-5 w-5"
+                        >
+                          <circle cx="5" cy="10" r="1.6" />
+                          <circle cx="10" cy="10" r="1.6" />
+                          <circle cx="15" cy="10" r="1.6" />
+                        </svg>
                       </button>
+
                       {activeActionId === crop.id && (
                         <div className="absolute right-0 mt-2 w-36 bg-white border rounded-xl shadow-xl z-50 overflow-hidden">
                           <button
-                            onClick={() => { setActiveActionId(null); handleEdit(crop); }}
+                            onClick={() => {
+                              setActiveActionId(null);
+                              handleEdit(crop);
+                            }}
                             className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
                           >
                             Edit
                           </button>
                           <button
-                            onClick={() => { setActiveActionId(null); setPendingDelete(crop); }}
+                            onClick={() => {
+                              setActiveActionId(null);
+                              setPendingDelete(crop);
+                            }}
                             className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
                           >
                             Delete
@@ -313,33 +429,51 @@ const ManageCrop = () => {
 
                     {/* Header */}
                     <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-                      <h3 className="text-[20px] font-semibold text-slate-900">{crop.crop_name}</h3>
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+                      <h3 className="text-[20px] font-semibold text-slate-900">
+                        {crop.crop_name}
+                      </h3>
                     </div>
                     {crop.variety_name && (
-                      <div className="mt-0.5 text-[13px] text-slate-500">{crop.variety_name}</div>
+                      <div className="mt-0.5 text-[13px] text-slate-500">
+                        {crop.variety_name}
+                      </div>
                     )}
 
                     {/* Meta (crop info) */}
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
-                      <Stat label="Planted"  value={fmtDate(crop.planted_date)} />
-                      <Stat label="Harvest"  value={fmtDate(crop.estimated_harvest)} />
-                      <Stat label="Volume"   value={`${fmtNum(crop.estimated_volume)} ${yieldUnitMap[crop.crop_type_id] || "units"}`} />
-                      <Stat label="Hectares" value={fmtNum(crop.estimated_hectares)} />
-                      <Stat label="Barangay (Crop)" value={crop.crop_barangay || "N/A"} />
+                      <Stat label="Planted" value={fmtDate(crop.planted_date)} />
+                      <Stat label="Harvest" value={fmtDate(crop.estimated_harvest)} />
+                      <Stat
+                        label="Volume"
+                        value={`${fmtNum(crop.estimated_volume)} ${
+                          yieldUnitMap[crop.crop_type_id] || "units"
+                        }`}
+                      />
+                      <Stat
+                        label="Hectares"
+                        value={fmtNum(crop.estimated_hectares)}
+                      />
+                      <Stat
+                        label="Barangay (Crop)"
+                        value={crop.crop_barangay || "N/A"}
+                      />
                       <Stat
                         label="Map"
                         value={
-                          (hasCoords) ? (
+                          hasCoords ? (
                             <button
                               className="text-emerald-700 hover:underline"
                               onClick={() =>
                                 navigate("/AdminMap", {
                                   state: {
-                                    cropId: String(crop.id),            // <- KEY for auto-highlight
+                                    cropId: String(crop.id),
                                     cropName: crop.crop_name || "",
                                     barangay: crop.crop_barangay || "",
-                                    lat: Number(crop.latitude),         // fallback center if needed
+                                    lat: Number(crop.latitude),
                                     lng: Number(crop.longitude),
                                     zoom: 16,
                                   },
@@ -349,12 +483,14 @@ const ManageCrop = () => {
                             >
                               View location ↗
                             </button>
-                          ) : "N/A"
+                          ) : (
+                            "N/A"
+                          )
                         }
                       />
                     </div>
 
-                    {/* Compact actions row (replaces farmer details on the card) */}
+                    {/* Compact actions row */}
                     <div className="mt-4 flex items-center justify-end">
                       <button
                         onClick={() => setViewingCrop(crop)}
@@ -374,7 +510,7 @@ const ManageCrop = () => {
                         <span className="text-slate-700">
                           {crop.tagger_first_name && crop.tagger_last_name
                             ? `${crop.tagger_first_name} ${crop.tagger_last_name}`
-                            : (crop.tagger_email || "N/A")}
+                            : crop.tagger_email || "N/A"}
                         </span>
                       </div>
                     </div>
@@ -382,7 +518,12 @@ const ManageCrop = () => {
                 );
               })
             ) : (
-              <EmptyState onClear={() => { setSelectedCropTypeId(null); setSearch(""); }} />
+              <EmptyState
+                onClear={() => {
+                  setSelectedCropTypeId(null);
+                  setSearch("");
+                }}
+              />
             )}
           </div>
 
@@ -390,10 +531,15 @@ const ManageCrop = () => {
           {!isLoading && (
             <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="text-sm text-slate-600">
-                Showing <span className="font-medium">{total === 0 ? 0 : start + 1}</span>
+                Showing{" "}
+                <span className="font-medium">
+                  {total === 0 ? 0 : start + 1}
+                </span>
                 {"–"}
-                <span className="font-medium">{Math.min(start + pageSize, total)}</span> of{" "}
-                <span className="font-medium">{total}</span>
+                <span className="font-medium">
+                  {Math.min(start + pageSize, total)}
+                </span>{" "}
+                of <span className="font-medium">{total}</span>
               </div>
 
               <div className="flex items-center gap-3">
@@ -403,16 +549,44 @@ const ManageCrop = () => {
                   onChange={(e) => setPageSize(Number(e.target.value))}
                 >
                   {[8, 12, 16, 24].map((n) => (
-                    <option key={n} value={n}>{n} per page</option>
+                    <option key={n} value={n}>
+                      {n} per page
+                    </option>
                   ))}
                 </select>
 
                 <div className="inline-flex items-center gap-1">
-                  <PageBtn disabled={page === 1} onClick={() => setPage(1)} aria="First">«</PageBtn>
-                  <PageBtn disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria="Previous">‹</PageBtn>
-                  <span className="px-3 text-sm text-slate-700">Page {page} of {totalPages}</span>
-                  <PageBtn disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria="Next">›</PageBtn>
-                  <PageBtn disabled={page === totalPages} onClick={() => setPage(totalPages)} aria="Last">»</PageBtn>
+                  <PageBtn
+                    disabled={page === 1}
+                    onClick={() => setPage(1)}
+                    aria="First"
+                  >
+                    «
+                  </PageBtn>
+                  <PageBtn
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    aria="Previous"
+                  >
+                    ‹
+                  </PageBtn>
+                  <span className="px-3 text-sm text-slate-700">
+                    Page {page} of {totalPages}
+                  </span>
+                  <PageBtn
+                    disabled={page === totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    aria="Next"
+                  >
+                    ›
+                  </PageBtn>
+                  <PageBtn
+                    disabled={page === totalPages}
+                    onClick={() => setPage(totalPages)}
+                    aria="Last"
+                  >
+                    »
+                  </PageBtn>
                 </div>
               </div>
             </div>
@@ -422,95 +596,234 @@ const ManageCrop = () => {
 
       {/* Edit Modal */}
       {editingCrop && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
-          <div className="bg-white p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl">
-            <h3 className="text-xl font-semibold text-emerald-700 mb-4">Edit Crop Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <select
-                name="crop_type_id"
-                value={editForm.crop_type_id}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
+        <div
+          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setEditingCrop(null)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-black/5"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between px-6 py-5">
+              <div>
+                <h3 className="text-xl font-semibold text-emerald-700">
+                  Edit Crop Details
+                </h3>
+                <p className="text-[13px] text-slate-500">
+                  Update basic crop info. Changes save to the list instantly.
+                </p>
+              </div>
+              <button
+                onClick={() => setEditingCrop(null)}
+                className="p-2 -m-2 rounded-md text-slate-500 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                aria-label="Close"
+                title="Close"
               >
-                <option value="">-- Select Crop Type --</option>
-                {cropTypes.map((type) => (
-                  <option key={type.id} value={type.id}>{type.name}</option>
-                ))}
-              </select>
-
-              <select
-                name="variety_id"
-                value={editForm.variety_id || ""}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              >
-                <option value="">-- Select Variety --</option>
-                {varieties.map((v) => (
-                  <option key={v.id} value={v.id}>{v.name}</option>
-                ))}
-              </select>
-
-              <input
-                type="date"
-                name="planted_date"
-                value={(editForm.planted_date || "").toString().split("T")[0] || ""}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-
-              <input
-                type="date"
-                name="estimated_harvest"
-                value={(editForm.estimated_harvest || "").toString().split("T")[0] || ""}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
-              />
-
-              <input
-                name="estimated_volume"
-                value={editForm.estimated_volume}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                placeholder="Volume"
-              />
-
-              <input
-                name="estimated_hectares"
-                value={editForm.estimated_hectares}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                placeholder="Hectares"
-              />
-
-              <input
-                name="barangay"
-                value={editForm.barangay || ""}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                placeholder="Crop Barangay"
-              />
-
-              <input
-                name="farmer_id"
-                value={editForm.farmer_id || ""}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                placeholder="Farmer ID"
-              />
-
-              <textarea
-                name="note"
-                value={editForm.note || ""}
-                onChange={handleEditChange}
-                className="border px-3 py-2 rounded md:col-span-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                placeholder="Notes"
-              />
+                ✕
+              </button>
             </div>
-            <div className="flex justify-end gap-3 mt-5">
-              <button onClick={() => setEditingCrop(null)} className="px-4 py-2 rounded border border-slate-300 hover:bg-slate-50">
+
+            <div className="h-px bg-slate-100" />
+
+            {/* Body */}
+            <div className="px-6 py-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Crop Type */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Crop type
+                  </label>
+                  <select
+                    name="crop_type_id"
+                    value={editForm.crop_type_id}
+                    onChange={handleEditChange}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  >
+                    <option value="">— Select crop —</option>
+                    {cropTypes.map((type) => (
+                      <option key={type.id} value={type.id}>
+                        {type.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Variety */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Variety
+                  </label>
+                  <select
+                    name="variety_id"
+                    value={editForm.variety_id || ""}
+                    onChange={handleEditChange}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  >
+                    <option value="">— Select variety —</option>
+                    {varieties.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Planted date */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Planted date
+                  </label>
+                  <input
+                    type="date"
+                    name="planted_date"
+                    value={
+                      (editForm.planted_date || "").toString().split("T")[0] ||
+                      ""
+                    }
+                    onChange={handleEditChange}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                {/* Estimated harvest */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Estimated harvest
+                  </label>
+                  <input
+                    type="date"
+                    name="estimated_harvest"
+                    value={
+                      (editForm.estimated_harvest || "")
+                        .toString()
+                        .split("T")[0] || ""
+                    }
+                    onChange={handleEditChange}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                {/* Volume */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Estimated volume
+                  </label>
+                  <div className="relative">
+                    <input
+                      name="estimated_volume"
+                      value={editForm.estimated_volume || ""}
+                      onChange={handleEditChange}
+                      inputMode="decimal"
+                      placeholder="e.g., 300"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 pr-16 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-500">
+                      {yieldUnitMap[editForm.crop_type_id] || "units"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Hectares */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Estimated hectares
+                  </label>
+                  <input
+                    name="estimated_hectares"
+                    value={editForm.estimated_hectares || ""}
+                    onChange={handleEditChange}
+                    inputMode="decimal"
+                    placeholder="e.g., 3.50"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                {/* Crop barangay */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Barangay (crop)
+                  </label>
+                  <input
+                    name="barangay"
+                    value={editForm.barangay || ""}
+                    onChange={handleEditChange}
+                    placeholder="e.g., Pacol"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+
+                {/* Farmer (simple text inputs) */}
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Farmer first name
+                    </label>
+                    <input
+                      name="farmer_first_name"
+                      value={editForm.farmer_first_name || ""}
+                      onChange={handleEditChange}
+                      placeholder="e.g., Juan"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Farmer last name
+                    </label>
+                    <input
+                      name="farmer_last_name"
+                      value={editForm.farmer_last_name || ""}
+                      onChange={handleEditChange}
+                      placeholder="e.g., Dela Cruz"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+                  <p className="md:col-span-2 text-[12px] text-slate-500">
+                    {editForm.farmer_id ? (
+                      <>
+                        Linked ID:{" "}
+                        <span className="font-medium">{editForm.farmer_id}</span>
+                      </>
+                    ) : (
+                      "No farmer linked to this crop."
+                    )}
+                  </p>
+                </div>
+
+                {/* Notes */}
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    name="note"
+                    value={editForm.note || ""}
+                    onChange={handleEditChange}
+                    rows={3}
+                    placeholder="Optional notes for this crop…"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="h-px bg-slate-100" />
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 px-6 py-4">
+              <button
+                onClick={() => setEditingCrop(null)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
                 Cancel
               </button>
-              <button onClick={handleUpdate} className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">
+              <button
+                onClick={handleUpdate}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+              >
                 Update
               </button>
             </div>
@@ -518,7 +831,7 @@ const ManageCrop = () => {
         </div>
       )}
 
-      {/* View All Modal (full farmer + extra details) */}
+      {/* View All Modal */}
       {viewingCrop && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
           <div className="bg-white p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl relative">
@@ -542,15 +855,18 @@ const ManageCrop = () => {
               </button>
             </div>
 
-            {/* Farmer Details */}
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-4">
-              <div className="text-[11px] tracking-wide text-slate-500 uppercase mb-2">Farmer</div>
+              <div className="text-[11px] tracking-wide text-slate-500 uppercase mb-2">
+                Farmer
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
                 <Stat
                   label="Name"
                   value={
                     viewingCrop.farmer_first_name || viewingCrop.farmer_last_name
-                      ? `${viewingCrop.farmer_first_name || ""} ${viewingCrop.farmer_last_name || ""}`.trim()
+                      ? `${viewingCrop.farmer_first_name || ""} ${
+                          viewingCrop.farmer_last_name || ""
+                        }`.trim()
                       : "N/A"
                   }
                 />
@@ -558,27 +874,38 @@ const ManageCrop = () => {
                 <Stat label="Barangay" value={viewingCrop.farmer_barangay || "N/A"} />
                 <Stat
                   label="Full Address"
-                  value={<span className="break-words">{viewingCrop.farmer_address || "N/A"}</span>}
+                  value={
+                    <span className="break-words">
+                      {viewingCrop.farmer_address || "N/A"}
+                    </span>
+                  }
                 />
               </div>
             </div>
 
-            {/* Crop Meta */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
               <Stat label="Planted" value={fmtDate(viewingCrop.planted_date)} />
               <Stat label="Harvest" value={fmtDate(viewingCrop.estimated_harvest)} />
               <Stat
                 label="Volume"
-                value={`${fmtNum(viewingCrop.estimated_volume)} ${yieldUnitMap[viewingCrop.crop_type_id] || "units"}`}
+                value={`${fmtNum(viewingCrop.estimated_volume)} ${
+                  yieldUnitMap[viewingCrop.crop_type_id] || "units"
+                }`}
               />
-              <Stat label="Hectares" value={fmtNum(viewingCrop.estimated_hectares)} />
+              <Stat
+                label="Hectares"
+                value={fmtNum(viewingCrop.estimated_hectares)}
+              />
             </div>
 
-            {/* Note */}
             {viewingCrop.note && viewingCrop.note.trim() && (
               <div className="mt-4">
-                <div className="text-[11px] uppercase tracking-wide text-slate-500">Note</div>
-                <p className="text-[14px] text-slate-700 whitespace-pre-wrap">{viewingCrop.note}</p>
+                <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Note
+                </div>
+                <p className="text-[14px] text-slate-700 whitespace-pre-wrap">
+                  {viewingCrop.note}
+                </p>
               </div>
             )}
 
@@ -598,7 +925,9 @@ const ManageCrop = () => {
       {pendingDelete && (
         <ConfirmDialog
           title="Delete crop"
-          message={`This will permanently delete "${pendingDelete.crop_name}" in ${pendingDelete.crop_barangay || "—"}.`}
+          message={`This will permanently delete "${pendingDelete.crop_name}" in ${
+            pendingDelete.crop_barangay || "—"
+          }.`}
           onCancel={() => setPendingDelete(null)}
           onConfirm={confirmDelete}
         />
@@ -627,7 +956,9 @@ const Chip = ({ active, children, onClick }) => (
 
 const Stat = ({ label, value }) => (
   <div>
-    <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+      {label}
+    </div>
     <div className="text-[14px] text-slate-900">{value}</div>
   </div>
 );
@@ -638,10 +969,21 @@ function NoteClamp({ text, className = "" }) {
   const needsToggle = text.length > 140;
   return (
     <div className={className}>
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">Note</div>
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+        Note
+      </div>
       <p
         className={`text-[14px] text-slate-700 ${expanded ? "" : "line-clamp-3"}`}
-        style={!expanded ? { display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" } : {}}
+        style={
+          !expanded
+            ? {
+                display: "-webkit-box",
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }
+            : {}
+        }
       >
         {text}
       </p>
