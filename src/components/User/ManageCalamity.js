@@ -659,24 +659,25 @@ const ManageCalamity = () => {
                         label="Map"
                         value={
                           hasCoords ? (
-                            <button
-                              className="text-emerald-700 hover:underline"
-                              onClick={() =>
-                                navigate("/CalamityFarmerMap", {
-                                  state: {
-                                    incidentId: String(inc.id),
-                                    incidentType: type,
-                                    barangay: inc.barangay || inc.location || "",
-                                    lat: Number(inc.latitude),
-                                    lng: Number(inc.longitude),
-                                    zoom: 16,
-                                  },
-                                })
-                              }
-                              title="Open in Admin Map"
-                            >
-                              View location ↗
-                            </button>
+                                                <button
+                        className="text-emerald-700 hover:underline"
+                        onClick={() =>
+                          navigate("/CalamityFarmerMap", {
+                            state: {
+                              incidentId: String(inc.id),
+                              incidentType: type,
+                              barangay: inc.barangay || inc.location || "",
+                              lat: Number(inc.latitude),
+                              lng: Number(inc.longitude),
+                              zoom: 16,
+                            },
+                          })
+                        }
+                        title="Open in Admin Map"
+                      >
+                        View location ↗
+                      </button>
+
                           ) : (
                             "N/A"
                           )

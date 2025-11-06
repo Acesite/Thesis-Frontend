@@ -461,33 +461,25 @@ const ManageCrop = () => {
                         label="Barangay (Crop)"
                         value={crop.crop_barangay || "N/A"}
                       />
-                      <Stat
-                        label="Map"
-                        value={
-                          hasCoords ? (
-                            <button
-                              className="text-emerald-700 hover:underline"
-                              onClick={() =>
-                                navigate("/AdminMap", {
-                                  state: {
-                                    cropId: String(crop.id),
-                                    cropName: crop.crop_name || "",
-                                    barangay: crop.crop_barangay || "",
-                                    lat: Number(crop.latitude),
-                                    lng: Number(crop.longitude),
-                                    zoom: 16,
-                                  },
-                                })
-                              }
-                              title="Open in Admin Map"
-                            >
-                              View location ↗
-                            </button>
-                          ) : (
-                            "N/A"
-                          )
-                        }
-                      />
+                     <Stat
+                  label="Map"
+                  value={
+                    <button
+                      className="text-emerald-700 hover:underline"
+                      onClick={() =>
+                        navigate("/AdminMap", {
+                          state: {
+                            cropId: String(crop.id),
+                            zoom: 17, // map will compute center from the polygon
+                          },
+                        })
+                      }
+                      title="Open in Admin Map"
+                    >
+                      View location ↗
+                    </button>
+                  }
+                />
                     </div>
 
                     {/* Compact actions row */}

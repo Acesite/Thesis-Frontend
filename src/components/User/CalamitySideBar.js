@@ -442,7 +442,7 @@ const CalamitySidebar = ({
   )}
   title="Severity"
 >
-  <span className={severityBadge(severityValue).split(" ")[1]}>f
+  <span className={severityBadge(severityValue).split(" ")[1]}>
     {severityValue}
   </span>
 </span>

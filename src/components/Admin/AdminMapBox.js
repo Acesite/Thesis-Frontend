@@ -19,7 +19,7 @@ import SidebarToggleButton from "./MapControls/SidebarToggleButton";
 import TagCropForm from "./TagCropForm";
 import { useLocation, useSearchParams } from "react-router-dom";
 
-// ✅ Make sure the file exists at: src/components/Admin/Barangays/barangays.json
+// ✅ Ensure file exists at: src/components/Admin/Barangays/barangays.json
 import BARANGAYS_FC from "../Barangays/barangays.json";
 
 // --- constants outside the component so deps are stable ---
@@ -220,6 +220,8 @@ const AdminMapBox = () => {
   const HILITE_FILL = "selected-crop-highlight-fill";
   const HILITE_LINE = "selected-crop-highlight-line";
 
+  const HILITE_ANIM_REF = useRef(null); // animation interval for polygon glow
+
   const hasDeepLinkedRef = useRef(false);
   const savedMarkersRef = useRef([]); 
 
@@ -304,7 +306,7 @@ const AdminMapBox = () => {
     }
   };
 
- const renderSavedMarkers = useCallback(async () => {
+  const renderSavedMarkers = useCallback(async () => {
     try {
       const response = await axios.get("http://localhost:5000/api/crops");
       const crops = response.data;
@@ -350,10 +352,13 @@ const AdminMapBox = () => {
           savedMarkersRef.current.push(marker);
         }
       }
+
+      // ⬇️ ensure deep-link selection once markers/data exist
+      ensureDeepLinkSelection();
     } catch (error) {
       console.error("Failed to load saved markers:", error);
     }
-  }, [selectedCropType]);
+  }, [selectedCropType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPolygons = useCallback(async (geojsonData = null, isFiltered = false) => {
     const res = await axios.get("http://localhost:5000/api/crops/polygons");
@@ -410,7 +415,7 @@ const AdminMapBox = () => {
         id: "barangays-line",
         type: "line",
         source: "barangays-src",
-        paint: { "line-color": "#1f2937", "line-width": 1.5, "line-opacity": 0.7 },
+        paint: { "line-color": "#1f2937", "line-width": 1, "line-opacity": 0.7 },
       });
     }
   }, []);
@@ -541,6 +546,12 @@ const AdminMapBox = () => {
   /** ---------- CLEAR visual selection ---------- */
   const clearSelection = useCallback(() => {
     if (!map.current) return;
+
+    if (HILITE_ANIM_REF.current) {
+      clearInterval(HILITE_ANIM_REF.current);
+      HILITE_ANIM_REF.current = null;
+    }
+
     if (selectedLabelRef.current) {
       selectedLabelRef.current.remove();
       selectedLabelRef.current = null;
@@ -607,6 +618,7 @@ const AdminMapBox = () => {
     m.on("styledata", onStyle);
   };
 
+  // 🔥 Glow animation for polygon line
   const highlightPolygon = useCallback((crop) => {
     if (!map.current || !crop) return;
 
@@ -614,36 +626,58 @@ const AdminMapBox = () => {
       let coords = crop.coordinates;
       if (typeof coords === "string") { try { coords = JSON.parse(coords); } catch { return; } }
       if (!Array.isArray(coords) || coords.length < 3) return;
+
       const first = coords[0];
       const last = coords[coords.length - 1];
       if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
       const feature = turf.polygon([coords], { id: crop.id, crop_name: crop.crop_name });
 
-      if (!map.current.getSource(HILITE_SRC)) {
-        map.current.addSource(HILITE_SRC, {
+      const m = map.current;
+
+      if (!m.getSource(HILITE_SRC)) {
+        m.addSource(HILITE_SRC, {
           type: "geojson",
           data: { type: "FeatureCollection", features: [feature] },
         });
-        map.current.addLayer({
+        m.addLayer({
           id: HILITE_FILL,
           type: "fill",
           source: HILITE_SRC,
-          paint: { "fill-color": "#10B981", "fill-opacity": 0.15 },
+          paint: { "fill-color": "#10B981", "fill-opacity": 0.18 },
         });
-        map.current.addLayer({
+        m.addLayer({
           id: HILITE_LINE,
           type: "line",
           source: HILITE_SRC,
-          paint: { "line-color": "#10B981", "line-width": 4 },
+          paint: { "line-color": "#10B981", "line-width": 4, "line-opacity": 1 },
         });
       } else {
-        map.current.getSource(HILITE_SRC).setData({
+        m.getSource(HILITE_SRC).setData({
           type: "FeatureCollection",
           features: [feature],
         });
       }
+
+      // restart glow animation
+      if (HILITE_ANIM_REF.current) {
+        clearInterval(HILITE_ANIM_REF.current);
+        HILITE_ANIM_REF.current = null;
+      }
+      let w = 4;
+      let dir = +0.4; // grow → shrink loop
+      HILITE_ANIM_REF.current = setInterval(() => {
+        if (!m.getLayer(HILITE_LINE)) return;
+        w += dir;
+        if (w >= 8) dir = -0.4;
+        if (w <= 3) dir = +0.4;
+        try {
+          m.setPaintProperty(HILITE_LINE, "line-width", w);
+        } catch {
+          // style might reload; ignore
+        }
+      }, 80);
     });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const highlightSelection = useCallback((crop) => {
     if (!map.current || !crop) return;
@@ -659,30 +693,29 @@ const AdminMapBox = () => {
     }
   }, [clearSelection, showMarkerChipAndHalo, highlightPolygon]);
 
-  useEffect(() => {
+  // ✅ one-shot deep-link handler (run after data/style ready)
+  const ensureDeepLinkSelection = useCallback(() => {
     if (!map.current) return;
-    if (hasDeepLinkedRef.current) return;
     if (!target.cropId) return;
-    if (!sidebarCrops.length) return;
+    if (!sidebarCrops.length) return; // need data
 
-    const hit = sidebarCrops.find(c => String(c.id) === String(target.cropId));
+    const hit = sidebarCrops.find((c) => String(c.id) === String(target.cropId));
     if (!hit) return;
 
-    runWhenStyleReady(() => {
-      setSelectedCrop(hit);
-      highlightSelection(hit);
-      setIsSidebarVisible(true);
+    setSelectedCrop(hit);
+    setIsSidebarVisible(true);       // open sidebar
+    highlightSelection(hit);         // glow + chip/halo
 
-      const center =
-        getCropCenter(hit) ||
-        (Number.isFinite(target.lng) && Number.isFinite(target.lat) ? [target.lng, target.lat] : null);
+    const center = getCropCenter(hit);
+    if (center) {
+      map.current.flyTo({ center, zoom: target.zoom ?? 17, essential: true });
+    }
+    hasDeepLinkedRef.current = true;
+  }, [sidebarCrops, target.cropId, target.zoom, highlightSelection]);
 
-      if (center) {
-        map.current.flyTo({ center, zoom: target.zoom ?? 16, essential: true });
-      }
-      hasDeepLinkedRef.current = true;
-    });
-  }, [sidebarCrops, target.cropId, target.lat, target.lng, target.zoom, highlightSelection]);
+  useEffect(() => {
+    if (!hasDeepLinkedRef.current) ensureDeepLinkSelection();
+  }, [ensureDeepLinkSelection]);
 
   // Init map
   useEffect(() => {
@@ -852,6 +885,9 @@ const AdminMapBox = () => {
             map.current.flyTo({ center: focus, zoom: target.zoom, essential: true });
           }
         }
+
+        // ⬇️ re-apply deep-link after style reload
+        ensureDeepLinkSelection();
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -893,6 +929,10 @@ const AdminMapBox = () => {
       userMarkerRef.current?.remove();
       compassStopRef.current?.();
       clearSelection();
+      if (HILITE_ANIM_REF.current) {
+        clearInterval(HILITE_ANIM_REF.current);
+        HILITE_ANIM_REF.current = null;
+      }
     };
   }, [clearSelection]);
 
@@ -1063,6 +1103,45 @@ const AdminMapBox = () => {
           }}
         />
       )}
+
+      {/* Layers launcher (shows when sidebar is hidden to avoid overlap) */}
+{!isSidebarVisible && (
+  <button
+    onClick={() => setIsSwitcherVisible(!isSwitcherVisible)}
+    className="absolute bottom-6 left-4 w-20 h-20 rounded-xl shadow-md overflow-hidden z-30 bg-white border border-gray-300 hover:shadow-lg transition"
+    title="Map layers"
+  >
+    <div className="w-full h-full relative">
+      <img src={DefaultThumbnail} alt="Layers" className="w-full h-full object-cover" />
+      <div className="absolute bottom-0 left-0 right-0 text-white text-xs font-semibold px-2 py-1 bg-black/60 text-center">
+        Layers
+      </div>
+    </div>
+  </button>
+)}
+
+{/* Layers palette */}
+{!isSidebarVisible && isSwitcherVisible && (
+  <div className="absolute bottom-28 left-4 bg-white p-2 rounded-xl shadow-xl flex space-x-2 z-30 transition-all duration-300">
+    {Object.entries(mapStyles).map(([label, { url, thumbnail }]) => (
+      <button
+        key={label}
+        onClick={() => {
+          setMapStyle(url);
+          setIsSwitcherVisible(false);
+        }}
+        className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
+        title={label}
+      >
+        <img src={thumbnail} alt={label} className="w-full h-full object-cover" />
+        <div className="absolute bottom-0 w-full text-[10px] text-white text-center bg-black/60 py-[2px]">
+          {label}
+        </div>
+      </button>
+    ))}
+  </div>
+)}
+
 
       {/* Sidebar toggle */}
       <SidebarToggleButton
