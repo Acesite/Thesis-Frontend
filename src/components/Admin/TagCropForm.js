@@ -92,54 +92,78 @@ function detectBarangayFeature(farmGeometry, barangaysFC) {
   return;
 }
 
-/* ---------- REUSABLE FIELD WRAPPERS (tiny, no logic change) ---------- */
-const Field = ({ label, required, hint, children }) => (
+/* ---------- REUSABLE FIELD WRAPPERS ---------- */
+const Field = ({ label, required, hint, error, children }) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-1.5">
       {label} {required && <span className="text-red-500">*</span>}
     </label>
     {children}
     {hint ? <p className="mt-1 text-xs text-gray-500">{hint}</p> : null}
+    {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
   </div>
 );
 
-const Input = (props) => (
+const baseInputClasses =
+  "w-full rounded-xl px-4 py-3 bg-white text-base focus:outline-none focus:ring-2";
+
+function decorateClasses(hasError) {
+  // When error, force red; else use theme
+  return hasError
+    ? ["border-2 border-red-500 focus:ring-red-500 focus:border-red-500"]
+    : [`border-2 border-${THEME.border} focus:ring-${THEME.primary} focus:border-${THEME.primary}`];
+}
+
+const Input = ({ error, className, ...props }) => (
   <input
     {...props}
     className={[
-      "w-full border-2 rounded-xl px-4 py-3 bg-white text-base",
-      "focus:outline-none focus:ring-2",
-      `focus:ring-${THEME.primary} focus:border-${THEME.primary}`,
-      `border-${THEME.border}`,
-      props.className || "",
+      baseInputClasses,
+      ...decorateClasses(!!error),
+      className || ""
     ].join(" ")}
   />
 );
 
-const Select = (props) => (
+const Select = ({ error, className, ...props }) => (
   <select
     {...props}
     className={[
-      "w-full border-2 rounded-xl px-4 py-3 bg-white text-base",
-      "focus:outline-none focus:ring-2",
-      `focus:ring-${THEME.primary} focus:border-${THEME.primary}`,
-      `border-${THEME.border}`,
-      props.className || "",
+      baseInputClasses,
+      ...decorateClasses(!!error),
+      className || ""
     ].join(" ")}
   />
 );
 
-const Textarea = (props) => (
+const Textarea = ({ error, className, ...props }) => (
   <textarea
     {...props}
     className={[
-      "w-full border-2 rounded-xl px-4 py-3 bg-white text-base resize-none",
-      "focus:outline-none focus:ring-2",
-      `focus:ring-${THEME.primary} focus:border-${THEME.primary}`,
-      `border-${THEME.border}`,
-      props.className || "",
+      baseInputClasses,
+      "resize-none",
+      ...decorateClasses(!!error),
+      className || ""
     ].join(" ")}
   />
+);
+
+/** Compact input with a right-side unit (reduces the big internal gap) */
+const SuffixInput = ({ suffix, error, inputProps }) => (
+  <div className="relative">
+    <input
+      {...inputProps}
+      className={[
+        baseInputClasses,
+        "pr-12", // tighter right padding
+        ...decorateClasses(!!error),
+        inputProps?.className || ""
+      ].join(" ")}
+    />
+    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 select-none">
+      {suffix}
+    </span>
+  </div>
 );
 
 /* ---------- COMPONENT ---------- */
@@ -196,6 +220,9 @@ const TagCropForm = ({
   const [detectedBarangayName, setDetectedBarangayName] = useState("");
   const [detectedBarangayFeature, setDetectedBarangayFeature] = useState(null);
 
+  // Errors
+  const [errors, setErrors] = useState({});
+
   /* ---------- EFFECTS / DERIVED ---------- */
 
   // Build the dropdown list
@@ -223,9 +250,29 @@ const TagCropForm = ({
     if (res?.name) {
       setDetectedBarangayName(res.name);
       setDetectedBarangayFeature(res.feature || null);
-      setManualBarangay((cur) => cur || res.name); // fill only if empty
+
+      // Prefill the Location field (step 1) if empty
+      setManualBarangay((cur) => cur || res.name);
+
+      // Prefill Farmer Barangay (step 2) if empty
+      setFarmerBarangay((cur) => cur || res.name);
     }
   }, [farmGeometry, barangaysFC]);
+
+  // If caller gave an already-inferred barangay, set it (without overwriting user edits)
+  useEffect(() => {
+    if (selectedBarangay) {
+      setManualBarangay((cur) => cur || selectedBarangay);
+      setFarmerBarangay((cur) => cur || selectedBarangay);
+    }
+  }, [selectedBarangay]);
+
+  // If user picks a Location barangay (Step 1), auto-fill Farmer barangay if still empty
+  useEffect(() => {
+    if (manualBarangay && !farmerBarangay) {
+      setFarmerBarangay(manualBarangay);
+    }
+  }, [manualBarangay, farmerBarangay]);
 
   // Load ecosystems for selected crop
   useEffect(() => {
@@ -273,7 +320,7 @@ const TagCropForm = ({
     if (defaultLocation?.hectares) setHectares(defaultLocation.hectares);
   }, [defaultLocation]);
 
-  // If caller gave an already-inferred barangay, set it (without overwriting detections)
+  // (kept from earlier for safety)
   useEffect(() => {
     if (selectedBarangay && !manualBarangay) setManualBarangay(selectedBarangay);
   }, [selectedBarangay]); // eslint-disable-line
@@ -292,24 +339,90 @@ const TagCropForm = ({
   }, [selectedCropType]);
 
   /* ---------- VALIDATION ---------- */
+
+  const setFieldError = (field, message) =>
+    setErrors((e) => ({ ...e, [field]: message || "" }));
+
+  const validateStep1 = () => {
+    const newErr = {};
+
+    if (!selectedCropType) newErr.selectedCropType = "Please select a crop type.";
+
+    if ((ecosystems?.length || 0) > 0 && !selectedEcosystem) {
+      newErr.selectedEcosystem = "Please select an ecosystem.";
+    }
+
+    if (!plantedDate) {
+      newErr.plantedDate = "Please select the planting date.";
+    }
+
+    const h = Number(hectares);
+    if (!hectares || !Number.isFinite(h) || h <= 0) {
+      newErr.hectares = "Area must be a number greater than 0.";
+    }
+
+    if (estimatedHarvest) {
+      const p = new Date(plantedDate);
+      const eh = new Date(estimatedHarvest);
+      if (plantedDate && eh < p) {
+        newErr.estimatedHarvest = "Harvest date cannot be before planting date.";
+      }
+    }
+
+    if (!manualBarangay) newErr.manualBarangay = "Please choose a barangay.";
+
+    setErrors((prev) => ({ ...prev, ...newErr }));
+    return Object.keys(newErr).length === 0;
+  };
+
+  const validateStep2 = () => {
+    const newErr = {};
+
+    if (!farmerFirstName.trim()) newErr.farmerFirstName = "First name is required.";
+    if (!farmerLastName.trim()) newErr.farmerLastName = "Last name is required.";
+
+    const phoneRegex = /^09\d{9}$/;
+    if (!farmerMobile) {
+      newErr.farmerMobile = "Mobile number is required.";
+    } else if (!phoneRegex.test(farmerMobile)) {
+      newErr.farmerMobile = "Use PH format: 09XXXXXXXXX.";
+    }
+
+    if (!farmerBarangay) newErr.farmerBarangay = "Please choose a barangay.";
+    if (!farmerAddress.trim()) newErr.farmerAddress = "Complete address is required.";
+
+    setErrors((prev) => ({ ...prev, ...newErr }));
+    return Object.keys(newErr).length === 0;
+  };
+
   const isStep1Valid = () =>
     selectedCropType &&
     plantedDate &&
     hectares &&
     manualBarangay &&
-    (!ecosystems.length || selectedEcosystem);
+    (!(ecosystems?.length > 0) || selectedEcosystem);
 
   const isStep2Valid = () =>
     farmerFirstName && farmerLastName && farmerMobile && farmerBarangay && farmerAddress;
 
   /* ---------- HANDLERS ---------- */
   const handleShowConfirmation = () => {
-    if (!isStep2Valid()) return;
+    const ok = validateStep2();
+    if (!ok) return;
     setShowConfirmation(true);
   };
+
   const handleNext = () => {
-    if (currentStep === 1 && isStep1Valid()) setCurrentStep(2);
+    const ok = validateStep1();
+    if (currentStep === 1 && ok) {
+      // If farmer barangay still empty, mirror the chosen/detected one
+      if (!farmerBarangay) {
+        setFarmerBarangay(manualBarangay || detectedBarangayName || selectedBarangay || "");
+      }
+      setCurrentStep(2);
+    }
   };
+
   const handleBack = () => currentStep > 1 && setCurrentStep(currentStep - 1);
 
   const handlePhotosChange = (e) => {
@@ -328,6 +441,12 @@ const TagCropForm = ({
 
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
+
+    // Validate both steps before final submit
+    const ok1 = validateStep1();
+    const ok2 = validateStep2();
+    if (!(ok1 && ok2)) return;
+
     setShowConfirmation(false);
 
     // Prefer caller-provided, else derive coordinates from farmGeometry (outer ring)
@@ -401,6 +520,7 @@ const TagCropForm = ({
     setFarmerBarangay("");
     setFarmerAddress("");
     setSelectedEcosystem("");
+    setErrors({});
   };
 
   const getCropTypeName = () => {
@@ -477,14 +597,19 @@ const TagCropForm = ({
                 <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">Crop Basics</h5>
 
                 <div className="space-y-4">
-                  <Field label="Crop Type" required>
+                  <Field label="Crop Type" required error={errors.selectedCropType}>
                     <Select
+                      error={errors.selectedCropType}
                       required
                       value={selectedCropType}
                       onChange={(e) => {
                         const id = parseInt(e.target.value);
                         setSelectedCropType(Number.isFinite(id) ? id : "");
                         setSelectedVarietyId("");
+                        setFieldError("selectedCropType", "");
+                      }}
+                      onBlur={() => {
+                        if (!selectedCropType) setFieldError("selectedCropType", "Please select a crop type.");
                       }}
                     >
                       <option value="">Select Crop Type</option>
@@ -497,10 +622,22 @@ const TagCropForm = ({
                   </Field>
 
                   {selectedCropType && ecosystems.length > 0 && (
-                    <Field label="Ecosystem" required hint="Required for reporting and maps.">
+                    <Field
+                      label="Ecosystem"
+                      required
+                      hint="Required for reporting and maps."
+                      error={errors.selectedEcosystem}
+                    >
                       <Select
+                        error={errors.selectedEcosystem}
                         value={selectedEcosystem}
-                        onChange={(e) => setSelectedEcosystem(e.target.value)}
+                        onChange={(e) => {
+                          setSelectedEcosystem(e.target.value);
+                          setFieldError("selectedEcosystem", "");
+                        }}
+                        onBlur={() => {
+                          if (!selectedEcosystem) setFieldError("selectedEcosystem", "Please select an ecosystem.");
+                        }}
                       >
                         <option value="">Select Ecosystem</option>
                         {ecosystems.map((ecosystem) => (
@@ -532,23 +669,52 @@ const TagCropForm = ({
                 {/* Section: Dates */}
                 <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">Dates</h5>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Date Planted" required>
+                  <Field label="Date Planted" required error={errors.plantedDate}>
                     <Input
                       type="date"
                       required
                       value={plantedDate}
-                      onChange={(e) => setPlantedDate(e.target.value)}
+                      onChange={(e) => {
+                        setPlantedDate(e.target.value);
+                        setFieldError("plantedDate", "");
+                        // if harvest already set, re-check ordering
+                        if (estimatedHarvest) {
+                          const p = new Date(e.target.value);
+                          const h = new Date(estimatedHarvest);
+                          setFieldError(
+                            "estimatedHarvest",
+                            h < p ? "Harvest date cannot be before planting date." : ""
+                          );
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!plantedDate) setFieldError("plantedDate", "Please select the planting date.");
+                      }}
+                      error={errors.plantedDate}
                     />
                   </Field>
 
-                  <Field label="Est. Harvest" hint="Auto-fills based on crop maturity; you can override.">
+                  <Field label="Est. Harvest" hint="Auto-fills based on crop maturity; you can override." error={errors.estimatedHarvest}>
                     <Input
                       type="date"
                       value={estimatedHarvest}
                       onChange={(e) => {
                         setHarvestTouched(true);
                         setEstimatedHarvest(e.target.value);
+                        if (plantedDate) {
+                          const p = new Date(plantedDate);
+                          const h = new Date(e.target.value);
+                          setFieldError("estimatedHarvest", h < p ? "Harvest date cannot be before planting date." : "");
+                        }
                       }}
+                      onBlur={() => {
+                        if (estimatedHarvest && plantedDate) {
+                          const p = new Date(plantedDate);
+                          const h = new Date(estimatedHarvest);
+                          if (h < p) setFieldError("estimatedHarvest", "Harvest date cannot be before planting date.");
+                        }
+                      }}
+                      error={errors.estimatedHarvest}
                     />
                   </Field>
                 </div>
@@ -560,44 +726,52 @@ const TagCropForm = ({
                   Area &amp; Yield
                 </h5>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="relative">
-                    <Field label="Area (ha)" required>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        required
-                        value={hectares}
-                        onChange={(e) => setHectares(e.target.value)}
-                        placeholder="0.00"
-                        className="text-right pr-14"
-                      />
-                      <span className="absolute right-3 bottom-3 text-sm text-gray-500">ha</span>
-                    </Field>
-                  </div>
+                  <Field label="Area (ha)" required error={errors.hectares}>
+                    <SuffixInput
+                      suffix="ha"
+                      error={errors.hectares}
+                      inputProps={{
+                        type: "number",
+                        min: "0",
+                        step: "0.01",
+                        required: true,
+                        value: hectares,
+                        onChange: (e) => {
+                          setHectares(e.target.value);
+                          const v = Number(e.target.value);
+                          setFieldError(
+                            "hectares",
+                            !e.target.value || !Number.isFinite(v) || v <= 0
+                              ? "Area must be a number greater than 0."
+                              : ""
+                          );
+                        },
+                        placeholder: "0.00",
+                        className: "text-right"
+                      }}
+                    />
+                  </Field>
 
-                  <div className="relative">
-                    <Field
-                      label={`Est. Yield ${yieldUnitMap[selectedCropType] ? `(${yieldUnitMap[selectedCropType]})` : ""}`}
-                      hint="We estimate from area × typical yield. You can override."
-                    >
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={estimatedVolume}
-                        onChange={(e) => {
+                  <Field
+                    label={`Est. Yield ${yieldUnitMap[selectedCropType] ? `(${yieldUnitMap[selectedCropType]})` : ""}`}
+                    hint="We estimate from area × typical yield. You can override."
+                  >
+                    <SuffixInput
+                      suffix={yieldUnitMap[selectedCropType] || "units"}
+                      inputProps={{
+                        type: "number",
+                        min: "0",
+                        step: "0.1",
+                        value: estimatedVolume,
+                        onChange: (e) => {
                           setVolumeTouched(true);
                           setEstimatedVolume(e.target.value);
-                        }}
-                        placeholder="Auto-calculated"
-                        className="text-right pr-20"
-                      />
-                      <span className="absolute right-3 bottom-3 text-sm text-gray-500">
-                        {yieldUnitMap[selectedCropType] || "units"}
-                      </span>
-                    </Field>
-                  </div>
+                        },
+                        placeholder: "Auto-calculated",
+                        className: "text-right"
+                      }}
+                    />
+                  </Field>
                 </div>
 
                 <div className="my-2 h-px bg-gray-100" />
@@ -607,11 +781,18 @@ const TagCropForm = ({
                   Location &amp; Notes
                 </h5>
                 <div className="space-y-4">
-                  <Field label="Barangay" required>
+                  <Field label="Barangay" required error={errors.manualBarangay}>
                     <Select
+                      error={errors.manualBarangay}
                       required
                       value={manualBarangay}
-                      onChange={(e) => setManualBarangay(e.target.value)}
+                      onChange={(e) => {
+                        setManualBarangay(e.target.value);
+                        setFieldError("manualBarangay", "");
+                      }}
+                      onBlur={() => {
+                        if (!manualBarangay) setFieldError("manualBarangay", "Please choose a barangay.");
+                      }}
                     >
                       <option value="">Select Barangay</option>
                       {mergedBarangays.map((bgy) => (
@@ -663,28 +844,42 @@ const TagCropForm = ({
                 </h5>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="First Name" required>
+                  <Field label="First Name" required error={errors.farmerFirstName}>
                     <Input
                       type="text"
                       required
                       value={farmerFirstName}
-                      onChange={(e) => setFarmerFirstName(e.target.value)}
+                      onChange={(e) => {
+                        setFarmerFirstName(e.target.value);
+                        setFieldError("farmerFirstName", e.target.value.trim() ? "" : "First name is required.");
+                      }}
+                      onBlur={() => {
+                        if (!farmerFirstName.trim()) setFieldError("farmerFirstName", "First name is required.");
+                      }}
                       placeholder="Juan"
+                      error={errors.farmerFirstName}
                     />
                   </Field>
 
-                  <Field label="Last Name" required>
+                  <Field label="Last Name" required error={errors.farmerLastName}>
                     <Input
                       type="text"
                       required
                       value={farmerLastName}
-                      onChange={(e) => setFarmerLastName(e.target.value)}
+                      onChange={(e) => {
+                        setFarmerLastName(e.target.value);
+                        setFieldError("farmerLastName", e.target.value.trim() ? "" : "Last name is required.");
+                      }}
+                      onBlur={() => {
+                        if (!farmerLastName.trim()) setFieldError("farmerLastName", "Last name is required.");
+                      }}
                       placeholder="Dela Cruz"
+                      error={errors.farmerLastName}
                     />
                   </Field>
                 </div>
 
-                <Field label="Mobile Number" required>
+                <Field label="Mobile Number" required error={errors.farmerMobile}>
                   <Input
                     type="text"
                     required
@@ -692,16 +887,32 @@ const TagCropForm = ({
                     pattern="^09\\d{9}$"
                     title="Use PH format: 09XXXXXXXXX"
                     value={farmerMobile}
-                    onChange={(e) => setFarmerMobile(e.target.value)}
+                    onChange={(e) => {
+                      setFarmerMobile(e.target.value);
+                      const ok = /^09\d{9}$/.test(e.target.value);
+                      setFieldError("farmerMobile", ok ? "" : "Use PH format: 09XXXXXXXXX.");
+                    }}
+                    onBlur={() => {
+                      const ok = /^09\d{9}$/.test(farmerMobile);
+                      if (!ok) setFieldError("farmerMobile", "Use PH format: 09XXXXXXXXX.");
+                    }}
                     placeholder="09123456789"
+                    error={errors.farmerMobile}
                   />
                 </Field>
 
-                <Field label="Barangay" required>
+                <Field label="Barangay" required error={errors.farmerBarangay}>
                   <Select
+                    error={errors.farmerBarangay}
                     required
                     value={farmerBarangay}
-                    onChange={(e) => setFarmerBarangay(e.target.value)}
+                    onChange={(e) => {
+                      setFarmerBarangay(e.target.value);
+                      setFieldError("farmerBarangay", "");
+                    }}
+                    onBlur={() => {
+                      if (!farmerBarangay) setFieldError("farmerBarangay", "Please choose a barangay.");
+                    }}
                   >
                     <option value="">Select Barangay</option>
                     {mergedBarangays.map((bgy) => (
@@ -712,13 +923,20 @@ const TagCropForm = ({
                   </Select>
                 </Field>
 
-                <Field label="Complete Address" required>
+                <Field label="Complete Address" required error={errors.farmerAddress}>
                   <Input
                     type="text"
                     required
                     value={farmerAddress}
-                    onChange={(e) => setFarmerAddress(e.target.value)}
+                    onChange={(e) => {
+                      setFarmerAddress(e.target.value);
+                      setFieldError("farmerAddress", e.target.value.trim() ? "" : "Complete address is required.");
+                    }}
+                    onBlur={() => {
+                      if (!farmerAddress.trim()) setFieldError("farmerAddress", "Complete address is required.");
+                    }}
                     placeholder="House No., Street, Purok/Sitio"
+                    error={errors.farmerAddress}
                   />
                 </Field>
               </div>
@@ -809,17 +1027,6 @@ const TagCropForm = ({
                     </div>
                   ))}
                 </div>
-
-                {/* Show detected feature summary (no coordinates shown) */}
-                {(detectedBarangayName || detectedBarangayFeature) && (
-                  <div className="mt-3 text-xs text-gray-600">
-                    <div><span className="font-semibold">Detected Barangay:</span> {detectedBarangayName || "—"}</div>
-                    <div className="mt-1">
-                      <span className="font-semibold">Feature properties:</span>{" "}
-                      <code className="break-all">{JSON.stringify(detectedBarangayFeature?.properties || {}, null, 0)}</code>
-                    </div>
-                  </div>
-                )}
               </section>
 
               {/* Farmer */}
