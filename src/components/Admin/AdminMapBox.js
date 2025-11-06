@@ -221,6 +221,7 @@ const AdminMapBox = () => {
   const HILITE_LINE = "selected-crop-highlight-line";
 
   const hasDeepLinkedRef = useRef(false);
+  const savedMarkersRef = useRef([]); 
 
   const [mapStyle, setMapStyle] = useState(
     "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
@@ -303,14 +304,15 @@ const AdminMapBox = () => {
     }
   };
 
-  const renderSavedMarkers = useCallback(async () => {
+ const renderSavedMarkers = useCallback(async () => {
     try {
       const response = await axios.get("http://localhost:5000/api/crops");
       const crops = response.data;
       setSidebarCrops(crops);
 
-      // clear previous marker references
-      cropMarkerMapRef.current.forEach((m) => m.remove?.());
+      // clear previous markers from map
+      savedMarkersRef.current.forEach((marker) => marker.remove());
+      savedMarkersRef.current = [];
       cropMarkerMapRef.current.clear();
 
       const filtered =
@@ -345,12 +347,13 @@ const AdminMapBox = () => {
           });
 
           cropMarkerMapRef.current.set(String(crop.id), marker);
+          savedMarkersRef.current.push(marker);
         }
       }
     } catch (error) {
       console.error("Failed to load saved markers:", error);
     }
-  }, [selectedCropType]); // stable
+  }, [selectedCropType]);
 
   const loadPolygons = useCallback(async (geojsonData = null, isFiltered = false) => {
     const res = await axios.get("http://localhost:5000/api/crops/polygons");
@@ -1068,6 +1071,41 @@ const AdminMapBox = () => {
         sidebarWidth={SIDEBAR_WIDTH}
         peek={PEEK}
       />
+
+      {!isTagging && (
+        <button
+          onClick={() => {
+            if (areMarkersVisible) {
+              // 👇 Hide PIN markers only (polygons remain)
+              cropMarkerMapRef.current.forEach((m) => m.remove?.());
+            } else {
+              // 👇 Re-render pins based on current filters
+              renderSavedMarkers();
+            }
+            setAreMarkersVisible(!areMarkersVisible);
+            if (!areMarkersVisible) {
+              clearSelection();
+            }
+          }}
+          className="absolute bottom-[194px] right-[9px] z-50 bg:white bg-white border border-gray-300 rounded-[5px] w-8 h-8 flex items-center justify-center shadow-[0_0_8px_2px_rgba(0,0,0,0.15)] "
+          title={areMarkersVisible ? "Hide Markers" : "Show Markers"}
+        >
+          <svg
+            className="w-5 h-5 text-black"
+            fill={!areMarkersVisible ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 21s6-5.686 6-10a6 6 0 10-12 0c0 4.314 6 10 6 10z"
+            />
+            <circle cx="12" cy="11" r="2" fill="white" />
+          </svg>
+        </button>
+      )}
 
       {/* Sidebar */}
       <div
