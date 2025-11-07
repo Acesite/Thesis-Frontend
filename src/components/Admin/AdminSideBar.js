@@ -279,28 +279,79 @@ const AdminSideBar = ({
           </Section>
         )}
 
-        {/* Photos of selected crop */}
-        {selectedCrop?.photos && (
-          <Section title={`Photos of ${selectedCrop.crop_name || "Crop"}`}>
-            <div className="grid grid-cols-2 gap-2">
-              {JSON.parse(selectedCrop.photos).map((url, i) => (
-                <button
-                  type="button"
-                  key={i}
-                  className="group relative overflow-hidden rounded-lg border border-gray-200"
-                  onClick={() => setEnlargedImage(`http://localhost:5000${url}`)}
-                  title="View larger"
-                >
-                  <img
-                    src={`http://localhost:5000${url}`}
-                    alt={`Photo ${i + 1}`}
-                    className="h-24 w-full object-cover group-hover:opacity-90"
-                  />
-                </button>
-              ))}
-            </div>
-          </Section>
-        )}
+      {/* Photos of selected crop */}
+{selectedCrop?.photos && (() => {
+  const toArray = (inp) => {
+    if (Array.isArray(inp)) return inp;
+    if (typeof inp !== "string") return [];
+    const s = inp.trim();
+    if (!s) return [];
+    // try JSON first
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+    // fallback: csv or single path
+    return s.includes(",")
+      ? s.split(",").map((x) => x.trim()).filter(Boolean)
+      : [s];
+  };
+
+  const makeUrl = (u) =>
+    /^https?:\/\//i.test(u) ? u : `http://localhost:5000${u.startsWith("/") ? "" : "/"}${u}`;
+
+  const photoList = toArray(selectedCrop.photos).map(makeUrl);
+  const n = photoList.length;
+  if (n === 0) return null;
+
+  const isSingle = n === 1;
+
+  return (
+    <Section title={`Photos of ${selectedCrop.crop_name || "Crop"}`}>
+      {isSingle ? (
+        <button
+          type="button"
+          className="group relative block overflow-hidden rounded-lg border border-gray-200 bg-gray-50 aspect-[16/9] w-full"
+          onClick={() => setEnlargedImage(photoList[0])}
+          title="View photo"
+        >
+          <img
+            src={photoList[0]}
+            alt="Photo 1"
+            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+            loading="lazy"
+          />
+        </button>
+      ) : (
+        <div
+          className="grid gap-2"
+          style={{
+            gridTemplateColumns:
+              n === 2 ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(110px, 1fr))",
+          }}
+        >
+          {photoList.map((url, i) => (
+            <button
+              type="button"
+              key={i}
+              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
+              onClick={() => setEnlargedImage(url)}
+              title={`View photo ${i + 1}`}
+            >
+              <img
+                src={url}
+                alt={`Photo ${i + 1}`}
+                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                loading="lazy"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+})()}
+
 
         {/* Photos by barangay */}
         {barangayDetails && crops.length > 0 && (

@@ -499,31 +499,62 @@ const CalamitySidebar = ({
               </p>
             </div>
 
-            {photoUrls.length > 0 && (
-              <div className="mt-4">
-                <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
-                  Photos
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {photoUrls.map((url, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      className="group relative block overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
-                      onClick={() => setEnlargedImage?.(url)}
-                      title={`View photo ${idx + 1}`}
-                    >
-                      <img
-                        src={url}
-                        alt={`${selectedCalamity.calamity_type || "Calamity"} ${idx + 1}`}
-                        className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                        loading="lazy"
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+           {photoUrls.length > 0 && (() => {
+  const n = photoUrls.length;
+  const isSingle = n === 1;
+
+  return (
+    <div className="mt-4">
+      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+        Photos
+      </div>
+
+      {/* 1 photo = wide hero; 2+ photos = responsive grid */}
+      {isSingle ? (
+        <button
+          type="button"
+          className="group relative block overflow-hidden rounded-lg border border-gray-200 bg-gray-50 aspect-[16/9] w-full"
+          onClick={() => setEnlargedImage?.(photoUrls[0])}
+          title="View photo"
+        >
+          <img
+            src={photoUrls[0]}
+            alt={`${selectedCalamity?.calamity_type || "Calamity"} 1`}
+            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+            loading="lazy"
+          />
+        </button>
+      ) : (
+        <div
+          className="grid gap-2"
+          style={{
+            // auto-fits nicely for 2..N photos; each tile grows up to a column
+            gridTemplateColumns:
+              n === 2 ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(110px, 1fr))",
+          }}
+        >
+          {photoUrls.map((url, idx) => (
+            <button
+              key={idx}
+              type="button"
+              className="group relative block overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
+              onClick={() => setEnlargedImage?.(url)}
+              title={`View photo ${idx + 1}`}
+            >
+              <img
+                src={url}
+                alt={`${selectedCalamity?.calamity_type || "Calamity"} ${idx + 1}`}
+                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                loading="lazy"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+})()}
+
           </Section>
         )}
 
