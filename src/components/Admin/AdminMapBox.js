@@ -50,9 +50,17 @@ const addPulseStylesOnce = () => {
 
 // Helper: accuracy ring (meters → km)
 function makeAccuracyCircle([lng, lat], accuracy) {
-  const radiusKm = Math.max(accuracy, 10) / 1000;
-  return turf.circle([lng, lat], { radius: radiusKm, steps: 64, units: "kilometers" });
+  const accNum = Number(accuracy);
+  const safeAcc = Number.isFinite(accNum) ? accNum : 10; // default 10m if junk
+  const radiusKm = Math.max(safeAcc, 10) / 1000;
+
+  // ✅ correct turf.circle usage: (center, radius, options)
+  return turf.circle([lng, lat], radiusKm, {
+    steps: 64,
+    units: "kilometers",
+  });
 }
+
 
 // Bounds helpers
 function isInsideBounds([lng, lat], bounds) {
@@ -223,7 +231,7 @@ const AdminMapBox = () => {
   const HILITE_ANIM_REF = useRef(null); // animation interval for polygon glow
 
   const hasDeepLinkedRef = useRef(false);
-  const savedMarkersRef = useRef([]); 
+  const savedMarkersRef = useRef([]);
 
   const [mapStyle, setMapStyle] = useState(
     "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
@@ -451,85 +459,122 @@ const AdminMapBox = () => {
       });
     }
   }, []);
-  const updateUserAccuracyCircle = useCallback((lng, lat, acc) => {
-    if (!map.current) return;
-    ensureUserAccuracyLayers();
-    const circle = makeAccuracyCircle([lng, lat], acc);
-    map.current.getSource(USER_ACC_SOURCE).setData(circle);
-  }, [ensureUserAccuracyLayers]);
+  const updateUserAccuracyCircle = useCallback(
+    (lng, lat, acc) => {
+      if (!map.current) return;
+      ensureUserAccuracyLayers();
+      const circle = makeAccuracyCircle([lng, lat], acc);
+      map.current.getSource(USER_ACC_SOURCE).setData(circle);
+    },
+    [ensureUserAccuracyLayers]
+  );
 
   // Directional user marker (rotates with heading)
-  const setUserMarker = useCallback((lng, lat, acc) => {
+const setUserMarker = useCallback(
+  (lng, lat, acc) => {
     if (!map.current) return;
+
+    const nLng = Number(lng);
+    const nLat = Number(lat);
+    if (!Number.isFinite(nLng) || !Number.isFinite(nLat)) {
+      console.error("Invalid coords in setUserMarker:", { lng, lat });
+      toast.error("Invalid GPS coordinates.");
+      return;
+    }
+
     const m = map.current;
 
-    if (!userMarkerElRef.current) {
-      const el = document.createElement("div");
-      el.style.width = "36px";
-      el.style.height = "36px";
-      el.style.borderRadius = "50%";
-      el.style.position = "relative";
-      el.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.25)";
-      el.style.background = "rgba(59,130,246,0.10)";
+    // ----- custom DOM marker: soft circle + blue triangle -----
+if (!userMarkerElRef.current) {
+  const el = document.createElement("div");
+  el.style.position = "relative";
+  el.style.width = "26px";
+  el.style.height = "26px";
+  el.style.borderRadius = "50%";
+  el.style.border = "2px solid rgba(37,99,235,0.55)";          // outer ring
+  el.style.background = "rgba(37,99,235,0.10)";                 // soft fill
+  el.style.boxShadow = "0 0 4px rgba(37,99,235,0.35)";
 
-      const arrow = document.createElement("div");
-      arrow.style.position = "absolute";
-      arrow.style.left = "50%";
-      arrow.style.top = "50%";
-      arrow.style.transform = "translate(-50%, -65%)";
-      arrow.style.width = "0";
-      arrow.style.height = "0";
-      arrow.style.borderLeft = "8px solid transparent";
-      arrow.style.borderRight = "8px solid transparent";
-      arrow.style.borderBottom = "16px solid #2563eb";
-      arrow.style.filter = "drop-shadow(0 1px 2px rgba(0,0,0,0.3))";
-      el.appendChild(arrow);
+  // blue triangle in the center (points up)
+  const triangle = document.createElement("div");
+  triangle.style.position = "absolute";
+  triangle.style.left = "50%";
+  triangle.style.top = "50%";
+  triangle.style.transform = "translate(-50%, -55%)";           // nudge up a bit
+  triangle.style.width = "0";
+  triangle.style.height = "0";
+  triangle.style.borderLeft = "7px solid transparent";
+  triangle.style.borderRight = "7px solid transparent";
+  triangle.style.borderBottom = "12px solid #2563eb";           // blue triangle
 
-      userMarkerElRef.current = el;
+  el.appendChild(triangle);
 
-      if (!userMarkerRef.current) {
-        userMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
-          .setLngLat([lng, lat])
-          .setPopup(new mapboxgl.Popup({ offset: 12 }).setText("You are here"))
-          .addTo(m);
-      } else {
-        userMarkerRef.current.setElement(el);
-      }
-    }
+  userMarkerElRef.current = el;
 
-    userMarkerRef.current.setLngLat([lng, lat]);
-    updateUserAccuracyCircle(lng, lat, acc);
+  userMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
+    .setLngLat([nLng, nLat])
+    .setPopup(new mapboxgl.Popup({ offset: 12 }).setText("You are here"))
+    .addTo(m);
+} else {
+  userMarkerRef.current.setLngLat([nLng, nLat]);
+}
 
-    if (typeof headingDeg === "number" && userMarkerElRef.current) {
-      userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
-    }
 
-    m.easeTo({ center: [lng, lat], zoom: Math.max(m.getZoom(), 15), duration: 0, essential: true });
+    // ----- accuracy ring around marker -----
+    const accNum = Number(acc);
+    const safeAcc = Number.isFinite(accNum) ? accNum : 10;
+    updateUserAccuracyCircle(nLng, nLat, safeAcc);
 
-    if (rotateMapWithHeading && typeof headingDeg === "number") {
-      m.setBearing(headingDeg);
-    }
-  }, [headingDeg, rotateMapWithHeading, updateUserAccuracyCircle]);
+    // ----- center map -----
+    m.easeTo({
+      center: [nLng, nLat],
+      zoom: Math.max(m.getZoom(), 15),
+      duration: 0,
+      essential: true,
+    });
+  },
+  [updateUserAccuracyCircle]
+);
 
-  const handleFix = useCallback((glng, glat, accuracy) => {
+const handleFix = useCallback(
+  (glng, glat, accuracy) => {
     if (!map.current) return;
 
-    if (lockToBago && !isInsideBounds([glng, glat], BAGO_CITY_BOUNDS)) {
-      const expanded = expandBoundsToIncludePoint(BAGO_CITY_BOUNDS, [glng, glat], 0.05);
+    const lng = Number(glng);
+    const lat = Number(glat);
+
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+      console.error("Invalid coords in handleFix:", { glng, glat });
+      toast.error("Invalid GPS coordinates from browser.");
+      return;
+    }
+
+    // sanitize accuracy
+    const accNum = Number(accuracy);
+    const safeAcc = Number.isFinite(accNum) ? accNum : 10;
+
+    if (lockToBago && !isInsideBounds([lng, lat], BAGO_CITY_BOUNDS)) {
+      const expanded = expandBoundsToIncludePoint(BAGO_CITY_BOUNDS, [lng, lat], 0.05);
       map.current.setMaxBounds(expanded);
       toast.info("You’re outside Bago. Temporarily expanded bounds to include your location.");
     }
 
-    setUserLoc({ lng: glng, lat: glat, acc: accuracy });
-    setUserMarker(glng, glat, accuracy);
-  }, [lockToBago, setUserMarker]);
+    setUserLoc({ lng, lat, acc: safeAcc });
+    setUserMarker(lng, lat, safeAcc);
+  },
+  [lockToBago, setUserMarker]
+);
 
   // Compute polygon center safely (inside feature)
   function getCropCenter(crop) {
     let coords = crop?.coordinates;
     if (!coords) return null;
     if (typeof coords === "string") {
-      try { coords = JSON.parse(coords); } catch { return null; }
+      try {
+        coords = JSON.parse(coords);
+      } catch {
+        return null;
+      }
     }
     if (!Array.isArray(coords) || coords.length < 3) return null;
     const first = coords[0];
@@ -602,13 +647,18 @@ const AdminMapBox = () => {
       .addTo(map.current);
     selectedHaloRef.current = haloMarker;
 
-    try { marker.togglePopup(); } catch {}
+    try {
+      marker.togglePopup();
+    } catch {}
   }, []);
 
   const runWhenStyleReady = (cb) => {
     const m = map.current;
     if (!m) return;
-    if (m.isStyleLoaded && m.isStyleLoaded()) { cb(); return; }
+    if (m.isStyleLoaded && m.isStyleLoaded()) {
+      cb();
+      return;
+    }
     const onStyle = () => {
       if (m.isStyleLoaded && m.isStyleLoaded()) {
         m.off("styledata", onStyle);
@@ -624,7 +674,13 @@ const AdminMapBox = () => {
 
     runWhenStyleReady(() => {
       let coords = crop.coordinates;
-      if (typeof coords === "string") { try { coords = JSON.parse(coords); } catch { return; } }
+      if (typeof coords === "string") {
+        try {
+          coords = JSON.parse(coords);
+        } catch {
+          return;
+        }
+      }
       if (!Array.isArray(coords) || coords.length < 3) return;
 
       const first = coords[0];
@@ -679,19 +735,22 @@ const AdminMapBox = () => {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const highlightSelection = useCallback((crop) => {
-    if (!map.current || !crop) return;
-    clearSelection();
-    showMarkerChipAndHalo(
-      crop.id,
-      `${crop.crop_name}${crop.variety_name ? ` – ${crop.variety_name}` : ""}`
-    );
-    highlightPolygon(crop);
-    const center = getCropCenter(crop);
-    if (center) {
-      map.current.flyTo({ center, zoom: Math.max(map.current.getZoom(), 16), essential: true });
-    }
-  }, [clearSelection, showMarkerChipAndHalo, highlightPolygon]);
+  const highlightSelection = useCallback(
+    (crop) => {
+      if (!map.current || !crop) return;
+      clearSelection();
+      showMarkerChipAndHalo(
+        crop.id,
+        `${crop.crop_name}${crop.variety_name ? ` – ${crop.variety_name}` : ""}`
+      );
+      highlightPolygon(crop);
+      const center = getCropCenter(crop);
+      if (center) {
+        map.current.flyTo({ center, zoom: Math.max(map.current.getZoom(), 16), essential: true });
+      }
+    },
+    [clearSelection, showMarkerChipAndHalo, highlightPolygon]
+  );
 
   // ✅ one-shot deep-link handler (run after data/style ready)
   const ensureDeepLinkSelection = useCallback(() => {
@@ -703,8 +762,8 @@ const AdminMapBox = () => {
     if (!hit) return;
 
     setSelectedCrop(hit);
-    setIsSidebarVisible(true);       // open sidebar
-    highlightSelection(hit);         // glow + chip/halo
+    setIsSidebarVisible(true); // open sidebar
+    highlightSelection(hit); // glow + chip/halo
 
     const center = getCropCenter(hit);
     if (center) {
@@ -813,18 +872,20 @@ const AdminMapBox = () => {
 
         if (!detection) {
           // Block tagging
-          try { drawRef.current?.delete(feature.id); } catch {}
+          try {
+            drawRef.current?.delete(feature.id);
+          } catch {}
           setIsTagging(false);
           setNewTagLocation(null);
-          toast.error("The tagged area is outside of a single barangay boundary. Please draw entirely within one barangay.");
+          toast.error(
+            "The tagged area is outside of a single barangay boundary. Please draw entirely within one barangay."
+          );
           return false;
         }
 
         // OK → proceed to form (pre-fill barangay)
         const ring =
-          poly.type === "Polygon"
-            ? poly.coordinates?.[0]
-            : poly.coordinates?.[0]?.[0];
+          poly.type === "Polygon" ? poly.coordinates?.[0] : poly.coordinates?.[0]?.[0];
 
         const area = turf.area({ type: "Feature", geometry: poly, properties: {} });
         const hectares = +(area / 10000).toFixed(2);
@@ -846,7 +907,9 @@ const AdminMapBox = () => {
         const ok = handleDrawAttempt(feature);
         if (!ok) {
           // try to revert by deleting the invalid edit; user can redraw
-          try { drawRef.current?.delete(feature.id); } catch {}
+          try {
+            drawRef.current?.delete(feature.id);
+          } catch {}
         }
       });
     } else {
@@ -958,9 +1021,20 @@ const AdminMapBox = () => {
                   maximumAge: 0,
                 })
               );
-              const { longitude: glng, latitude: glat, accuracy } = pos.coords;
+              const { longitude, latitude, accuracy } = pos.coords;
+
+              const glng = Number(longitude);
+              const glat = Number(latitude);
+
+              if (!Number.isFinite(glng) || !Number.isFinite(glat)) {
+                console.error("Invalid GPS coords from browser (once):", pos.coords);
+                toast.error("Browser returned invalid GPS coordinates.");
+                return;
+              }
+
               handleFix(glng, glat, accuracy);
             } catch (e) {
+              console.error(e);
               toast.error(explainGeoError(e));
             }
           }}
@@ -982,7 +1056,16 @@ const AdminMapBox = () => {
             if (!tracking) {
               const stop = startGeoWatch(
                 (pos) => {
-                  const { longitude: glng, latitude: glat, accuracy, heading } = pos.coords;
+                  const { longitude, latitude, accuracy, heading } = pos.coords;
+
+                  const glng = Number(longitude);
+                  const glat = Number(latitude);
+
+                  if (!Number.isFinite(glng) || !Number.isFinite(glat)) {
+                    console.error("Invalid GPS coords from browser (watch):", pos.coords);
+                    return;
+                  }
+
                   handleFix(glng, glat, accuracy);
                   if (typeof heading === "number" && !Number.isNaN(heading)) {
                     setHeadingDeg(heading);
@@ -1006,9 +1089,13 @@ const AdminMapBox = () => {
           }}
         >
           {tracking ? (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 8h3v8H8V8zm5 0h3v8h-3V8z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 8h3v8H8V8zm5 0h3v8h-3V8z" />
+            </svg>
           ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7L8 5z" />
+            </svg>
           )}
         </IconButton>
 
@@ -1061,9 +1148,13 @@ const AdminMapBox = () => {
           onClick={() => setLockToBago((v) => !v)}
         >
           {lockToBago ? (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 8h-1V6a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 8h-1V6a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Z" />
+            </svg>
           ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 8h-1V6a4 4 0 0 0-7.33-2.4l1.5 1.32A2 2 0 0 1 13 6v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 8h-1V6a4 4 0 0 0-7.33-2.4l1.5 1.32A2 2 0 0 1 13 6v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Z" />
+            </svg>
           )}
         </IconButton>
       </div>
@@ -1105,43 +1196,42 @@ const AdminMapBox = () => {
       )}
 
       {/* Layers launcher (shows when sidebar is hidden to avoid overlap) */}
-{!isSidebarVisible && (
-  <button
-    onClick={() => setIsSwitcherVisible(!isSwitcherVisible)}
-    className="absolute bottom-6 left-4 w-20 h-20 rounded-xl shadow-md overflow-hidden z-30 bg-white border border-gray-300 hover:shadow-lg transition"
-    title="Map layers"
-  >
-    <div className="w-full h-full relative">
-      <img src={DefaultThumbnail} alt="Layers" className="w-full h-full object-cover" />
-      <div className="absolute bottom-0 left-0 right-0 text-white text-xs font-semibold px-2 py-1 bg-black/60 text-center">
-        Layers
-      </div>
-    </div>
-  </button>
-)}
+      {!isSidebarVisible && (
+        <button
+          onClick={() => setIsSwitcherVisible(!isSwitcherVisible)}
+          className="absolute bottom-6 left-4 w-20 h-20 rounded-xl shadow-md overflow-hidden z-30 bg-white border border-gray-300 hover:shadow-lg transition"
+          title="Map layers"
+        >
+          <div className="w-full h-full relative">
+            <img src={DefaultThumbnail} alt="Layers" className="w-full h-full object-cover" />
+            <div className="absolute bottom-0 left-0 right-0 text-white text-xs font-semibold px-2 py-1 bg-black/60 text-center">
+              Layers
+            </div>
+          </div>
+        </button>
+      )}
 
-{/* Layers palette */}
-{!isSidebarVisible && isSwitcherVisible && (
-  <div className="absolute bottom-28 left-4 bg-white p-2 rounded-xl shadow-xl flex space-x-2 z-30 transition-all duration-300">
-    {Object.entries(mapStyles).map(([label, { url, thumbnail }]) => (
-      <button
-        key={label}
-        onClick={() => {
-          setMapStyle(url);
-          setIsSwitcherVisible(false);
-        }}
-        className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
-        title={label}
-      >
-        <img src={thumbnail} alt={label} className="w-full h-full object-cover" />
-        <div className="absolute bottom-0 w-full text-[10px] text-white text-center bg-black/60 py-[2px]">
-          {label}
+      {/* Layers palette */}
+      {!isSidebarVisible && isSwitcherVisible && (
+        <div className="absolute bottom-28 left-4 bg-white p-2 rounded-xl shadow-xl flex space-x-2 z-30 transition-all duration-300">
+          {Object.entries(mapStyles).map(([label, { url, thumbnail }]) => (
+            <button
+              key={label}
+              onClick={() => {
+                setMapStyle(url);
+                setIsSwitcherVisible(false);
+              }}
+              className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
+              title={label}
+            >
+              <img src={thumbnail} alt={label} className="w-full h-full object-cover" />
+              <div className="absolute bottom-0 w-full text-[10px] text-white text-center bg-black/60 py-[2px]">
+                {label}
+              </div>
+            </button>
+          ))}
         </div>
-      </button>
-    ))}
-  </div>
-)}
-
+      )}
 
       {/* Sidebar toggle */}
       <SidebarToggleButton
@@ -1212,7 +1302,14 @@ const AdminMapBox = () => {
         )}
       </div>
 
-      <ToastContainer position="top-center" autoClose={3000} hideProgressBar pauseOnHover theme="light" style={{ zIndex: 9999 }} />
+      <ToastContainer
+        position="top-center"
+        autoClose={3000}
+        hideProgressBar
+        pauseOnHover
+        theme="light"
+        style={{ zIndex: 9999 }}
+      />
 
       {enlargedImage && (
         <div
@@ -1220,13 +1317,20 @@ const AdminMapBox = () => {
           onClick={() => setEnlargedImage(null)}
         >
           <button
-            onClick={(e) => { e.stopPropagation(); setEnlargedImage(null); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setEnlargedImage(null);
+            }}
             className="absolute top-4 right-4 text-white text-2xl font-bold z-[10000] hover:text-red-400"
             title="Close"
           >
             ×
           </button>
-          <img src={enlargedImage} alt="Fullscreen Crop" className="max-w-full max-h-full object-contain" />
+          <img
+            src={enlargedImage}
+            alt="Fullscreen Crop"
+            className="max-w-full max-h-full object-contain"
+          />
         </div>
       )}
     </div>
