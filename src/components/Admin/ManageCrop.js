@@ -123,21 +123,27 @@ const ManageCrop = () => {
     );
     if (!search.trim()) return byType;
     const q = search.toLowerCase();
-    return byType.filter((c) =>
-      [
-        c.crop_name,
-        c.variety_name,
-        c.crop_barangay,
-        c.farmer_first_name,
-        c.farmer_last_name,
-        c.farmer_mobile,
-        c.farmer_barangay,
-        c.farmer_address,
-        c.note,
-      ]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(q))
-    );
+   return byType.filter((c) =>
+  [
+    c.crop_name,
+    c.variety_name,
+    c.crop_barangay,
+    c.farmer_first_name,
+    c.farmer_last_name,
+    c.farmer_mobile,
+    c.farmer_barangay,
+    c.farmer_address,
+    c.note,
+
+    // NEW: secondary crop fields
+    c.intercrop_crop_name,
+    c.intercrop_variety_name,
+    c.intercrop_cropping_system,
+  ]
+    .filter(Boolean)
+    .some((v) => String(v).toLowerCase().includes(q))
+);
+
   }, [crops, selectedCropTypeId, search]);
 
   /* ------- sort ------- */
@@ -481,6 +487,35 @@ const ManageCrop = () => {
                   }
                 />
                     </div>
+                    {/* Secondary crop (if any) */}
+                    {crop.intercrop_crop_name && (
+                      <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wide text-emerald-700">
+                          Secondary crop
+                        </div>
+                        <div className="text-[14px] font-medium text-emerald-900">
+                          {crop.intercrop_crop_name}
+                          {crop.intercrop_variety_name
+                            ? ` · ${crop.intercrop_variety_name}`
+                            : ""}
+                        </div>
+                        <div className="mt-0.5 text-[12px] text-emerald-800">
+                          {crop.intercrop_estimated_volume
+                            ? <>
+                                Est. yield:{" "}
+                                {fmtNum(crop.intercrop_estimated_volume)}{" "}
+                                {yieldUnitMap[crop.intercrop_crop_type_id] ||
+                                  "units"}
+                              </>
+                            : "No estimated yield recorded"}
+                        </div>
+                        {crop.intercrop_cropping_system && (
+                          <div className="mt-0.5 text-[11px] text-emerald-700/80">
+                            {crop.intercrop_cropping_system}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Compact actions row */}
                     <div className="mt-4 flex items-center justify-end">
@@ -889,6 +924,43 @@ const ManageCrop = () => {
                 value={fmtNum(viewingCrop.estimated_hectares)}
               />
             </div>
+
+
+                        {/* Secondary crop in modal */}
+            {viewingCrop.intercrop_crop_name && (
+              <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
+                <div className="text-[11px] uppercase tracking-wide text-emerald-700 mb-1">
+                  Secondary crop
+                </div>
+                <div className="text-[14px] font-semibold text-emerald-900">
+                  {viewingCrop.intercrop_crop_name}
+                  {viewingCrop.intercrop_variety_name
+                    ? ` · ${viewingCrop.intercrop_variety_name}`
+                    : ""}
+                </div>
+                <div className="mt-1 text-[13px] text-emerald-900">
+                  {viewingCrop.intercrop_estimated_volume
+                    ? <>
+                        Est. yield:{" "}
+                        {fmtNum(viewingCrop.intercrop_estimated_volume)}{" "}
+                        {yieldUnitMap[viewingCrop.intercrop_crop_type_id] ||
+                          "units"}
+                      </>
+                    : "No estimated yield recorded"}
+                </div>
+                {viewingCrop.intercrop_cropping_system && (
+                  <div className="mt-1 text-[12px] text-emerald-700/80">
+                    {viewingCrop.intercrop_cropping_system}
+                  </div>
+                )}
+                {viewingCrop.intercrop_cropping_description && (
+                  <p className="mt-2 text-[13px] text-emerald-900/90">
+                    {viewingCrop.intercrop_cropping_description}
+                  </p>
+                )}
+              </div>
+            )}
+
 
             {viewingCrop.note && viewingCrop.note.trim() && (
               <div className="mt-4">

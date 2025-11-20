@@ -23,6 +23,23 @@ const STANDARD_MATURITY_DAYS = { 1: 100, 2: 110, 3: 360, 4: 365, 5: 300, 6: 60 }
 const yieldUnitMap = { 1: "sacks", 2: "sacks", 3: "bunches", 4: "tons", 5: "tons", 6: "kg" };
 const yieldPerHectare = { 1: 80, 2: 85.4, 3: 150, 4: 80, 5: 70, 6: 100 };
 
+// NEW: lookup table for cropping system IDs
+const CROPPING_SYSTEMS = {
+  1: "Monocrop",
+  2: "Intercropped (2 crops)",
+  3: "Relay intercropping",
+  4: "Strip intercropping",
+  5: "Mixed cropping / Polyculture",
+};
+// matches backend CROPPING_META / CROPPING_SYSTEM_IDS keys
+const CROPPING_SYSTEM_KEYS = {
+  "1": "monocrop",
+  "2": "intercrop",
+  "3": "relay",
+  "4": "strip",
+  "5": "mixed",
+};
+
 // Fallback list (used only if `availableBarangays` prop or `barangaysFC` isn’t provided)
 const DEFAULT_BARANGAYS = [
   "Abuanan","Alianza","Atipuluan","Bacong","Bagroy","Balingasag","Binubuhan","Busay",
@@ -202,6 +219,17 @@ const TagCropForm = ({
   const [estimatedVolume, setEstimatedVolume] = useState("");
   const [volumeTouched, setVolumeTouched] = useState(false);
 
+  // NEW: secondary crop yield
+  const [secondaryEstimatedVolume, setSecondaryEstimatedVolume] = useState("");
+  const [secondaryVolumeTouched, setSecondaryVolumeTouched] = useState(false);
+
+  // NEW: intercropping
+  const [croppingSystemId, setCroppingSystemId] = useState("1");
+  const [isIntercropped, setIsIntercropped] = useState(false);
+  const [interCropTypeId, setInterCropTypeId] = useState("");
+  const [intercropVarieties, setIntercropVarieties] = useState([]);
+  const [intercropVarietyId, setIntercropVarietyId] = useState("");
+
   // Farmer
   const [farmerFirstName, setFarmerFirstName] = useState("");
   const [farmerLastName, setFarmerLastName] = useState("");
@@ -299,6 +327,14 @@ const TagCropForm = ({
     return (yph * ha).toFixed(2);
   }, [selectedCropType, hectares]);
 
+  // NEW: secondary auto volume candidate based on secondary crop type + same area
+  const secondaryAutoVolumeCandidate = useMemo(() => {
+    const yph = yieldPerHectare[interCropTypeId];
+    const ha = Number(hectares);
+    if (!yph || !Number.isFinite(ha) || ha <= 0) return "";
+    return (yph * ha).toFixed(2);
+  }, [interCropTypeId, hectares]);
+
   useEffect(() => {
     if (!harvestTouched) setEstimatedHarvest(autoHarvestCandidate || "");
   }, [autoHarvestCandidate, harvestTouched]);
@@ -306,6 +342,13 @@ const TagCropForm = ({
   useEffect(() => {
     if (!volumeTouched) setEstimatedVolume(autoVolumeCandidate || "");
   }, [autoVolumeCandidate, volumeTouched]);
+
+  // NEW: auto-fill secondary estimated volume if user hasn't touched it
+  useEffect(() => {
+    if (!secondaryVolumeTouched) {
+      setSecondaryEstimatedVolume(secondaryAutoVolumeCandidate || "");
+    }
+  }, [secondaryAutoVolumeCandidate, secondaryVolumeTouched]);
 
   // Crop types
   useEffect(() => {
@@ -337,6 +380,19 @@ const TagCropForm = ({
       .then((data) => setDynamicVarieties(data))
       .catch((err) => console.error("Failed to load varieties:", err));
   }, [selectedCropType]);
+
+  // Varieties for SECOND (intercrop) crop
+  useEffect(() => {
+    if (!interCropTypeId) {
+      setIntercropVarieties([]);
+      setIntercropVarietyId("");
+      return;
+    }
+    fetch(`http://localhost:5000/api/crops/varieties/${interCropTypeId}`)
+      .then((res) => res.json())
+      .then((data) => setIntercropVarieties(data))
+      .catch((err) => console.error("Failed to load intercrop varieties:", err));
+  }, [interCropTypeId]);
 
   /* ---------- VALIDATION ---------- */
 
@@ -391,6 +447,10 @@ const TagCropForm = ({
     if (!farmerBarangay) newErr.farmerBarangay = "Please choose a barangay.";
     if (!farmerAddress.trim()) newErr.farmerAddress = "Complete address is required.";
 
+    if ((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId) {
+      newErr.interCropTypeId = "Please select the secondary crop type.";
+    }
+
     setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
   };
@@ -400,7 +460,12 @@ const TagCropForm = ({
     plantedDate &&
     hectares &&
     manualBarangay &&
-    (!(ecosystems?.length > 0) || selectedEcosystem);
+    (!(ecosystems?.length > 0) || selectedEcosystem) &&
+    // if intercropped → require secondary crop type
+    !(
+      (croppingSystemId !== "1" || isIntercropped) &&
+      !interCropTypeId
+    );
 
   const isStep2Valid = () =>
     farmerFirstName && farmerLastName && farmerMobile && farmerBarangay && farmerAddress;
@@ -458,16 +523,31 @@ const TagCropForm = ({
         ? farmGeometry.coordinates?.[0]?.[0] || []
         : [];
     const farmCoords = coordsFromDefault.length ? coordsFromDefault : coordsFromFarm;
+  const croppingSystemKey =
+  CROPPING_SYSTEM_KEYS[croppingSystemId] || "monocrop";
 
     const formData = new FormData();
+    // main crop
     formData.append("ecosystem_id", selectedEcosystem || "");
-    formData.append("crop_type_id", selectedCropType);
+    formData.append("crop_type_id", String(selectedCropType || ""));
     formData.append("variety_id", selectedVarietyId || "");
     formData.append("plantedDate", plantedDate || "");
     formData.append("estimatedHarvest", estimatedHarvest || "");
     formData.append("estimatedVolume", estimatedVolume || "");
     formData.append("estimatedHectares", hectares || "");
     formData.append("note", note || "");
+
+   // NEW: intercropping fields
+formData.append("cropping_system_id", croppingSystemId || "");       // numeric (1..5) → stored in tbl_crops
+formData.append("cropping_system", croppingSystemKey);               // string     → used for labels/descriptions
+formData.append("is_intercropped", isIntercropped ? "1" : "0");
+formData.append("intercrop_crop_type_id", interCropTypeId || "");
+formData.append("intercrop_variety_id", intercropVarietyId || "");
+formData.append(
+  "intercrop_estimated_volume",
+  secondaryEstimatedVolume || ""
+);
+
 
     // keep your original coordinates field (not displayed in UI)
     formData.append("coordinates", JSON.stringify(farmCoords));
@@ -512,6 +592,8 @@ const TagCropForm = ({
     setHarvestTouched(false);
     setEstimatedVolume("");
     setVolumeTouched(false);
+    setSecondaryEstimatedVolume("");
+    setSecondaryVolumeTouched(false);
     setNote("");
     setPhotos(null);
     setFarmerFirstName("");
@@ -530,6 +612,12 @@ const TagCropForm = ({
   const getVarietyName = () => {
     const variety = dynamicVarieties.find((v) => v.id === parseInt(selectedVarietyId));
     return variety ? variety.name : "—";
+  };
+
+  // NEW: label helper for cropping system (uses CROPPING_SYSTEMS so it's not unused)
+  const getCroppingSystemLabel = () => {
+    const idNum = Number(croppingSystemId);
+    return CROPPING_SYSTEMS[idNum] || "Monocrop";
   };
 
   /* ---------- UI ---------- */
@@ -717,6 +805,155 @@ const TagCropForm = ({
                       error={errors.estimatedHarvest}
                     />
                   </Field>
+                </div>
+
+                <div className="my-2 h-px bg-gray-100" />
+
+                {/* Section: Cropping System / Intercropping */}
+                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                  Cropping System
+                </h5>
+
+                <div className="space-y-4">
+                  <Field label="Cropping System" required>
+                    <Select
+                        value={croppingSystemId}
+                        onChange={(e) => {
+                          const value = e.target.value; // "1".."5"
+                          setCroppingSystemId(value);
+
+                          if (value === "1") {
+                            // Monocrop → no secondary crop
+                            setIsIntercropped(false);
+                            setInterCropTypeId("");
+                            setIntercropVarietyId("");
+                            setSecondaryVolumeTouched(false);
+                            setSecondaryEstimatedVolume("");
+                            setFieldError("interCropTypeId", "");
+                          } else {
+                            // Any of 2,3,4,5 = some kind of intercropping
+                            setIsIntercropped(true);
+                          }
+                        }}
+                      >
+                      <option value="1">Monocrop</option>
+                      <option value="2">Intercropped (2 crops)</option>
+                      <option value="3">Relay intercropping</option>
+                      <option value="4">Strip intercropping</option>
+                      <option value="5">Mixed cropping / Polyculture</option>
+                    </Select>
+                  </Field>
+
+                  <Field label="Is this field intercropped?">
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="isIntercropped"
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                        checked={isIntercropped}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setIsIntercropped(checked);
+                          if (!checked && croppingSystemId === "1") {
+                            setInterCropTypeId("");
+                            setIntercropVarietyId("");
+                            setSecondaryVolumeTouched(false);
+                            setSecondaryEstimatedVolume("");
+                            setFieldError("interCropTypeId", "");
+                          }
+                        }}
+                      />
+                      <label
+                        htmlFor="isIntercropped"
+                        className="text-sm text-gray-600 select-none"
+                      >
+                        Yes, there is a second crop in this area.
+                      </label>
+                    </div>
+                  </Field>
+
+                  {(croppingSystemId !== "1" || isIntercropped) && (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Field
+                          label="Secondary Crop Type"
+                          required
+                          error={errors.interCropTypeId}
+                        >
+                          <Select
+                            error={errors.interCropTypeId}
+                            value={interCropTypeId}
+                            onChange={(e) => {
+                              const id = parseInt(e.target.value);
+                              setInterCropTypeId(Number.isFinite(id) ? id : "");
+                              setSecondaryVolumeTouched(false); // let auto-calc refresh for new crop
+                              setFieldError(
+                                "interCropTypeId",
+                                Number.isFinite(id) ? "" : "Please select the secondary crop type."
+                              );
+                            }}
+                            onBlur={() => {
+                              if (!interCropTypeId) {
+                                setFieldError(
+                                  "interCropTypeId",
+                                  "Please select the secondary crop type."
+                                );
+                              }
+                            }}
+                          >
+                            <option value="">Select Secondary Crop Type</option>
+                            {cropTypes.map((type) => (
+                              <option key={type.id} value={type.id}>
+                                {type.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+
+                        <Field label="Secondary Variety">
+                          <Select
+                            value={intercropVarietyId}
+                            onChange={(e) => setIntercropVarietyId(e.target.value)}
+                          >
+                            <option value="">Select Variety (Optional)</option>
+                            {intercropVarieties.map((v) => (
+                              <option key={v.id} value={v.id}>
+                                {v.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+                      </div>
+
+                      {/* Secondary Est. Yield */}
+                      {interCropTypeId && (
+                        <Field
+                          label={`Secondary Est. Yield ${
+                            yieldUnitMap[interCropTypeId]
+                              ? `(${yieldUnitMap[interCropTypeId]})`
+                              : ""
+                          }`}
+                          hint="Auto-calculated from area × typical yield; you can override."
+                        >
+                          <SuffixInput
+                            suffix={yieldUnitMap[interCropTypeId] || "units"}
+                            inputProps={{
+                              type: "number",
+                              min: "0",
+                              step: "0.1",
+                              value: secondaryEstimatedVolume,
+                              onChange: (e) => {
+                                setSecondaryVolumeTouched(true);
+                                setSecondaryEstimatedVolume(e.target.value);
+                              },
+                              placeholder: "Auto-calculated",
+                              className: "text-right"
+                            }}
+                          />
+                        </Field>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 <div className="my-2 h-px bg-gray-100" />
@@ -1012,10 +1249,27 @@ const TagCropForm = ({
                   {[
                     ["Crop", getCropTypeName()],
                     ...(selectedVarietyId ? [["Variety", getVarietyName()]] : []),
+                    ["Cropping System", getCroppingSystemLabel()],
+                    ...(interCropTypeId
+                      ? [["Secondary Crop",
+                          (cropTypes.find((c) => c.id === interCropTypeId)?.name) || "—"
+                        ]]
+                      : []),
+                    ...(intercropVarietyId
+                      ? [["Secondary Variety",
+                          (intercropVarieties.find((v) => v.id === parseInt(intercropVarietyId))?.name) || "—"
+                        ]]
+                      : []),
                     ["Planted", plantedDate ? new Date(plantedDate).toLocaleDateString() : "—"],
                     ...(estimatedHarvest ? [["Harvest", new Date(estimatedHarvest).toLocaleDateString()]] : []),
                     ["Area", `${hectares} ha`],
-                    ...(estimatedVolume ? [["Estimated Yield", `${estimatedVolume} ${yieldUnitMap[selectedCropType]}`]] : []),
+                    ...(estimatedVolume
+                      ? [["Estimated Yield", `${estimatedVolume} ${yieldUnitMap[selectedCropType] || "units"}`]]
+                      : []),
+                    ...(secondaryEstimatedVolume && interCropTypeId
+                      ? [["Secondary Estimated Yield",
+                          `${secondaryEstimatedVolume} ${yieldUnitMap[interCropTypeId] || "units"}`]]
+                      : []),
                     ["Location", manualBarangay || detectedBarangayName || "—"],
                     ...(selectedCropType && ecosystems.length > 0
                       ? [["Ecosystem", ecosystems.find((e) => e.id === parseInt(selectedEcosystem))?.name || "—"]]

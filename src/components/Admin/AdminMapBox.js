@@ -1163,37 +1163,56 @@ const handleFix = useCallback(
       <div ref={mapContainer} className="h-full w-full" />
 
       {/* Tag form */}
-      {isTagging && newTagLocation && (
-        <TagCropForm
-          defaultLocation={{ ...newTagLocation, hectares: newTagLocation.hectares }}
-          selectedBarangay={selectedBarangay?.name}
-          barangaysFC={BARANGAYS_FC}
-          farmGeometry={newTagLocation.farmGeometry}
-          onCancel={() => {
-            setIsTagging(false);
-            setNewTagLocation(null);
-            drawRef.current?.deleteAll();
-          }}
-          onSave={async (formData) => {
-            try {
-              const adminId = localStorage.getItem("user_id");
-              formData.append("admin_id", adminId);
-              await axios.post("http://localhost:5000/api/crops", formData, {
-                headers: { "Content-Type": "multipart/form-data" },
-              });
-              alert("Crop saved!");
-              await loadPolygons();
-              await renderSavedMarkers();
-            } catch (error) {
-              console.error("Error saving crop:", error);
-              alert("Failed to save crop.");
-            }
-            setIsTagging(false);
-            setNewTagLocation(null);
-            drawRef.current?.deleteAll();
-          }}
-        />
-      )}
+{isTagging && newTagLocation && (
+  <TagCropForm
+    defaultLocation={{ ...newTagLocation, hectares: newTagLocation.hectares }}
+    selectedBarangay={selectedBarangay?.name}
+    barangaysFC={BARANGAYS_FC}
+    farmGeometry={newTagLocation.farmGeometry}
+    onCancel={() => {
+      setIsTagging(false);
+      setNewTagLocation(null);
+      drawRef.current?.deleteAll();
+    }}
+    onSave={async (formData) => {
+      try {
+        const adminId = localStorage.getItem("user_id");
+        if (adminId) formData.append("admin_id", adminId);
+
+        await axios.post("http://localhost:5000/api/crops", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        alert("Crop saved!");
+        await loadPolygons();
+        await renderSavedMarkers();
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          console.error(
+            "Error saving crop (response):",
+            error.response?.data || error.message
+          );
+
+          const msg =
+            error.response?.data?.message ||
+            error.response?.data?.error ||
+            error.message ||
+            "Unknown server error";
+
+          alert(`Failed to save crop: ${msg}`);
+        } else {
+          console.error("Error saving crop (non-Axios):", error);
+          alert("Failed to save crop (unexpected error).");
+        }
+      } finally {
+        // always reset state so the form closes
+        setIsTagging(false);
+        setNewTagLocation(null);
+        drawRef.current?.deleteAll();
+      }
+    }}
+  />
+)}
 
       {/* Layers launcher (shows when sidebar is hidden to avoid overlap) */}
       {!isSidebarVisible && (
