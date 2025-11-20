@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import AgriGISLogo from "../../components/MapboxImages/AgriGIS.png";
 import Button from "./MapControls/Button";
 import clsx from "clsx";
+import axios from "axios";
+
 
 // ─────────────────────────────────────────────────────────────
 // Utilities & small UI primitives
@@ -24,6 +26,24 @@ const KV = ({ label, value }) => (
   </div>
 );
 
+// same mapping you used in ManageCrop
+const yieldUnitMap = {
+  1: "sacks",
+  2: "sacks",
+  3: "bunches",
+  4: "tons",
+  5: "tons",
+  6: "kg",
+};
+
+const CROPPING_SYSTEM_LABELS = {
+  1: "Monocrop",
+  2: "Intercropped (2 crops)",
+  3: "Relay intercropping",
+  4: "Strip intercropping",
+  5: "Mixed cropping / Polyculture",
+};
+
 const AdminSideBar = ({
   visible,
   zoomToBarangay,
@@ -34,11 +54,15 @@ const AdminSideBar = ({
   selectedCropType,
   setSelectedCropType,
   setEnlargedImage,
+  onCropUpdated,
+  harvestFilter,        // coming from parent
+  setHarvestFilter,     // coming from parent
 }) => {
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [barangayDetails, setBarangayDetails] = useState(null);
   const [showCropDropdown, setShowCropDropdown] = useState(false);
   const navigate = useNavigate();
+
 
   // ───────────────────────────────────────────────────────────
   // Barangay data
@@ -95,6 +119,53 @@ const AdminSideBar = ({
     Tinongan: { crops: ["Cassava", "Rice"] },
   };
 
+  // helper to know if ANY crop is harvested
+  function isCropHarvested(crop) {
+    if (!crop) return false;
+    return (
+      Number(crop.is_harvested) === 1 ||
+      crop.is_harvested === true ||
+      !!crop.harvested_date
+    );
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // Derived secondary-crop info from selectedCrop
+  // ───────────────────────────────────────────────────────────
+  const secondaryCropTypeId = selectedCrop
+    ? Number(selectedCrop.intercrop_crop_type_id) || null
+    : null;
+
+  const secondaryCropType =
+    secondaryCropTypeId && cropTypes.length
+      ? cropTypes.find((ct) => Number(ct.id) === secondaryCropTypeId)
+      : null;
+
+  const secondaryCropName = secondaryCropType
+    ? secondaryCropType.name
+    : secondaryCropTypeId
+    ? `Crop #${secondaryCropTypeId}`
+    : null;
+
+  const secondaryVolume = selectedCrop?.intercrop_estimated_volume ?? null;
+  const secondaryUnit = secondaryCropTypeId
+    ? yieldUnitMap[secondaryCropTypeId] || "units"
+    : null;
+
+  const croppingSystemLabel = selectedCrop
+    ? selectedCrop.intercrop_cropping_system ||
+      CROPPING_SYSTEM_LABELS[Number(selectedCrop.cropping_system_id)] ||
+      null
+    : null;
+
+  const isIntercroppedFlag =
+    selectedCrop &&
+    (selectedCrop.is_intercropped === 1 ||
+      selectedCrop.is_intercropped === "1");
+
+  const hasSecondaryCrop =
+    !!secondaryCropTypeId || !!secondaryVolume || !!isIntercroppedFlag;
+
   // ───────────────────────────────────────────────────────────
   // Handlers
   // ───────────────────────────────────────────────────────────
@@ -114,6 +185,39 @@ const AdminSideBar = ({
       });
 
       onBarangaySelect({ name: barangay, coordinates });
+    }
+  };
+
+  // Harvest state derived from selectedCrop
+  const isHarvested = isCropHarvested(selectedCrop);
+
+  const handleMarkHarvested = async () => {
+    if (!selectedCrop) return;
+
+    const ok = window.confirm(
+      "Mark this crop as harvested? This will set it as harvested today."
+    );
+    if (!ok) return;
+
+    try {
+      const res = await axios.patch(
+        `http://localhost:5000/api/crops/${selectedCrop.id}/harvest`
+      );
+
+      const harvested_date =
+        res.data.harvested_date || new Date().toISOString().slice(0, 10);
+
+      const updated = {
+        ...selectedCrop,
+        is_harvested: 1,
+        harvested_date,
+      };
+
+      // let parent know so it can update map + state
+      if (onCropUpdated) onCropUpdated(updated);
+    } catch (err) {
+      console.error("Failed to mark harvested:", err);
+      alert("Failed to mark this crop as harvested. Please try again.");
     }
   };
 
@@ -197,6 +301,22 @@ const AdminSideBar = ({
                 ))}
               </select>
             </div>
+
+            {/* NEW: Harvest status filter */}
+            <div className="col-span-2">
+              <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+                Harvest Status
+              </label>
+              <select
+                value={harvestFilter}
+                onChange={(e) => setHarvestFilter(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              >
+                <option value="all">All</option>
+                <option value="harvested">Harvested only</option>
+                <option value="not_harvested">Not yet harvested</option>
+              </select>
+            </div>
           </div>
         </Section>
 
@@ -206,7 +326,9 @@ const AdminSideBar = ({
             <div className="text-sm text-gray-900">
               <span className="font-medium">{barangayDetails.name}</span>
               <div className="mt-1">
-                <span className="text-xs uppercase tracking-wide text-gray-500">Crops</span>
+                <span className="text-xs uppercase tracking-wide text-gray-500">
+                  Crops
+                </span>
                 <div className="text-sm">
                   {barangayDetails.crops.join(", ") || "—"}
                 </div>
@@ -221,148 +343,251 @@ const AdminSideBar = ({
             <dl className="space-y-3">
               <div className="grid grid-cols-2 gap-x-4">
                 <KV label="Variety" value={fmt(selectedCrop.variety_name)} />
-                <KV label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
+                <KV
+                  label="Hectares"
+                  value={fmt(selectedCrop.estimated_hectares)}
+                />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-x-4">
-                <KV label="Planted Date" value={fmtDate(selectedCrop.planted_date)} />
-                <KV label="Est. Harvest" value={fmtDate(selectedCrop.estimated_harvest)} />
+                <KV
+                  label="Planted Date"
+                  value={fmtDate(selectedCrop.planted_date)}
+                />
+                <KV
+                  label="Est. Harvest"
+                  value={fmtDate(selectedCrop.estimated_harvest)}
+                />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-x-4">
-                <KV label="Volume" value={fmt(selectedCrop.estimated_volume)} />
-                <div></div>
+                <KV
+                  label="Volume"
+                  value={fmt(selectedCrop.estimated_volume)}
+                />
+                {hasSecondaryCrop && secondaryVolume != null ? (
+                  <KV
+                    label="Secondary Volume"
+                    value={
+                      secondaryUnit
+                        ? `${fmt(secondaryVolume)} ${secondaryUnit}`
+                        : fmt(secondaryVolume)
+                    }
+                  />
+                ) : (
+                  <div />
+                )}
               </div>
+
+              {croppingSystemLabel && (
+                <div className="grid grid-cols-2 gap-x-4">
+                  <KV label="Cropping System" value={croppingSystemLabel} />
+                  {hasSecondaryCrop && (
+                    <KV
+                      label="Secondary Crop"
+                      value={
+                        secondaryCropName
+                          ? `${secondaryCropName}${
+                              selectedCrop.intercrop_variety_name
+                                ? " · " + selectedCrop.intercrop_variety_name
+                                : ""
+                            }`
+                          : "—"
+                      }
+                    />
+                  )}
+                </div>
+              )}
 
               {selectedCrop.note?.trim() && (
                 <div className="pt-2 border-t border-gray-100">
-                  <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">Note</dt>
-                  <dd className="text-sm text-gray-900">{selectedCrop.note.trim()}</dd>
+                  <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                    Note
+                  </dt>
+                  <dd className="text-sm text-gray-900">
+                    {selectedCrop.note.trim()}
+                  </dd>
                 </div>
               )}
 
               <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-x-4">
                 <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
-                <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
+                <KV
+                  label="Tagged on"
+                  value={fmtDate(selectedCrop.created_at)}
+                />
+              </div>
+
+              {/* Harvest status + action */}
+              <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-3">
+                <KV
+                  label="Harvest status"
+                  value={
+                    isHarvested
+                      ? `Harvested on ${fmtDate(selectedCrop.harvested_date)}`
+                      : "Not yet harvested"
+                  }
+                />
+                {!isHarvested && (
+                  <button
+                    type="button"
+                    onClick={handleMarkHarvested}
+                    className="inline-flex items-center rounded-md border border-green-600 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50"
+                  >
+                    Mark as harvested
+                  </button>
+                )}
               </div>
             </dl>
           </Section>
         )}
 
         {/* Farmer Information Section */}
-        {selectedCrop && (selectedCrop.farmer_first_name || selectedCrop.farmer_barangay) && (
-          <Section title="Farmer Information">
-            <dl className="space-y-3">
-              <div className="grid grid-cols-2 gap-x-4">
-                {selectedCrop.farmer_first_name && (
-                  <KV 
-                    label="Farmer Name" 
-                    value={`${selectedCrop.farmer_first_name} ${selectedCrop.farmer_last_name || ''}`.trim()} 
+        {selectedCrop &&
+          (selectedCrop.farmer_first_name || selectedCrop.farmer_barangay) && (
+            <Section title="Farmer Information">
+              <dl className="space-y-3">
+                <div className="grid grid-cols-2 gap-x-4">
+                  {selectedCrop.farmer_first_name && (
+                    <KV
+                      label="Farmer Name"
+                      value={`${selectedCrop.farmer_first_name} ${
+                        selectedCrop.farmer_last_name || ""
+                      }`.trim()}
+                    />
+                  )}
+                  {selectedCrop.farmer_barangay && (
+                    <KV
+                      label="Barangay"
+                      value={fmt(selectedCrop.farmer_barangay)}
+                    />
+                  )}
+                </div>
+
+                {selectedCrop.farmer_mobile && (
+                  <KV
+                    label="Mobile Number"
+                    value={fmt(selectedCrop.farmer_mobile)}
                   />
                 )}
-                {selectedCrop.farmer_barangay && (
-                  <KV label="Barangay" value={fmt(selectedCrop.farmer_barangay)} />
+
+                {selectedCrop.farmer_address && (
+                  <div className="pt-2 border-t border-gray-100">
+                    <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                      Address
+                    </dt>
+                    <dd className="text-sm text-gray-900">
+                      {fmt(selectedCrop.farmer_address)}
+                    </dd>
+                  </div>
                 )}
-              </div>
-              
-              {selectedCrop.farmer_mobile && (
-                <KV label="Mobile Number" value={fmt(selectedCrop.farmer_mobile)} />
-              )}
-              
-              {selectedCrop.farmer_address && (
-                <div className="pt-2 border-t border-gray-100">
-                  <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">Address</dt>
-                  <dd className="text-sm text-gray-900">{fmt(selectedCrop.farmer_address)}</dd>
-                </div>
-              )}
-            </dl>
-          </Section>
-        )}
+              </dl>
+            </Section>
+          )}
 
-      {/* Photos of selected crop */}
-{selectedCrop?.photos && (() => {
-  const toArray = (inp) => {
-    if (Array.isArray(inp)) return inp;
-    if (typeof inp !== "string") return [];
-    const s = inp.trim();
-    if (!s) return [];
-    // try JSON first
-    try {
-      const parsed = JSON.parse(s);
-      if (Array.isArray(parsed)) return parsed;
-    } catch {}
-    // fallback: csv or single path
-    return s.includes(",")
-      ? s.split(",").map((x) => x.trim()).filter(Boolean)
-      : [s];
-  };
+        {/* Photos of selected crop */}
+        {selectedCrop?.photos &&
+          (() => {
+            const toArray = (inp) => {
+              if (Array.isArray(inp)) return inp;
+              if (typeof inp !== "string") return [];
+              const s = inp.trim();
+              if (!s) return [];
+              // try JSON first
+              try {
+                const parsed = JSON.parse(s);
+                if (Array.isArray(parsed)) return parsed;
+              } catch {}
+              // fallback: csv or single path
+              return s.includes(",")
+                ? s
+                    .split(",")
+                    .map((x) => x.trim())
+                    .filter(Boolean)
+                : [s];
+            };
 
-  const makeUrl = (u) =>
-    /^https?:\/\//i.test(u) ? u : `http://localhost:5000${u.startsWith("/") ? "" : "/"}${u}`;
+            const makeUrl = (u) =>
+              /^https?:\/\//i.test(u)
+                ? u
+                : `http://localhost:5000${
+                    u.startsWith("/") ? "" : "/"
+                  }${u}`;
 
-  const photoList = toArray(selectedCrop.photos).map(makeUrl);
-  const n = photoList.length;
-  if (n === 0) return null;
+            const photoList = toArray(selectedCrop.photos).map(makeUrl);
+            const n = photoList.length;
+            if (n === 0) return null;
 
-  const isSingle = n === 1;
+            const isSingle = n === 1;
 
-  return (
-    <Section title={`Photos of ${selectedCrop.crop_name || "Crop"}`}>
-      {isSingle ? (
-        <button
-          type="button"
-          className="group relative block overflow-hidden rounded-lg border border-gray-200 bg-gray-50 aspect-[16/9] w-full"
-          onClick={() => setEnlargedImage(photoList[0])}
-          title="View photo"
-        >
-          <img
-            src={photoList[0]}
-            alt="Photo 1"
-            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
-            loading="lazy"
-          />
-        </button>
-      ) : (
-        <div
-          className="grid gap-2"
-          style={{
-            gridTemplateColumns:
-              n === 2 ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(110px, 1fr))",
-          }}
-        >
-          {photoList.map((url, i) => (
-            <button
-              type="button"
-              key={i}
-              className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
-              onClick={() => setEnlargedImage(url)}
-              title={`View photo ${i + 1}`}
-            >
-              <img
-                src={url}
-                alt={`Photo ${i + 1}`}
-                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                loading="lazy"
-              />
-            </button>
-          ))}
-        </div>
-      )}
-    </Section>
-  );
-})()}
+            return (
+              <Section title={`Photos of ${selectedCrop.crop_name || "Crop"}`}>
+                {isSingle ? (
+                  <button
+                    type="button"
+                    className="group relative block overflow-hidden rounded-lg border border-gray-200 bg-gray-50 aspect-[16/9] w-full"
+                    onClick={() => setEnlargedImage(photoList[0])}
+                    title="View photo"
+                  >
+                    <img
+                      src={photoList[0]}
+                      alt="Photo 1"
+                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                      loading="lazy"
+                    />
+                  </button>
+                ) : (
+                  <div
+                    className="grid gap-2"
+                    style={{
+                      gridTemplateColumns:
+                        n === 2
+                          ? "repeat(2, 1fr)"
+                          : "repeat(auto-fill, minmax(110px, 1fr))",
+                    }}
+                  >
+                    {photoList.map((url, i) => (
+                      <button
+                        type="button"
+                        key={i}
+                        className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
+                        onClick={() => setEnlargedImage(url)}
+                        title={`View photo ${i + 1}`}
+                      >
+                        <img
+                          src={url}
+                          alt={`Photo ${i + 1}`}
+                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                          loading="lazy"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            );
+          })()}
 
-
-        {/* Photos by barangay */}
+        {/* Photos by barangay (now respects harvestFilter) */}
         {barangayDetails && crops.length > 0 && (
           <Section title={`Photos from ${barangayDetails.name}`}>
             <div className="grid grid-cols-2 gap-2">
               {crops
-                .filter(
-                  (crop) =>
+                .filter((crop) => {
+                  const sameBrgy =
                     crop.barangay?.toLowerCase() ===
-                    barangayDetails.name.toLowerCase()
-                )
+                    barangayDetails.name.toLowerCase();
+
+                  if (!sameBrgy) return false;
+
+                  if (harvestFilter === "harvested") {
+                    return isCropHarvested(crop);
+                  }
+                  if (harvestFilter === "not_harvested") {
+                    return !isCropHarvested(crop);
+                  }
+                  return true; // "all"
+                })
                 .flatMap((crop, idx) => {
                   const photoArray = crop.photos ? JSON.parse(crop.photos) : [];
                   return photoArray.map((url, i) => (
@@ -370,7 +595,9 @@ const AdminSideBar = ({
                       type="button"
                       key={`${idx}-${i}`}
                       className="group relative overflow-hidden rounded-lg border border-gray-200"
-                      onClick={() => setEnlargedImage(`http://localhost:5000${url}`)}
+                      onClick={() =>
+                        setEnlargedImage(`http://localhost:5000${url}`)
+                      }
                       title="View larger"
                     >
                       <img
@@ -399,6 +626,7 @@ const AdminSideBar = ({
                 Sugarcane: "#34d399",
                 Cassava: "#60a5fa",
                 Vegetables: "#f472b6",
+                "Harvested field": "#9CA3AF",
               }).map(([label, color]) => (
                 <li key={label} className="flex items-center">
                   <span
@@ -413,11 +641,11 @@ const AdminSideBar = ({
         </Section>
 
         {/* Home button */}
-          <div className="mt-5">
-                  <Button to="/AdminLanding" variant="outline" size="md">
-                    Home
-                  </Button>
-                </div>
+        <div className="mt-5">
+          <Button to="/AdminLanding" variant="outline" size="md">
+            Home
+          </Button>
+        </div>
       </div>
     </div>
   );

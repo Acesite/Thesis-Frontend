@@ -61,6 +61,7 @@ const ManageCrop = () => {
 
   const [cropTypes, setCropTypes] = useState([]);
   const [varieties, setVarieties] = useState([]);
+  const [interVarieties, setInterVarieties] = useState([]);
 
   const [selectedCropTypeId, setSelectedCropTypeId] = useState(null);
   const [search, setSearch] = useState("");
@@ -104,6 +105,21 @@ const ManageCrop = () => {
     }
   }, [editForm.crop_type_id]);
 
+  useEffect(() => {
+    if (editForm.intercrop_crop_type_id) {
+      axios
+        .get(
+          `http://localhost:5000/api/crops/varieties/${editForm.intercrop_crop_type_id}`
+        )
+        .then((res) => setInterVarieties(res.data))
+        .catch((err) =>
+          console.error("Failed to load secondary varieties:", err)
+        );
+    } else {
+      setInterVarieties([]);
+    }
+  }, [editForm.intercrop_crop_type_id]);
+
   const fetchCrops = async () => {
     try {
       setIsLoading(true);
@@ -123,27 +139,25 @@ const ManageCrop = () => {
     );
     if (!search.trim()) return byType;
     const q = search.toLowerCase();
-   return byType.filter((c) =>
-  [
-    c.crop_name,
-    c.variety_name,
-    c.crop_barangay,
-    c.farmer_first_name,
-    c.farmer_last_name,
-    c.farmer_mobile,
-    c.farmer_barangay,
-    c.farmer_address,
-    c.note,
-
-    // NEW: secondary crop fields
-    c.intercrop_crop_name,
-    c.intercrop_variety_name,
-    c.intercrop_cropping_system,
-  ]
-    .filter(Boolean)
-    .some((v) => String(v).toLowerCase().includes(q))
-);
-
+    return byType.filter((c) =>
+      [
+        c.crop_name,
+        c.variety_name,
+        c.crop_barangay,
+        c.farmer_first_name,
+        c.farmer_last_name,
+        c.farmer_mobile,
+        c.farmer_barangay,
+        c.farmer_address,
+        c.note,
+        // secondary crop fields
+        c.intercrop_crop_name,
+        c.intercrop_variety_name,
+        c.intercrop_cropping_system,
+      ]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q))
+    );
   }, [crops, selectedCropTypeId, search]);
 
   /* ------- sort ------- */
@@ -172,13 +186,15 @@ const ManageCrop = () => {
       case "volume_asc":
         arr.sort(
           (a, b) =>
-            (Number(a.estimated_volume) || 0) - (Number(b.estimated_volume) || 0)
+            (Number(a.estimated_volume) || 0) -
+            (Number(b.estimated_volume) || 0)
         );
         break;
       case "volume_desc":
         arr.sort(
           (a, b) =>
-            (Number(b.estimated_volume) || 0) - (Number(a.estimated_volume) || 0)
+            (Number(b.estimated_volume) || 0) -
+            (Number(a.estimated_volume) || 0)
         );
         break;
       default:
@@ -203,6 +219,11 @@ const ManageCrop = () => {
       .join(" ")
       .trim();
 
+    const isIntercropped =
+      crop.is_intercropped === 1 ||
+      crop.is_intercropped === "1" ||
+      crop.is_intercropped === true;
+
     setEditingCrop(crop);
     setEditForm({
       ...crop,
@@ -216,16 +237,30 @@ const ManageCrop = () => {
       note: crop.note || "",
       barangay: crop.crop_barangay || "",
       farmer_full_name: initialName || "",
-
-      // NEW: simple text inputs for farmer name
       farmer_first_name: crop.farmer_first_name || "",
       farmer_last_name: crop.farmer_last_name || "",
+
+      // intercropping fields
+      is_intercropped: isIntercropped ? 1 : 0,
+      intercrop_crop_type_id: crop.intercrop_crop_type_id || "",
+      intercrop_variety_id: crop.intercrop_variety_id || "",
+      intercrop_estimated_volume: crop.intercrop_estimated_volume || "",
+      intercrop_cropping_system: crop.intercrop_cropping_system || "",
+      intercrop_cropping_description:
+        crop.intercrop_cropping_description || "",
     });
   };
 
   const handleEditChange = (e) => {
-    const { name, value } = e.target;
-    setEditForm((prev) => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    const val =
+      type === "checkbox"
+        ? checked
+          ? 1
+          : 0
+        : value;
+
+    setEditForm((prev) => ({ ...prev, [name]: val }));
   };
 
   const handleUpdate = async () => {
@@ -287,6 +322,19 @@ const ManageCrop = () => {
       alert("Failed to delete crop.");
     }
   };
+
+  /* ------- derived for viewing modal ------- */
+  const viewingIsHarvested =
+    !!viewingCrop &&
+    (viewingCrop.is_harvested === 1 ||
+      viewingCrop.is_harvested === "1" ||
+      viewingCrop.is_harvested === true);
+
+  const viewingHarvestLabel = viewingCrop
+    ? viewingIsHarvested
+      ? `Harvested on ${fmtDate(viewingCrop.harvested_date)}`
+      : "Not yet harvested"
+    : "";
 
   /* ---------- RENDER ---------- */
   return (
@@ -379,7 +427,17 @@ const ManageCrop = () => {
             ) : pageItems.length > 0 ? (
               pageItems.map((crop) => {
                 const color = colorByCrop[crop.crop_name] || "#16a34a";
-                const hasCoords = crop.latitude && crop.longitude;
+                const hasCoords = crop.latitude && crop.longitude; // currently unused but kept
+
+                const isHarvested =
+                  crop.is_harvested === 1 ||
+                  crop.is_harvested === "1" ||
+                  crop.is_harvested === true;
+
+                const harvestStatusLabel = isHarvested
+                  ? `Harvested on ${fmtDate(crop.harvested_date)}`
+                  : "Not yet harvested";
+
                 return (
                   <div
                     key={crop.id}
@@ -449,10 +507,22 @@ const ManageCrop = () => {
                       </div>
                     )}
 
+                    <div
+                      className={`mt-2 inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium border ${
+                        isHarvested
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          : "bg-amber-50 text-amber-800 border-amber-200"
+                      }`}
+                    >
+                      {harvestStatusLabel}
+                    </div>
                     {/* Meta (crop info) */}
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
                       <Stat label="Planted" value={fmtDate(crop.planted_date)} />
-                      <Stat label="Harvest" value={fmtDate(crop.estimated_harvest)} />
+                      <Stat
+                        label="Harvest"
+                        value={fmtDate(crop.estimated_harvest)}
+                      />
                       <Stat
                         label="Volume"
                         value={`${fmtNum(crop.estimated_volume)} ${
@@ -467,26 +537,27 @@ const ManageCrop = () => {
                         label="Barangay (Crop)"
                         value={crop.crop_barangay || "N/A"}
                       />
-                     <Stat
-                  label="Map"
-                  value={
-                    <button
-                      className="text-emerald-700 hover:underline"
-                      onClick={() =>
-                        navigate("/AdminMap", {
-                          state: {
-                            cropId: String(crop.id),
-                            zoom: 17, // map will compute center from the polygon
-                          },
-                        })
-                      }
-                      title="Open in Admin Map"
-                    >
-                      View location ↗
-                    </button>
-                  }
-                />
+                      <Stat
+                        label="Map"
+                        value={
+                          <button
+                            className="text-emerald-700 hover:underline"
+                            onClick={() =>
+                              navigate("/AdminMap", {
+                                state: {
+                                  cropId: String(crop.id),
+                                  zoom: 17, // map will compute center from the polygon
+                                },
+                              })
+                            }
+                            title="Open in Admin Map"
+                          >
+                            View location ↗
+                          </button>
+                        }
+                      />
                     </div>
+
                     {/* Secondary crop (if any) */}
                     {crop.intercrop_crop_name && (
                       <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2">
@@ -500,14 +571,16 @@ const ManageCrop = () => {
                             : ""}
                         </div>
                         <div className="mt-0.5 text-[12px] text-emerald-800">
-                          {crop.intercrop_estimated_volume
-                            ? <>
-                                Est. yield:{" "}
-                                {fmtNum(crop.intercrop_estimated_volume)}{" "}
-                                {yieldUnitMap[crop.intercrop_crop_type_id] ||
-                                  "units"}
-                              </>
-                            : "No estimated yield recorded"}
+                          {crop.intercrop_estimated_volume ? (
+                            <>
+                              Est. yield:{" "}
+                              {fmtNum(crop.intercrop_estimated_volume)}{" "}
+                              {yieldUnitMap[crop.intercrop_crop_type_id] ||
+                                "units"}
+                            </>
+                          ) : (
+                            "No estimated yield recorded"
+                          )}
                         </div>
                         {crop.intercrop_cropping_system && (
                           <div className="mt-0.5 text-[11px] text-emerald-700/80">
@@ -624,11 +697,11 @@ const ManageCrop = () => {
       {/* Edit Modal */}
       {editingCrop && (
         <div
-          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-4 overflow-y-auto"
           onClick={() => setEditingCrop(null)}
         >
           <div
-            className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl ring-1 ring-black/5"
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl ring-1 ring-black/5"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -820,6 +893,125 @@ const ManageCrop = () => {
                   </p>
                 </div>
 
+                {/* Intercropping / secondary crop */}
+                <div className="md:col-span-2 mt-2 border-t border-slate-100 pt-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wide">
+                      Intercropping (secondary crop)
+                    </span>
+                    <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        name="is_intercropped"
+                        checked={Number(editForm.is_intercropped) === 1}
+                        onChange={handleEditChange}
+                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
+                      />
+                      <span>This field is intercropped</span>
+                    </label>
+                  </div>
+
+                  {Number(editForm.is_intercropped) === 1 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Secondary crop type */}
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Secondary crop type
+                        </label>
+                        <select
+                          name="intercrop_crop_type_id"
+                          value={editForm.intercrop_crop_type_id || ""}
+                          onChange={handleEditChange}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        >
+                          <option value="">— Select crop —</option>
+                          {cropTypes.map((type) => (
+                            <option key={type.id} value={type.id}>
+                              {type.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Secondary variety */}
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Secondary variety
+                        </label>
+                        <select
+                          name="intercrop_variety_id"
+                          value={editForm.intercrop_variety_id || ""}
+                          onChange={handleEditChange}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        >
+                          <option value="">— Select variety —</option>
+                          {interVarieties.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Secondary estimated volume */}
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Secondary estimated volume
+                        </label>
+                        <div className="relative">
+                          <input
+                            name="intercrop_estimated_volume"
+                            value={editForm.intercrop_estimated_volume || ""}
+                            onChange={handleEditChange}
+                            inputMode="decimal"
+                            placeholder="e.g., 100"
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 pr-16 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          />
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-slate-500">
+                            {yieldUnitMap[editForm.intercrop_crop_type_id] ||
+                              "units"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Cropping system label (e.g. strip, relay…) */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Cropping system (label)
+                    </label>
+                    <select
+                      name="intercrop_cropping_system"
+                      value={editForm.intercrop_cropping_system || ""}
+                      onChange={handleEditChange}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    >
+                      <option value="">— Select cropping system —</option>
+                      <option value="Strip intercropping">Strip intercropping</option>
+                      <option value="Relay intercropping">Relay intercropping</option>
+                      <option value="Mixed intercropping">Mixed intercropping</option>
+                      <option value="Row intercropping">Row intercropping</option>
+                      <option value="Alley cropping">Alley cropping</option>
+                      <option value="Others">Others</option>
+                    </select>
+                  </div>
+                      {/* Cropping description */}
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Intercrop description
+                        </label>
+                        <textarea
+                          name="intercrop_cropping_description"
+                          value={editForm.intercrop_cropping_description || ""}
+                          onChange={handleEditChange}
+                          rows={2}
+                          placeholder="Describe pattern, row distance, relay schedule, etc."
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Notes */}
                 <div className="md:col-span-2">
                   <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -860,13 +1052,15 @@ const ManageCrop = () => {
 
       {/* View All Modal */}
       {viewingCrop && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
-          <div className="bg-white p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl relative">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white p-6 md:p-8 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl relative">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">
                   {viewingCrop.crop_name}
-                  {viewingCrop.variety_name ? ` · ${viewingCrop.variety_name}` : ""}
+                  {viewingCrop.variety_name
+                    ? ` · ${viewingCrop.variety_name}`
+                    : ""}
                 </h3>
                 <p className="text-sm text-slate-500">
                   {viewingCrop.crop_barangay || "—"}
@@ -897,8 +1091,14 @@ const ManageCrop = () => {
                       : "N/A"
                   }
                 />
-                <Stat label="Mobile" value={viewingCrop.farmer_mobile || "N/A"} />
-                <Stat label="Barangay" value={viewingCrop.farmer_barangay || "N/A"} />
+                <Stat
+                  label="Mobile"
+                  value={viewingCrop.farmer_mobile || "N/A"}
+                />
+                <Stat
+                  label="Barangay"
+                  value={viewingCrop.farmer_barangay || "N/A"}
+                />
                 <Stat
                   label="Full Address"
                   value={
@@ -912,7 +1112,10 @@ const ManageCrop = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
               <Stat label="Planted" value={fmtDate(viewingCrop.planted_date)} />
-              <Stat label="Harvest" value={fmtDate(viewingCrop.estimated_harvest)} />
+              <Stat
+                label="Harvest"
+                value={fmtDate(viewingCrop.estimated_harvest)}
+              />
               <Stat
                 label="Volume"
                 value={`${fmtNum(viewingCrop.estimated_volume)} ${
@@ -923,10 +1126,10 @@ const ManageCrop = () => {
                 label="Hectares"
                 value={fmtNum(viewingCrop.estimated_hectares)}
               />
+              <Stat label="Harvest status" value={viewingHarvestLabel} />
             </div>
 
-
-                        {/* Secondary crop in modal */}
+            {/* Secondary crop in modal */}
             {viewingCrop.intercrop_crop_name && (
               <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
                 <div className="text-[11px] uppercase tracking-wide text-emerald-700 mb-1">
@@ -939,14 +1142,16 @@ const ManageCrop = () => {
                     : ""}
                 </div>
                 <div className="mt-1 text-[13px] text-emerald-900">
-                  {viewingCrop.intercrop_estimated_volume
-                    ? <>
-                        Est. yield:{" "}
-                        {fmtNum(viewingCrop.intercrop_estimated_volume)}{" "}
-                        {yieldUnitMap[viewingCrop.intercrop_crop_type_id] ||
-                          "units"}
-                      </>
-                    : "No estimated yield recorded"}
+                  {viewingCrop.intercrop_estimated_volume ? (
+                    <>
+                      Est. yield:{" "}
+                      {fmtNum(viewingCrop.intercrop_estimated_volume)}{" "}
+                      {yieldUnitMap[viewingCrop.intercrop_crop_type_id] ||
+                        "units"}
+                    </>
+                  ) : (
+                    "No estimated yield recorded"
+                  )}
                 </div>
                 {viewingCrop.intercrop_cropping_system && (
                   <div className="mt-1 text-[12px] text-emerald-700/80">
@@ -960,7 +1165,6 @@ const ManageCrop = () => {
                 )}
               </div>
             )}
-
 
             {viewingCrop.note && viewingCrop.note.trim() && (
               <div className="mt-4">
@@ -1037,7 +1241,9 @@ function NoteClamp({ text, className = "" }) {
         Note
       </div>
       <p
-        className={`text-[14px] text-slate-700 ${expanded ? "" : "line-clamp-3"}`}
+        className={`text-[14px] text-slate-700 ${
+          expanded ? "" : "line-clamp-3"
+        }`}
         style={
           !expanded
             ? {
@@ -1082,8 +1288,8 @@ function PageBtn({ children, disabled, onClick, aria }) {
 
 function ConfirmDialog({ title, message, onCancel, onConfirm }) {
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6">
+    <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl shadow-2xl p-6">
         <h4 className="text-lg font-semibold text-slate-900">{title}</h4>
         <p className="mt-2 text-sm text-slate-700">{message}</p>
         <div className="mt-6 flex justify-end gap-2">
@@ -1122,7 +1328,9 @@ const SkeletonCard = () => (
 const EmptyState = ({ onClear }) => (
   <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-10 text-center">
     <h4 className="text-lg font-semibold text-slate-900">No crops found</h4>
-    <p className="mt-1 text-slate-600">Try adjusting the filters or your search.</p>
+    <p className="mt-1 text-slate-600">
+      Try adjusting the filters or your search.
+    </p>
     <button
       onClick={onClear}
       className="mt-4 inline-flex items-center px-3 py-2 rounded-md border border-slate-300 hover:bg-slate-50"
