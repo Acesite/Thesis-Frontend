@@ -520,11 +520,11 @@ const ManageCrop = () => {
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
                       <Stat label="Planted" value={fmtDate(crop.planted_date)} />
                       <Stat
-                        label="Harvest"
+                        label="Estimated Harvest"
                         value={fmtDate(crop.estimated_harvest)}
                       />
                       <Stat
-                        label="Volume"
+                        label="Estimated Volume"
                         value={`${fmtNum(crop.estimated_volume)} ${
                           yieldUnitMap[crop.crop_type_id] || "units"
                         }`}
@@ -809,7 +809,7 @@ const ManageCrop = () => {
                 {/* Volume */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Estimated volume
+                    Estimated volumes
                   </label>
                   <div className="relative">
                     <input

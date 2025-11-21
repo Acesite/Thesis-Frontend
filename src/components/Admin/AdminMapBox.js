@@ -1260,6 +1260,15 @@ const paintStyle = {
     loadPolygons,
     highlightSelection,
   ]);
+// markers should also follow crop + harvest filters
+useEffect(() => {
+  if (!map.current) return;
+
+  // if user hid markers with the toggle, don't redraw them
+  if (!areMarkersVisible) return;
+
+  renderSavedMarkers();
+}, [selectedCropType, harvestFilter, areMarkersVisible, renderSavedMarkers]);
 
   // lock toggle
   useEffect(() => {
