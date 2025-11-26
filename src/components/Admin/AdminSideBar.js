@@ -5,7 +5,6 @@ import Button from "./MapControls/Button";
 import clsx from "clsx";
 import axios from "axios";
 
-
 // ─────────────────────────────────────────────────────────────
 // Utilities & small UI primitives
 // ─────────────────────────────────────────────────────────────
@@ -14,7 +13,9 @@ const fmt = (v) => (v ?? v === 0 ? v : "—");
 
 const Section = ({ title, children }) => (
   <div className="rounded-xl border border-gray-200 bg-white p-4 mb-4">
-    {title && <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>}
+    {title && (
+      <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
+    )}
     {children}
   </div>
 );
@@ -55,14 +56,21 @@ const AdminSideBar = ({
   setSelectedCropType,
   setEnlargedImage,
   onCropUpdated,
-  harvestFilter,        // coming from parent
-  setHarvestFilter,     // coming from parent
+  harvestFilter, // coming from parent
+  setHarvestFilter, // coming from parent
+
+  // global timeline filter for map (no per-crop history snapshot anymore)
+  timelineMode,
+  setTimelineMode,
+  timelineFrom,
+  setTimelineFrom,
+  timelineTo,
+  setTimelineTo,
 }) => {
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [barangayDetails, setBarangayDetails] = useState(null);
   const [showCropDropdown, setShowCropDropdown] = useState(false);
   const navigate = useNavigate();
-
 
   // ───────────────────────────────────────────────────────────
   // Barangay data
@@ -122,12 +130,95 @@ const AdminSideBar = ({
   // helper to know if ANY crop is harvested
   function isCropHarvested(crop) {
     if (!crop) return false;
+    const props = crop.properties || crop;
     return (
-      Number(crop.is_harvested) === 1 ||
-      crop.is_harvested === true ||
-      !!crop.harvested_date
+      Number(props.is_harvested) === 1 ||
+      props.is_harvested === true ||
+      !!props.harvested_date
     );
   }
+
+  // helper: derive harvest year (use harvested_date if present, else estimated_harvest)
+  const getHarvestYear = (crop) => {
+    if (!crop) return null;
+    const props = crop.properties || crop;
+    const raw = props.harvested_date || props.estimated_harvest;
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.getFullYear();
+  };
+
+  // ───────────────────────────────────────────────────────────
+  // Global harvest history filter (on map)
+  // ───────────────────────────────────────────────────────────
+  const currentYear = new Date().getFullYear();
+
+  const [historyYear, setHistoryYear] = useState(String(currentYear));
+  const [historyMonthFrom, setHistoryMonthFrom] = useState("1");
+  const [historyMonthTo, setHistoryMonthTo] = useState("12");
+
+  // 🔹 NEW: year-comparison state
+  const [compareYearA, setCompareYearA] = useState(String(currentYear - 1));
+  const [compareYearB, setCompareYearB] = useState(String(currentYear));
+
+  // derived: are we currently in "harvest history" mode globally?
+  const historyEnabled =
+    timelineMode === "harvest" && harvestFilter === "harvested";
+
+  const syncTimelineFromTo = (year, fromMonth, toMonth) => {
+    if (!setTimelineFrom || !setTimelineTo) return;
+    if (!year) {
+      setTimelineFrom("");
+      setTimelineTo("");
+      return;
+    }
+    const pad = (m) => String(m).padStart(2, "0");
+    setTimelineFrom(`${year}-${pad(fromMonth)}`);
+    setTimelineTo(`${year}-${pad(toMonth)}`);
+  };
+
+  const handleHistoryToggle = (on) => {
+    if (on) {
+      setTimelineMode?.("harvest");
+      setHarvestFilter?.("harvested");
+      syncTimelineFromTo(historyYear, historyMonthFrom, historyMonthTo);
+    } else {
+      setTimelineMode?.("planted");
+      setHarvestFilter?.("not_harvested");
+      setTimelineFrom?.("");
+      setTimelineTo?.("");
+    }
+  };
+
+  const handleHistoryYearChange = (value) => {
+    setHistoryYear(value);
+    if (historyEnabled) {
+      syncTimelineFromTo(value, historyMonthFrom, historyMonthTo);
+    }
+  };
+
+  const handleHistoryMonthFromChange = (value) => {
+    setHistoryMonthFrom(value);
+    if (historyEnabled) {
+      syncTimelineFromTo(historyYear, value, historyMonthTo);
+    }
+  };
+
+  const handleHistoryMonthToChange = (value) => {
+    setHistoryMonthTo(value);
+    if (historyEnabled) {
+      syncTimelineFromTo(historyYear, historyMonthFrom, value);
+    }
+  };
+
+  // 🔹 quick apply a whole year to the global map timeline
+  const handleApplyYearToMap = (year) => {
+    if (!year) return;
+    setTimelineMode?.("harvest");
+    setHarvestFilter?.("harvested");
+    syncTimelineFromTo(year, 1, 12); // Jan–Dec of that year
+  };
 
   // ───────────────────────────────────────────────────────────
   // Derived secondary-crop info from selectedCrop
@@ -165,6 +256,40 @@ const AdminSideBar = ({
 
   const hasSecondaryCrop =
     !!secondaryCropTypeId || !!secondaryVolume || !!isIntercroppedFlag;
+
+  // ───────────────────────────────────────────────────────────
+  // Harvest-by-year stats (for Year-vs-Year comparison)
+  // ───────────────────────────────────────────────────────────
+  const harvestedCropsForStats = Array.isArray(crops)
+    ? crops.filter((c) => isCropHarvested(c))
+    : [];
+
+  const yearStats = {};
+  for (const c of harvestedCropsForStats) {
+    const y = getHarvestYear(c);
+    if (!y) continue;
+    const key = String(y);
+    if (!yearStats[key]) {
+      yearStats[key] = { count: 0, area: 0, volume: 0 };
+    }
+    yearStats[key].count += 1;
+    yearStats[key].area += Number(c.estimated_hectares) || 0;
+    yearStats[key].volume += Number(c.estimated_volume) || 0;
+  }
+
+  const yearOptions = Object.keys(yearStats).sort();
+
+  const statsA = yearStats[compareYearA] || { count: 0, area: 0, volume: 0 };
+  const statsB = yearStats[compareYearB] || { count: 0, area: 0, volume: 0 };
+
+  const maxArea = Math.max(statsA.area, statsB.area, 0.0001);
+  const maxVolume = Math.max(statsA.volume, statsB.volume, 0.0001);
+
+  const formatNum = (n, digits = 2) =>
+    Number(n || 0).toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
 
   // ───────────────────────────────────────────────────────────
   // Handlers
@@ -302,7 +427,7 @@ const AdminSideBar = ({
               </select>
             </div>
 
-            {/* NEW: Harvest status filter */}
+            {/* Harvest status filter */}
             <div className="col-span-2">
               <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
                 Harvest Status
@@ -317,6 +442,291 @@ const AdminSideBar = ({
                 <option value="not_harvested">Not yet harvested</option>
               </select>
             </div>
+          </div>
+
+          {/* Harvest history filter (global, by year/month) */}
+          <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-700">
+                Harvest history on map
+              </span>
+              <label className="inline-flex items-center gap-1 text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-gray-300"
+                  checked={historyEnabled}
+                  onChange={(e) => handleHistoryToggle(e.target.checked)}
+                />
+                <span>{historyEnabled ? "On" : "Off"}</span>
+              </label>
+            </div>
+
+            {historyEnabled && (
+              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                {/* Year */}
+                <div className="col-span-3">
+                  <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                    Year
+                  </label>
+                  <select
+                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                    value={historyYear}
+                    onChange={(e) => handleHistoryYearChange(e.target.value)}
+                  >
+                    {Array.from({ length: 6 }).map((_, i) => {
+                      const y = currentYear - i;
+                      return (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* From month */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                    From
+                  </label>
+                  <select
+                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                    value={historyMonthFrom}
+                    onChange={(e) =>
+                      handleHistoryMonthFromChange(e.target.value)
+                    }
+                  >
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <option key={i + 1} value={String(i + 1)}>
+                        {i + 1}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* To month */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                    To
+                  </label>
+                  <select
+                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                    value={historyMonthTo}
+                    onChange={(e) => handleHistoryMonthToChange(e.target.value)}
+                  >
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <option key={i + 1} value={String(i + 1)}>
+                        {i + 1}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 🔹 Year vs Year harvest comparison */}
+          <div className="mt-4 rounded-lg border border-gray-200 bg-white px-3 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-gray-800">
+                Compare harvest by year
+              </span>
+              {yearOptions.length > 0 && (
+                <span className="text-[10px] text-gray-500">
+                  Based on harvested fields
+                </span>
+              )}
+            </div>
+
+            {!yearOptions.length ? (
+              <p className="text-xs text-gray-500">
+                No harvested crops recorded yet for comparison.
+              </p>
+            ) : (
+              <>
+                {/* Year pickers */}
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block mb-1 font-medium text-gray-600">
+                      Year A
+                    </label>
+                    <select
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                      value={compareYearA}
+                      onChange={(e) => setCompareYearA(e.target.value)}
+                    >
+                      {yearOptions.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-1 font-medium text-gray-600">
+                      Year B
+                    </label>
+                    <select
+                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                      value={compareYearB}
+                      onChange={(e) => setCompareYearB(e.target.value)}
+                    >
+                      {yearOptions.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Quick apply to map */}
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyYearToMap(compareYearA)}
+                    className="flex-1 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Show {compareYearA} on map
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyYearToMap(compareYearB)}
+                    className="flex-1 inline-flex items-center justify-center rounded-md border border-emerald-500 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                  >
+                    Show {compareYearB} on map
+                  </button>
+                </div>
+
+                {/* Stats & mini bars */}
+                <div className="mt-4 space-y-3 text-xs">
+                  {/* Field count */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-gray-700">
+                        Fields harvested
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-[11px] text-gray-500 mb-1">
+                          {compareYearA}
+                        </div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {statsA.count}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-gray-500 mb-1">
+                          {compareYearB}
+                        </div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {statsB.count}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Area (ha) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-gray-700">
+                        Total area harvested (ha)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Year A */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-gray-500">
+                            {compareYearA}
+                          </span>
+                          <span className="text-[11px] font-semibold text-gray-900">
+                            {formatNum(statsA.area)}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-emerald-500"
+                            style={{
+                              width: `${(statsA.area / maxArea) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {/* Year B */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-gray-500">
+                            {compareYearB}
+                          </span>
+                          <span className="text-[11px] font-semibold text-gray-900">
+                            {formatNum(statsB.area)}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-emerald-600"
+                            style={{
+                              width: `${(statsB.area / maxArea) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Volume */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-gray-700">
+                        Total estimated volume
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Year A */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-gray-500">
+                            {compareYearA}
+                          </span>
+                          <span className="text-[11px] font-semibold text-gray-900">
+                            {formatNum(statsA.volume)}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-sky-500"
+                            style={{
+                              width: `${(statsA.volume / maxVolume) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                      {/* Year B */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-gray-500">
+                            {compareYearB}
+                          </span>
+                          <span className="text-[11px] font-semibold text-gray-900">
+                            {formatNum(statsB.volume)}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-sky-600"
+                            style={{
+                              width: `${(statsB.volume / maxVolume) * 100}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </Section>
 
@@ -361,10 +771,7 @@ const AdminSideBar = ({
               </div>
 
               <div className="grid grid-cols-2 gap-x-4">
-                <KV
-                  label="Volume"
-                  value={fmt(selectedCrop.estimated_volume)}
-                />
+                <KV label="Volume" value={fmt(selectedCrop.estimated_volume)} />
                 {hasSecondaryCrop && secondaryVolume != null ? (
                   <KV
                     label="Secondary Volume"
@@ -412,10 +819,7 @@ const AdminSideBar = ({
 
               <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-x-4">
                 <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
-                <KV
-                  label="Tagged on"
-                  value={fmtDate(selectedCrop.created_at)}
-                />
+                <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
               </div>
 
               {/* Harvest status + action */}
@@ -510,9 +914,7 @@ const AdminSideBar = ({
             const makeUrl = (u) =>
               /^https?:\/\//i.test(u)
                 ? u
-                : `http://localhost:5000${
-                    u.startsWith("/") ? "" : "/"
-                  }${u}`;
+                : `http://localhost:5000${u.startsWith("/") ? "" : "/"}${u}`;
 
             const photoList = toArray(selectedCrop.photos).map(makeUrl);
             const n = photoList.length;

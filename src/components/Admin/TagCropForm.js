@@ -1,3 +1,4 @@
+// components/User/TagCropForm.js
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { SaveIcon, ArrowRight, ArrowLeft } from "lucide-react";
 
@@ -9,18 +10,6 @@ import {
   polygon as turfPolygon,
   multiPolygon as turfMultiPolygon,
 } from "@turf/helpers";
-
-/* ---------- THEME (anchor to your look) ---------- */
-const THEME = {
-  primary: "green-600",
-  primaryHover: "green-700",
-  subtle: "green-100",
-  text: "gray-900",
-  subtext: "gray-600",
-  border: "gray-200",
-  panel: "white",
-  overlay: "black/40",
-};
 
 /* ---------- CONFIG ---------- */
 const STANDARD_MATURITY_DAYS = {
@@ -48,7 +37,7 @@ const yieldPerHectare = {
   6: 100,
 };
 
-// NEW: lookup table for cropping system IDs
+// lookup table for cropping system IDs
 const CROPPING_SYSTEMS = {
   1: "Monocrop",
   2: "Intercropped (2 crops)",
@@ -150,7 +139,18 @@ function detectBarangayFeature(farmGeometry, barangaysFC) {
   return;
 }
 
-/* ---------- REUSABLE FIELD WRAPPERS ---------- */
+/* ---------- SMALL UI PIECES ---------- */
+
+const Section = ({ title, subtitle, children }) => (
+  <div>
+    <div className="mb-3">
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+    </div>
+    {children}
+  </div>
+);
+
 const Field = ({ label, required, hint, error, children }) => (
   <div>
     <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -162,16 +162,20 @@ const Field = ({ label, required, hint, error, children }) => (
   </div>
 );
 
+const ErrorText = ({ children }) => (
+  <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+    {children}
+  </div>
+);
+
 const baseInputClasses =
-  "w-full rounded-xl px-4 py-3 bg-white text-base focus:outline-none focus:ring-2";
+  "w-full rounded-xl px-4 py-3 bg-white text-sm focus:outline-none focus:ring-2";
 
 function decorateClasses(hasError) {
-  // When error, force red; else use theme
+  // When error, force red; else use green theme
   return hasError
     ? ["border-2 border-red-500 focus:ring-red-500 focus:border-red-500"]
-    : [
-        `border-2 border-${THEME.border} focus:ring-${THEME.primary} focus:border-${THEME.primary}`,
-      ];
+    : ["border-2 border-gray-200 focus:ring-green-600 focus:border-green-600"];
 }
 
 const Input = ({ error, className, ...props }) => (
@@ -204,23 +208,74 @@ const Textarea = ({ error, className, ...props }) => (
   />
 );
 
-/** Compact input with a right-side unit (reduces the big internal gap) */
+/** Compact input with right-side unit */
 const SuffixInput = ({ suffix, error, inputProps }) => (
   <div className="relative">
     <input
       {...inputProps}
       className={[
         baseInputClasses,
-        "pr-12", // tighter right padding
+        "pr-12",
         ...decorateClasses(!!error),
         inputProps?.className || "",
       ].join(" ")}
     />
-    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 select-none">
+    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 select-none">
       {suffix}
     </span>
   </div>
 );
+
+const Pill = ({ color = "emerald", children }) => {
+  const colorMap = {
+    emerald: {
+      bg: "bg-emerald-50",
+      text: "text-emerald-700",
+      border: "border-emerald-200",
+      dot: "bg-emerald-600",
+    },
+    blue: {
+      bg: "bg-blue-50",
+      text: "text-blue-700",
+      border: "border-blue-200",
+      dot: "bg-blue-600",
+    },
+    gray: {
+      bg: "bg-gray-100",
+      text: "text-gray-700",
+      border: "border-gray-200",
+      dot: "bg-gray-500",
+    },
+  };
+  const c = colorMap[color] || colorMap.emerald;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${c.bg} ${c.text} border ${c.border}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+      {children}
+    </span>
+  );
+};
+
+/* ---------- WIZARD STEPS ---------- */
+const STEPS = [
+  {
+    id: 1,
+    title: "Crop & dates",
+    subtitle: "Crop type, ecosystem, planting",
+  },
+  {
+    id: 2,
+    title: "Area & location",
+    subtitle: "Cropping system, area, barangay",
+  },
+  {
+    id: 3,
+    title: "Farmer details",
+    subtitle: "Owner / farmer information",
+  },
+];
 
 /* ---------- COMPONENT ---------- */
 const TagCropForm = ({
@@ -229,10 +284,10 @@ const TagCropForm = ({
   defaultLocation,
   adminId,
 
-  // NEW: pass your full Barangay FeatureCollection (Ma-ao, Taloc, Dulao, …)
+  // full Barangay FeatureCollection
   barangaysFC,
 
-  // NEW: pass the drawn/edited farm polygon (GeoJSON Polygon or MultiPolygon)
+  // drawn/edited farm polygon (GeoJSON Polygon or MultiPolygon)
   farmGeometry,
 
   // (kept for backward compatibility)
@@ -258,13 +313,12 @@ const TagCropForm = ({
   const [estimatedVolume, setEstimatedVolume] = useState("");
   const [volumeTouched, setVolumeTouched] = useState(false);
 
-  // NEW: secondary crop yield
+  // Secondary crop yield + area
   const [secondaryEstimatedVolume, setSecondaryEstimatedVolume] = useState("");
   const [secondaryVolumeTouched, setSecondaryVolumeTouched] = useState(false);
-  // NEW: secondary crop area (ha)
   const [secondaryHectares, setSecondaryHectares] = useState("");
 
-  // NEW: intercropping
+  // Intercropping
   const [croppingSystemId, setCroppingSystemId] = useState("1");
   const [isIntercropped, setIsIntercropped] = useState(false);
   const [interCropTypeId, setInterCropTypeId] = useState("");
@@ -285,19 +339,19 @@ const TagCropForm = ({
   // Review Modal
   const [showConfirmation, setShowConfirmation] = useState(false);
 
-  // NEW: detected barangay feature
+  // detected barangay feature
   const [detectedBarangayName, setDetectedBarangayName] = useState("");
   const [detectedBarangayFeature, setDetectedBarangayFeature] = useState(null);
 
-  // NEW: elevation (meters)
+  // elevation (meters)
   const [avgElevation, setAvgElevation] = useState("");
 
   // Errors
   const [errors, setErrors] = useState({});
 
-  /* ---------- EFFECTS / DERIVED ---------- */
+  /* ---------- DERIVED ---------- */
 
-  // Build the dropdown list
+  // Build barangay dropdown list
   const availableFromFC = useMemo(
     () => (barangaysFC ? listBarangayNamesFromFC(barangaysFC) : []),
     [barangaysFC]
@@ -316,17 +370,17 @@ const TagCropForm = ({
     return inferredTop && !uniq.has(inferredTop) ? [inferredTop, ...base] : base;
   }, [availableBarangays, availableFromFC, detectedBarangayName, selectedBarangay]);
 
-  // Try to detect barangay from the farm polygon
+  // Try to detect barangay from farm polygon
   useEffect(() => {
     const res = detectBarangayFeature(farmGeometry, barangaysFC);
     if (res?.name) {
       setDetectedBarangayName(res.name);
       setDetectedBarangayFeature(res.feature || null);
 
-      // Prefill the Location field (step 1) if empty
+      // Prefill Location barangay if empty
       setManualBarangay((cur) => cur || res.name);
 
-      // Prefill Farmer Barangay (step 2) if empty
+      // Prefill Farmer barangay if empty
       setFarmerBarangay((cur) => cur || res.name);
     }
   }, [farmGeometry, barangaysFC]);
@@ -339,7 +393,7 @@ const TagCropForm = ({
     }
   }, [selectedBarangay]);
 
-  // If user picks a Location barangay (Step 1), auto-fill Farmer barangay if still empty
+  // If user picks a Location barangay, auto-fill Farmer barangay if still empty
   useEffect(() => {
     if (manualBarangay && !farmerBarangay) {
       setFarmerBarangay(manualBarangay);
@@ -371,7 +425,6 @@ const TagCropForm = ({
     return (yph * ha).toFixed(2);
   }, [selectedCropType, hectares]);
 
-  // NEW: secondary auto volume candidate based on secondary crop type + secondary area (or full area if blank)
   const secondaryAutoVolumeCandidate = useMemo(() => {
     const yph = yieldPerHectare[interCropTypeId];
     const ha = Number(secondaryHectares || hectares);
@@ -387,7 +440,6 @@ const TagCropForm = ({
     if (!volumeTouched) setEstimatedVolume(autoVolumeCandidate || "");
   }, [autoVolumeCandidate, volumeTouched]);
 
-  // NEW: auto-fill secondary estimated volume if user hasn't touched it
   useEffect(() => {
     if (!secondaryVolumeTouched) {
       setSecondaryEstimatedVolume(secondaryAutoVolumeCandidate || "");
@@ -407,7 +459,7 @@ const TagCropForm = ({
     if (defaultLocation?.hectares) setHectares(defaultLocation.hectares);
   }, [defaultLocation]);
 
-  // NEW: default avg elevation from defaultLocation (meters)
+  // Default avg elevation from defaultLocation (meters)
   useEffect(() => {
     if (
       defaultLocation &&
@@ -418,12 +470,7 @@ const TagCropForm = ({
     }
   }, [defaultLocation]);
 
-  // (kept from earlier for safety)
-  useEffect(() => {
-    if (selectedBarangay && !manualBarangay) setManualBarangay(selectedBarangay);
-  }, [selectedBarangay]); // eslint-disable-line
-
-  // Varieties for selected crop
+  // varieties for selected crop
   useEffect(() => {
     if (!selectedCropType) {
       setDynamicVarieties([]);
@@ -436,7 +483,7 @@ const TagCropForm = ({
       .catch((err) => console.error("Failed to load varieties:", err));
   }, [selectedCropType]);
 
-  // Varieties for SECOND (intercrop) crop
+  // varieties for secondary (intercrop) crop
   useEffect(() => {
     if (!interCropTypeId) {
       setIntercropVarieties([]);
@@ -454,6 +501,7 @@ const TagCropForm = ({
   const setFieldError = (field, message) =>
     setErrors((e) => ({ ...e, [field]: message || "" }));
 
+  // Step 1: crop & dates
   const validateStep1 = () => {
     const newErr = {};
 
@@ -468,11 +516,6 @@ const TagCropForm = ({
       newErr.plantedDate = "Please select the planting date.";
     }
 
-    const h = Number(hectares);
-    if (!hectares || !Number.isFinite(h) || h <= 0) {
-      newErr.hectares = "Area must be a number greater than 0.";
-    }
-
     if (estimatedHarvest) {
       const p = new Date(plantedDate);
       const eh = new Date(estimatedHarvest);
@@ -482,13 +525,31 @@ const TagCropForm = ({
       }
     }
 
+    setErrors((prev) => ({ ...prev, ...newErr }));
+    return Object.keys(newErr).length === 0;
+  };
+
+  // Step 2: area, cropping system, barangay
+  const validateStep2 = () => {
+    const newErr = {};
+
+    const h = Number(hectares);
+    if (!hectares || !Number.isFinite(h) || h <= 0) {
+      newErr.hectares = "Area must be a number greater than 0.";
+    }
+
     if (!manualBarangay) newErr.manualBarangay = "Please choose a barangay.";
+
+    if ((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId) {
+      newErr.interCropTypeId = "Please select the secondary crop type.";
+    }
 
     setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
   };
 
-  const validateStep2 = () => {
+  // Step 3: farmer details
+  const validateStep3 = () => {
     const newErr = {};
 
     if (!farmerFirstName.trim())
@@ -507,10 +568,6 @@ const TagCropForm = ({
     if (!farmerAddress.trim())
       newErr.farmerAddress = "Complete address is required.";
 
-    if ((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId) {
-      newErr.interCropTypeId = "Please select the secondary crop type.";
-    }
-
     setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
   };
@@ -518,13 +575,14 @@ const TagCropForm = ({
   const isStep1Valid = () =>
     selectedCropType &&
     plantedDate &&
-    hectares &&
-    manualBarangay &&
-    (!(ecosystems?.length > 0) || selectedEcosystem) &&
-    // if intercropped → require secondary crop type
-    !((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId);
+    (!(ecosystems?.length > 0) || selectedEcosystem);
 
   const isStep2Valid = () =>
+    hectares &&
+    manualBarangay &&
+    !((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId);
+
+  const isStep3Valid = () =>
     farmerFirstName &&
     farmerLastName &&
     farmerMobile &&
@@ -532,26 +590,31 @@ const TagCropForm = ({
     farmerAddress;
 
   /* ---------- HANDLERS ---------- */
+
   const handleShowConfirmation = () => {
-    const ok = validateStep2();
+    const ok = validateStep3();
     if (!ok) return;
     setShowConfirmation(true);
   };
 
   const handleNext = () => {
-    const ok = validateStep1();
-    if (currentStep === 1 && ok) {
-      // If farmer barangay still empty, mirror the chosen/detected one
-      if (!farmerBarangay) {
-        setFarmerBarangay(
-          manualBarangay || detectedBarangayName || selectedBarangay || ""
-        );
-      }
-      setCurrentStep(2);
+    let ok = true;
+    if (currentStep === 1) ok = validateStep1();
+    else if (currentStep === 2) ok = validateStep2();
+    if (!ok) return;
+
+    // When moving from Area step to Farmer step, default farmer barangay
+    if (currentStep === 2 && !farmerBarangay) {
+      setFarmerBarangay(
+        manualBarangay || detectedBarangayName || selectedBarangay || ""
+      );
     }
+
+    setCurrentStep((s) => Math.min(s + 1, STEPS.length));
   };
 
-  const handleBack = () => currentStep > 1 && setCurrentStep(currentStep - 1);
+  const handleBack = () =>
+    setCurrentStep((s) => Math.max(s - 1, 1));
 
   const handlePhotosChange = (e) => {
     const files = Array.from(e.target.files || []);
@@ -570,14 +633,14 @@ const TagCropForm = ({
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
 
-    // Validate both steps before final submit
     const ok1 = validateStep1();
     const ok2 = validateStep2();
-    if (!(ok1 && ok2)) return;
+    const ok3 = validateStep3();
+    if (!(ok1 && ok2 && ok3)) return;
 
     setShowConfirmation(false);
 
-    // Prefer caller-provided, else derive coordinates from farmGeometry (outer ring)
+    // Prefer caller-provided, else derive coordinates from farmGeometry
     const coordsFromDefault = defaultLocation?.coordinates || [];
     const coordsFromFarm =
       farmGeometry?.type === "Polygon"
@@ -590,6 +653,7 @@ const TagCropForm = ({
       CROPPING_SYSTEM_KEYS[croppingSystemId] || "monocrop";
 
     const formData = new FormData();
+
     // main crop
     formData.append("ecosystem_id", selectedEcosystem || "");
     formData.append("crop_type_id", String(selectedCropType || ""));
@@ -600,9 +664,9 @@ const TagCropForm = ({
     formData.append("estimatedHectares", hectares || "");
     formData.append("note", note || "");
 
-    // NEW: intercropping fields
-    formData.append("cropping_system_id", croppingSystemId || ""); // numeric (1..5) → stored in tbl_crops
-    formData.append("cropping_system", croppingSystemKey); // string     → used for labels/descriptions
+    // intercropping fields
+    formData.append("cropping_system_id", croppingSystemId || "");
+    formData.append("cropping_system", croppingSystemKey);
     formData.append("is_intercropped", isIntercropped ? "1" : "0");
     formData.append("intercrop_crop_type_id", interCropTypeId || "");
     formData.append("intercrop_variety_id", intercropVarietyId || "");
@@ -610,21 +674,17 @@ const TagCropForm = ({
       "intercrop_estimated_volume",
       secondaryEstimatedVolume || ""
     );
-    // NEW: secondary area (ha) – if blank, fall back to full field area
     formData.append(
       "intercrop_hectares",
       secondaryHectares || hectares || ""
     );
 
-    // keep your original coordinates field (not displayed in UI)
     formData.append("coordinates", JSON.stringify(farmCoords));
 
-    // prefer manual selection; fall back to detection
     const finalBarangay =
       manualBarangay || detectedBarangayName || selectedBarangay || "";
     formData.append("barangay", finalBarangay);
 
-    // include detected feature details
     formData.append("detected_barangay_name", detectedBarangayName || "");
     formData.append(
       "detected_barangay_feature_properties",
@@ -635,7 +695,7 @@ const TagCropForm = ({
       JSON.stringify(detectedBarangayFeature?.geometry || {})
     );
 
-    // 🔹 include average elevation (meters, optional)
+    // avg elevation (meters, optional)
     formData.append("avg_elevation_m", avgElevation || "");
 
     if (adminId) formData.append("admin_id", String(adminId));
@@ -674,7 +734,7 @@ const TagCropForm = ({
     setFarmerBarangay("");
     setFarmerAddress("");
     setSelectedEcosystem("");
-    setAvgElevation(""); // 🔹 reset elevation
+    setAvgElevation("");
     setErrors({});
   };
 
@@ -689,791 +749,811 @@ const TagCropForm = ({
     return variety ? variety.name : "—";
   };
 
-  // NEW: label helper for cropping system (uses CROPPING_SYSTEMS so it's not unused)
   const getCroppingSystemLabel = () => {
     const idNum = Number(croppingSystemId);
     return CROPPING_SYSTEMS[idNum] || "Monocrop";
   };
 
   /* ---------- UI ---------- */
+
+  const activeStepMeta = STEPS.find((s) => s.id === currentStep);
+  const totalSteps = STEPS.length;
+
   return (
-    <div
-      className={`fixed inset-0 bg-${THEME.overlay} backdrop-blur-sm z-50 flex items-center justify-center p-4`}
-    >
-      <div
-        className={`bg-${THEME.panel} rounded-2xl shadow-2xl w-full max-w-2xl max-h-[86vh] overflow-hidden flex flex-col`}
-      >
-        {/* Header (STICKY) */}
-        <div
-          className={`sticky top-0 z-10 px-6 md:px-8 pt-6 pb-4 bg-white/95 backdrop-blur border-b`}
-        >
-          <h2
-            className={`text-xl md:text-2xl font-bold text-${THEME.text} text-center`}
-          >
-            Tag Crop
-          </h2>
-
-          {/* Stepper */}
-          <div className="mt-3 mx-auto w-full max-w-sm">
-            <div className="flex items-center justify-center gap-2 md:gap-3">
-              <div
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
-                  currentStep === 1
-                    ? `bg-${THEME.subtle} text-${THEME.primary}`
-                    : "bg-gray-100 text-gray-400"
-                }`}
-              >
-                <span
-                  className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
-                    currentStep === 1
-                      ? `bg-${THEME.primary} text-white`
-                      : "bg-gray-300 text-gray-600"
-                  }`}
-                >
-                  1
-                </span>
-                <span className="text-sm font-semibold">Crop</span>
+    <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="max-w-2xl w-full">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="max-h-[80vh] lg:max-h-[78vh] overflow-y-auto [scrollbar-gutter:stable]">
+            {/* Sticky header */}
+            <div className="sticky top-0 z-10 px-6 py-5 bg-white/90 backdrop-blur border-b rounded-t-2xl supports-[backdrop-filter]:bg-white/80">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-900">
+                    Tag Crop
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Encode crop and farmer details for this mapped field.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-medium text-gray-500">
+                    Step {currentStep} of {totalSteps}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {activeStepMeta?.title}
+                  </p>
+                </div>
               </div>
 
-              <div className="h-px w-8 bg-gray-200" />
+              {/* Stepper */}
+              <ol className="mt-4 flex items-center gap-3 text-xs font-medium text-gray-500">
+                {STEPS.map((step, index) => {
+                  const isCurrent = step.id === currentStep;
+                  const isCompleted = step.id < currentStep;
+                  return (
+                    <li key={step.id} className="flex items-center gap-2">
+                      <div
+                        className={[
+                          "flex h-6 w-6 items-center justify-center rounded-full border text-[11px]",
+                          isCompleted
+                            ? "bg-green-600 border-green-600 text-white"
+                            : isCurrent
+                            ? "bg-green-50 border-green-600 text-green-700"
+                            : "bg-gray-100 border-gray-300 text-gray-500",
+                        ].join(" ")}
+                      >
+                        {step.id}
+                      </div>
+                      <span
+                        className={
+                          isCurrent || isCompleted
+                            ? "text-gray-900"
+                            : "text-gray-400"
+                        }
+                      >
+                        {step.title}
+                      </span>
+                      {index < STEPS.length - 1 && (
+                        <span className="h-px w-6 bg-gray-200" />
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
 
-              <div
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${
-                  currentStep === 2
-                    ? `bg-${THEME.subtle} text-${THEME.primary}`
-                    : "bg-gray-100 text-gray-400"
-                }`}
-              >
-                <span
-                  className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
-                    currentStep === 2
-                      ? `bg-${THEME.primary} text-white`
-                      : "bg-gray-300 text-gray-600"
-                  }`}
-                >
-                  2
-                </span>
-                <span className="text-sm font-semibold">Farmer</span>
+            {/* Body */}
+            <form onSubmit={handleSubmit} ref={formRef} className="p-6 space-y-7">
+              {/* Context chips */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(manualBarangay || detectedBarangayName || selectedBarangay) && (
+                  <Pill color="blue">
+                    {manualBarangay || detectedBarangayName || selectedBarangay}
+                  </Pill>
+                )}
+                {defaultLocation?.hectares && (
+                  <Pill color="emerald">
+                    {Number(defaultLocation.hectares).toFixed(2)} ha (from map)
+                  </Pill>
+                )}
+                {avgElevation && (
+                  <Pill color="gray">{avgElevation} m elevation</Pill>
+                )}
               </div>
-            </div>
-            <div className="mt-3 h-1 rounded bg-gray-100">
-              <div
-                className={`h-1 rounded bg-${THEME.primary} transition-all duration-300 ${
-                  currentStep === 1 ? "w-1/2" : "w-full"
-                }`}
-              />
-            </div>
-            <p className="mt-2 text-center text-sm text-gray-500">
-              {currentStep === 1 ? "Enter crop details" : "Enter farmer details"}
-            </p>
-          </div>
-        </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 md:px-8 pb-3">
-          <form onSubmit={handleSubmit} ref={formRef} className="space-y-2">
-            {currentStep === 1 && (
-              <div className="space-y-6 animate-fadeIn">
-                {/* Section: Crop Basics */}
-                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                  Crop Basics
-                </h5>
-
-                <div className="space-y-4">
-                  <Field
-                    label="Crop Type"
-                    required
-                    error={errors.selectedCropType}
+              {/* Step contents */}
+              {currentStep === 1 && (
+                <div className="space-y-7 animate-fadeIn">
+                  {/* Crop Basics */}
+                  <Section
+                    title="Crop basics"
+                    subtitle="Main crop planted in this mapped field."
                   >
-                    <Select
-                      error={errors.selectedCropType}
-                      required
-                      value={selectedCropType}
-                      onChange={(e) => {
-                        const id = parseInt(e.target.value);
-                        setSelectedCropType(Number.isFinite(id) ? id : "");
-                        setSelectedVarietyId("");
-                        setFieldError("selectedCropType", "");
-                      }}
-                      onBlur={() => {
-                        if (!selectedCropType)
-                          setFieldError(
-                            "selectedCropType",
-                            "Please select a crop type."
-                          );
-                      }}
-                    >
-                      <option value="">Select Crop Type</option>
-                      {cropTypes.map((type) => (
-                        <option key={type.id} value={type.id}>
-                          {type.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-
-                  {selectedCropType && ecosystems.length > 0 && (
-                    <Field
-                      label="Ecosystem"
-                      required
-                      hint="Required for reporting and maps."
-                      error={errors.selectedEcosystem}
-                    >
-                      <Select
-                        error={errors.selectedEcosystem}
-                        value={selectedEcosystem}
-                        onChange={(e) => {
-                          setSelectedEcosystem(e.target.value);
-                          setFieldError("selectedEcosystem", "");
-                        }}
-                        onBlur={() => {
-                          if (!selectedEcosystem)
-                            setFieldError(
-                              "selectedEcosystem",
-                              "Please select an ecosystem."
-                            );
-                        }}
+                    <div className="space-y-4">
+                      <Field
+                        label="Crop type"
+                        required
+                        error={errors.selectedCropType}
                       >
-                        <option value="">Select Ecosystem</option>
-                        {ecosystems.map((ecosystem) => (
-                          <option key={ecosystem.id} value={ecosystem.id}>
-                            {ecosystem.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                  )}
-
-                  <Field label="Variety">
-                    <Select
-                      value={selectedVarietyId}
-                      onChange={(e) => setSelectedVarietyId(e.target.value)}
-                    >
-                      <option value="">Select Variety (Optional)</option>
-                      {dynamicVarieties.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                </div>
-
-                <div className="my-2 h-px bg-gray-100" />
-
-                {/* Section: Dates */}
-                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                  Dates
-                </h5>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field
-                    label="Date Planted"
-                    required
-                    error={errors.plantedDate}
-                  >
-                    <Input
-                      type="date"
-                      required
-                      value={plantedDate}
-                      onChange={(e) => {
-                        setPlantedDate(e.target.value);
-                        setFieldError("plantedDate", "");
-                        // if harvest already set, re-check ordering
-                        if (estimatedHarvest) {
-                          const p = new Date(e.target.value);
-                          const h = new Date(estimatedHarvest);
-                          setFieldError(
-                            "estimatedHarvest",
-                            h < p
-                              ? "Harvest date cannot be before planting date."
-                              : ""
-                          );
-                        }
-                      }}
-                      onBlur={() => {
-                        if (!plantedDate)
-                          setFieldError(
-                            "plantedDate",
-                            "Please select the planting date."
-                          );
-                      }}
-                      error={errors.plantedDate}
-                    />
-                  </Field>
-
-                  <Field
-                    label="Est. Harvest"
-                    hint="Auto-fills based on crop maturity; you can override."
-                    error={errors.estimatedHarvest}
-                  >
-                    <Input
-                      type="date"
-                      value={estimatedHarvest}
-                      onChange={(e) => {
-                        setHarvestTouched(true);
-                        setEstimatedHarvest(e.target.value);
-                        if (plantedDate) {
-                          const p = new Date(plantedDate);
-                          const h = new Date(e.target.value);
-                          setFieldError(
-                            "estimatedHarvest",
-                            h < p
-                              ? "Harvest date cannot be before planting date."
-                              : ""
-                          );
-                        }
-                      }}
-                      onBlur={() => {
-                        if (estimatedHarvest && plantedDate) {
-                          const p = new Date(plantedDate);
-                          const h = new Date(estimatedHarvest);
-                          if (h < p)
-                            setFieldError(
-                              "estimatedHarvest",
-                              "Harvest date cannot be before planting date."
-                            );
-                        }
-                      }}
-                      error={errors.estimatedHarvest}
-                    />
-                  </Field>
-                </div>
-
-                <div className="my-2 h-px bg-gray-100" />
-
-                {/* Section: Cropping System / Intercropping */}
-                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                  Cropping System
-                </h5>
-
-                <div className="space-y-4">
-                  <Field label="Cropping System" required>
-                    <Select
-                      value={croppingSystemId}
-                      onChange={(e) => {
-                        const value = e.target.value; // "1".."5"
-                        setCroppingSystemId(value);
-
-                        if (value === "1") {
-                          // Monocrop → no secondary crop
-                          setIsIntercropped(false);
-                          setInterCropTypeId("");
-                          setIntercropVarietyId("");
-                          setSecondaryVolumeTouched(false);
-                          setSecondaryEstimatedVolume("");
-                          setSecondaryHectares("");
-                          setFieldError("interCropTypeId", "");
-                        } else {
-                          // Any of 2,3,4,5 = some kind of intercropping
-                          setIsIntercropped(true);
-                        }
-                      }}
-                    >
-                      <option value="1">Monocrop</option>
-                      <option value="2">Intercropped (2 crops)</option>
-                      <option value="3">Relay intercropping</option>
-                      <option value="4">Strip intercropping</option>
-                      <option value="5">Mixed cropping / Polyculture</option>
-                    </Select>
-                  </Field>
-
-                  <Field label="Is this field intercropped?">
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="isIntercropped"
-                        type="checkbox"
-                        className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                        checked={isIntercropped}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setIsIntercropped(checked);
-                          if (!checked && croppingSystemId === "1") {
-                            setInterCropTypeId("");
-                            setIntercropVarietyId("");
-                            setSecondaryVolumeTouched(false);
-                            setSecondaryEstimatedVolume("");
-                            setSecondaryHectares("");
-                            setFieldError("interCropTypeId", "");
-                          }
-                        }}
-                      />
-                      <label
-                        htmlFor="isIntercropped"
-                        className="text-sm text-gray-600 select-none"
-                      >
-                        Yes, there is a second crop in this area.
-                      </label>
-                    </div>
-                  </Field>
-
-                  {(croppingSystemId !== "1" || isIntercropped) && (
-                    <>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Field
-                          label="Secondary Crop Type"
+                        <Select
+                          error={errors.selectedCropType}
                           required
-                          error={errors.interCropTypeId}
+                          value={selectedCropType}
+                          onChange={(e) => {
+                            const id = parseInt(e.target.value);
+                            setSelectedCropType(Number.isFinite(id) ? id : "");
+                            setSelectedVarietyId("");
+                            setFieldError("selectedCropType", "");
+                          }}
+                          onBlur={() => {
+                            if (!selectedCropType)
+                              setFieldError(
+                                "selectedCropType",
+                                "Please select a crop type."
+                              );
+                          }}
+                        >
+                          <option value="">Select crop type</option>
+                          {cropTypes.map((type) => (
+                            <option key={type.id} value={type.id}>
+                              {type.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+
+                      {selectedCropType && ecosystems.length > 0 && (
+                        <Field
+                          label="Ecosystem"
+                          required
+                          hint="Required for reporting and maps."
+                          error={errors.selectedEcosystem}
                         >
                           <Select
-                            error={errors.interCropTypeId}
-                            value={interCropTypeId}
+                            error={errors.selectedEcosystem}
+                            value={selectedEcosystem}
                             onChange={(e) => {
-                              const id = parseInt(e.target.value);
-                              setInterCropTypeId(Number.isFinite(id) ? id : "");
-                              setSecondaryVolumeTouched(false); // let auto-calc refresh for new crop
-                              setFieldError(
-                                "interCropTypeId",
-                                Number.isFinite(id)
-                                  ? ""
-                                  : "Please select the secondary crop type."
-                              );
+                              setSelectedEcosystem(e.target.value);
+                              setFieldError("selectedEcosystem", "");
                             }}
                             onBlur={() => {
-                              if (!interCropTypeId) {
+                              if (!selectedEcosystem)
                                 setFieldError(
-                                  "interCropTypeId",
-                                  "Please select the secondary crop type."
+                                  "selectedEcosystem",
+                                  "Please select an ecosystem."
                                 );
-                              }
                             }}
                           >
-                            <option value="">
-                              Select Secondary Crop Type
+                            <option value="">Select ecosystem</option>
+                            {ecosystems.map((ecosystem) => (
+                              <option key={ecosystem.id} value={ecosystem.id}>
+                                {ecosystem.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+                      )}
+
+                      <Field label="Variety">
+                        <Select
+                          value={selectedVarietyId}
+                          onChange={(e) => setSelectedVarietyId(e.target.value)}
+                        >
+                          <option value="">Select variety (optional)</option>
+                          {dynamicVarieties.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
                             </option>
-                            {cropTypes.map((type) => (
-                              <option key={type.id} value={type.id}>
-                                {type.name}
-                              </option>
-                            ))}
-                          </Select>
-                        </Field>
+                          ))}
+                        </Select>
+                      </Field>
+                    </div>
+                  </Section>
 
-                        <Field label="Secondary Variety">
-                          <Select
-                            value={intercropVarietyId}
-                            onChange={(e) =>
-                              setIntercropVarietyId(e.target.value)
-                            }
-                          >
-                            <option value="">Select Variety (Optional)</option>
-                            {intercropVarieties.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {v.name}
-                              </option>
-                            ))}
-                          </Select>
-                        </Field>
-                      </div>
-
-                      {/* NEW: Secondary Area */}
+                  {/* Dates */}
+                  <Section
+                    title="Planting & harvest"
+                    subtitle="Timeline of this crop cycle."
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Field
-                        label="Secondary Area (ha)"
-                        hint="How much of this field is planted with the secondary crop."
+                        label="Date planted"
+                        required
+                        error={errors.plantedDate}
+                      >
+                        <Input
+                          type="date"
+                          required
+                          value={plantedDate}
+                          onChange={(e) => {
+                            setPlantedDate(e.target.value);
+                            setFieldError("plantedDate", "");
+                            if (estimatedHarvest) {
+                              const p = new Date(e.target.value);
+                              const h = new Date(estimatedHarvest);
+                              setFieldError(
+                                "estimatedHarvest",
+                                h < p
+                                  ? "Harvest date cannot be before planting date."
+                                  : ""
+                              );
+                            }
+                          }}
+                          onBlur={() => {
+                            if (!plantedDate)
+                              setFieldError(
+                                "plantedDate",
+                                "Please select the planting date."
+                              );
+                          }}
+                          error={errors.plantedDate}
+                        />
+                      </Field>
+
+                      <Field
+                        label="Estimated harvest"
+                        hint="Auto-fills based on crop maturity; you can override."
+                        error={errors.estimatedHarvest}
+                      >
+                        <Input
+                          type="date"
+                          value={estimatedHarvest}
+                          onChange={(e) => {
+                            setHarvestTouched(true);
+                            setEstimatedHarvest(e.target.value);
+                            if (plantedDate) {
+                              const p = new Date(plantedDate);
+                              const h = new Date(e.target.value);
+                              setFieldError(
+                                "estimatedHarvest",
+                                h < p
+                                  ? "Harvest date cannot be before planting date."
+                                  : ""
+                              );
+                            }
+                          }}
+                          onBlur={() => {
+                            if (estimatedHarvest && plantedDate) {
+                              const p = new Date(plantedDate);
+                              const h = new Date(estimatedHarvest);
+                              if (h < p)
+                                setFieldError(
+                                  "estimatedHarvest",
+                                  "Harvest date cannot be before planting date."
+                                );
+                            }
+                          }}
+                          error={errors.estimatedHarvest}
+                        />
+                      </Field>
+                    </div>
+                  </Section>
+                </div>
+              )}
+
+              {currentStep === 2 && (
+                <div className="space-y-7 animate-fadeIn">
+                  {/* Cropping System */}
+                  <Section
+                    title="Cropping system"
+                    subtitle="Indicate if the field is monocrop or intercropped."
+                  >
+                    <div className="space-y-4">
+                      <Field label="Cropping system" required>
+                        <Select
+                          value={croppingSystemId}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setCroppingSystemId(value);
+
+                            if (value === "1") {
+                              setIsIntercropped(false);
+                              setInterCropTypeId("");
+                              setIntercropVarietyId("");
+                              setSecondaryVolumeTouched(false);
+                              setSecondaryEstimatedVolume("");
+                              setSecondaryHectares("");
+                              setFieldError("interCropTypeId", "");
+                            } else {
+                              setIsIntercropped(true);
+                            }
+                          }}
+                        >
+                          <option value="1">Monocrop</option>
+                          <option value="2">Intercropped (2 crops)</option>
+                          <option value="3">Relay intercropping</option>
+                          <option value="4">Strip intercropping</option>
+                          <option value="5">Mixed cropping / Polyculture</option>
+                        </Select>
+                      </Field>
+
+                      <Field label="Is this field intercropped?">
+                        <div className="flex items-center gap-2">
+                          <input
+                            id="isIntercropped"
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                            checked={isIntercropped}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setIsIntercropped(checked);
+                              if (!checked && croppingSystemId === "1") {
+                                setInterCropTypeId("");
+                                setIntercropVarietyId("");
+                                setSecondaryVolumeTouched(false);
+                                setSecondaryEstimatedVolume("");
+                                setSecondaryHectares("");
+                                setFieldError("interCropTypeId", "");
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor="isIntercropped"
+                            className="text-sm text-gray-600 select-none"
+                          >
+                            Yes, there is a second crop in this area.
+                          </label>
+                        </div>
+                      </Field>
+
+                      {(croppingSystemId !== "1" || isIntercropped) && (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <Field
+                              label="Secondary crop type"
+                              required
+                              error={errors.interCropTypeId}
+                            >
+                              <Select
+                                error={errors.interCropTypeId}
+                                value={interCropTypeId}
+                                onChange={(e) => {
+                                  const id = parseInt(e.target.value);
+                                  setInterCropTypeId(
+                                    Number.isFinite(id) ? id : ""
+                                  );
+                                  setSecondaryVolumeTouched(false);
+                                  setFieldError(
+                                    "interCropTypeId",
+                                    Number.isFinite(id)
+                                      ? ""
+                                      : "Please select the secondary crop type."
+                                  );
+                                }}
+                                onBlur={() => {
+                                  if (!interCropTypeId) {
+                                    setFieldError(
+                                      "interCropTypeId",
+                                      "Please select the secondary crop type."
+                                    );
+                                  }
+                                }}
+                              >
+                                <option value="">
+                                  Select secondary crop type
+                                </option>
+                                {cropTypes.map((type) => (
+                                  <option key={type.id} value={type.id}>
+                                    {type.name}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Field>
+
+                            <Field label="Secondary variety">
+                              <Select
+                                value={intercropVarietyId}
+                                onChange={(e) =>
+                                  setIntercropVarietyId(e.target.value)
+                                }
+                              >
+                                <option value="">
+                                  Select variety (optional)
+                                </option>
+                                {intercropVarieties.map((v) => (
+                                  <option key={v.id} value={v.id}>
+                                    {v.name}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Field>
+                          </div>
+
+                          <Field
+                            label="Secondary area (ha)"
+                            hint="How much of this field is planted with the secondary crop."
+                          >
+                            <SuffixInput
+                              suffix="ha"
+                              inputProps={{
+                                type: "number",
+                                min: "0",
+                                step: "0.01",
+                                value: secondaryHectares,
+                                onChange: (e) =>
+                                  setSecondaryHectares(e.target.value),
+                                placeholder: hectares || "0.00",
+                                className: "text-right",
+                              }}
+                            />
+                          </Field>
+
+                          {interCropTypeId && (
+                            <Field
+                              label={`Secondary est. yield ${
+                                yieldUnitMap[interCropTypeId]
+                                  ? `(${yieldUnitMap[interCropTypeId]})`
+                                  : ""
+                              }`}
+                              hint="Auto-calculated from area × typical yield; you can override."
+                            >
+                              <SuffixInput
+                                suffix={yieldUnitMap[interCropTypeId] || "units"}
+                                inputProps={{
+                                  type: "number",
+                                  min: "0",
+                                  step: "0.1",
+                                  value: secondaryEstimatedVolume,
+                                  onChange: (e) => {
+                                    setSecondaryVolumeTouched(true);
+                                    setSecondaryEstimatedVolume(e.target.value);
+                                  },
+                                  placeholder: "Auto-calculated",
+                                  className: "text-right",
+                                }}
+                              />
+                            </Field>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </Section>
+
+                  {/* Area & Yield */}
+                  <Section
+                    title="Area & yield"
+                    subtitle="Estimated coverage and production."
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Field
+                        label="Area (ha)"
+                        required
+                        error={errors.hectares}
                       >
                         <SuffixInput
                           suffix="ha"
+                          error={errors.hectares}
                           inputProps={{
                             type: "number",
                             min: "0",
                             step: "0.01",
-                            value: secondaryHectares,
-                            onChange: (e) =>
-                              setSecondaryHectares(e.target.value),
-                            placeholder: hectares || "0.00",
+                            required: true,
+                            value: hectares,
+                            onChange: (e) => {
+                              setHectares(e.target.value);
+                              const v = Number(e.target.value);
+                              setFieldError(
+                                "hectares",
+                                !e.target.value || !Number.isFinite(v) || v <= 0
+                                  ? "Area must be a number greater than 0."
+                                  : ""
+                              );
+                            },
+                            placeholder: "0.00",
                             className: "text-right",
                           }}
                         />
                       </Field>
 
-                      {/* Secondary Est. Yield */}
-                      {interCropTypeId && (
-                        <Field
-                          label={`Secondary Est. Yield ${
-                            yieldUnitMap[interCropTypeId]
-                              ? `(${yieldUnitMap[interCropTypeId]})`
-                              : ""
-                          }`}
-                          hint="Auto-calculated from area × typical yield; you can override."
-                        >
-                          <SuffixInput
-                            suffix={yieldUnitMap[interCropTypeId] || "units"}
-                            inputProps={{
-                              type: "number",
-                              min: "0",
-                              step: "0.1",
-                              value: secondaryEstimatedVolume,
-                              onChange: (e) => {
-                                setSecondaryVolumeTouched(true);
-                                setSecondaryEstimatedVolume(e.target.value);
-                              },
-                              placeholder: "Auto-calculated",
-                              className: "text-right",
-                            }}
-                          />
-                        </Field>
-                      )}
-                    </>
-                  )}
-                </div>
+                      <Field
+                        label={`Est. yield ${
+                          yieldUnitMap[selectedCropType]
+                            ? `(${yieldUnitMap[selectedCropType]})`
+                            : ""
+                        }`}
+                        hint="Estimated from area × typical yield; you can override."
+                      >
+                        <SuffixInput
+                          suffix={yieldUnitMap[selectedCropType] || "units"}
+                          inputProps={{
+                            type: "number",
+                            min: "0",
+                            step: "0.1",
+                            value: estimatedVolume,
+                            onChange: (e) => {
+                              setVolumeTouched(true);
+                              setEstimatedVolume(e.target.value);
+                            },
+                            placeholder: "Auto-calculated",
+                            className: "text-right",
+                          }}
+                        />
+                      </Field>
+                    </div>
 
-                <div className="my-2 h-px bg-gray-100" />
-
-                {/* Section: Area & Yield */}
-                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                  Area &amp; Yield
-                </h5>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Area (ha)" required error={errors.hectares}>
-                    <SuffixInput
-                      suffix="ha"
-                      error={errors.hectares}
-                      inputProps={{
-                        type: "number",
-                        min: "0",
-                        step: "0.01",
-                        required: true,
-                        value: hectares,
-                        onChange: (e) => {
-                          setHectares(e.target.value);
-                          const v = Number(e.target.value);
-                          setFieldError(
-                            "hectares",
-                            !e.target.value || !Number.isFinite(v) || v <= 0
-                              ? "Area must be a number greater than 0."
-                              : ""
-                          );
-                        },
-                        placeholder: "0.00",
-                        className: "text-right",
-                      }}
-                    />
-                  </Field>
-
-                  <Field
-                    label={`Est. Yield ${
-                      yieldUnitMap[selectedCropType]
-                        ? `(${yieldUnitMap[selectedCropType]})`
-                        : ""
-                    }`}
-                    hint="We estimate from area × typical yield. You can override."
-                  >
-                    <SuffixInput
-                      suffix={yieldUnitMap[selectedCropType] || "units"}
-                      inputProps={{
-                        type: "number",
-                        min: "0",
-                        step: "0.1",
-                        value: estimatedVolume,
-                        onChange: (e) => {
-                          setVolumeTouched(true);
-                          setEstimatedVolume(e.target.value);
-                        },
-                        placeholder: "Auto-calculated",
-                        className: "text-right",
-                      }}
-                    />
-                  </Field>
-                </div>
-
-                {/* NEW: elevation display */}
-                <Field
-                  label="Avg Elevation (m)"
-                  hint="Approximate from terrain data (optional, read-only)."
-                >
-                  <SuffixInput
-                    suffix="m"
-                    inputProps={{
-                      type: "number",
-                      readOnly: true,
-                      value: avgElevation,
-                      placeholder: "Auto from map",
-                      className: "text-right bg-gray-50 cursor-not-allowed",
-                    }}
-                  />
-                </Field>
-
-                <div className="my-2 h-px bg-gray-100" />
-
-                {/* Section: Location & Notes */}
-                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                  Location &amp; Notes
-                </h5>
-                <div className="space-y-4">
-                  <Field
-                    label="Barangay"
-                    required
-                    error={errors.manualBarangay}
-                  >
-                    <Select
-                      error={errors.manualBarangay}
-                      required
-                      value={manualBarangay}
-                      onChange={(e) => {
-                        setManualBarangay(e.target.value);
-                        setFieldError("manualBarangay", "");
-                      }}
-                      onBlur={() => {
-                        if (!manualBarangay)
-                          setFieldError(
-                            "manualBarangay",
-                            "Please choose a barangay."
-                          );
-                      }}
+                    <Field
+                      label="Average elevation (m)"
+                      hint="Optional, auto-estimated from terrain."
                     >
-                      <option value="">Select Barangay</option>
-                      {mergedBarangays.map((bgy) => (
-                        <option key={bgy} value={bgy}>
-                          {bgy}
-                        </option>
-                      ))}
-                    </Select>
-                    {(detectedBarangayName || selectedBarangay) &&
-                      manualBarangay ===
-                        (detectedBarangayName || selectedBarangay) && (
-                        <div
-                          className={`mt-1 inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-${THEME.subtle} text-${THEME.primary}`}
+                      <SuffixInput
+                        suffix="m"
+                        inputProps={{
+                          type: "number",
+                          readOnly: true,
+                          value: avgElevation,
+                          placeholder: "Auto from map",
+                          className:
+                            "text-right bg-gray-50 cursor-not-allowed",
+                        }}
+                      />
+                    </Field>
+                  </Section>
+
+                  {/* Location & Notes */}
+                  <Section
+                    title="Location & notes"
+                    subtitle="Where this field is located and any observations."
+                  >
+                    <div className="space-y-4">
+                      <Field
+                        label="Barangay"
+                        required
+                        error={errors.manualBarangay}
+                      >
+                        <Select
+                          error={errors.manualBarangay}
+                          required
+                          value={manualBarangay}
+                          onChange={(e) => {
+                            setManualBarangay(e.target.value);
+                            setFieldError("manualBarangay", "");
+                          }}
+                          onBlur={() => {
+                            if (!manualBarangay)
+                              setFieldError(
+                                "manualBarangay",
+                                "Please choose a barangay."
+                              );
+                          }}
                         >
-                          Auto-filled from map
-                        </div>
-                      )}
-                  </Field>
+                          <option value="">Select barangay</option>
+                          {mergedBarangays.map((bgy) => (
+                            <option key={bgy} value={bgy}>
+                              {bgy}
+                            </option>
+                          ))}
+                        </Select>
+                        {(detectedBarangayName || selectedBarangay) &&
+                          manualBarangay ===
+                            (detectedBarangayName || selectedBarangay) && (
+                            <span className="mt-1 inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-200">
+                              <span className="h-1.5 w-1.5 rounded-full bg-green-600" />
+                              Auto-filled from map
+                            </span>
+                          )}
+                      </Field>
 
-                  <Field label="Notes">
-                    <Textarea
-                      rows={3}
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      placeholder="Any observations or notes..."
-                    />
-                  </Field>
+                      <Field label="Notes">
+                        <Textarea
+                          rows={3}
+                          value={note}
+                          onChange={(e) => setNote(e.target.value)}
+                          placeholder="Any observations or notes..."
+                        />
+                      </Field>
 
-                  <Field
-                    label="Photos"
-                    hint={`JPG/PNG/WebP up to ${MAX_PHOTO_MB}MB each (max ${MAX_PHOTO_COUNT} files)`}
-                  >
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handlePhotosChange}
-                      className={[
-                        "w-full border-2 rounded-xl px-4 py-3 bg-white text-base cursor-pointer",
-                        `border-${THEME.border}`,
-                        "file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:font-medium",
-                        `file:bg-${THEME.subtle} file:text-${THEME.primary}`,
-                        `hover:file:bg-${THEME.subtle}`,
-                      ].join(" ")}
-                    />
-                  </Field>
+                      <Field
+                        label="Photos"
+                        hint={`JPG/PNG/WEBP up to ${MAX_PHOTO_MB}MB each (max ${MAX_PHOTO_COUNT} files)`}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handlePhotosChange}
+                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 bg-white text-sm cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:font-medium file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                        />
+                      </Field>
+                    </div>
+                  </Section>
                 </div>
-              </div>
-            )}
+              )}
 
-            {currentStep === 2 && (
-              <div className="space-y-6 animate-fadeIn">
-                <h5 className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                  Farmer Details
-                </h5>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field
-                    label="First Name"
-                    required
-                    error={errors.farmerFirstName}
+              {currentStep === 3 && (
+                // Step 3: Farmer
+                <div className="space-y-7 animate-fadeIn">
+                  <Section
+                    title="Farmer details"
+                    subtitle="Information of the owner / farmer of this field."
                   >
-                    <Input
-                      type="text"
-                      required
-                      value={farmerFirstName}
-                      onChange={(e) => {
-                        setFarmerFirstName(e.target.value);
-                        setFieldError(
-                          "farmerFirstName",
-                          e.target.value.trim()
-                            ? ""
-                            : "First name is required."
-                        );
-                      }}
-                      onBlur={() => {
-                        if (!farmerFirstName.trim())
-                          setFieldError(
-                            "farmerFirstName",
-                            "First name is required."
-                          );
-                      }}
-                      placeholder="Juan"
-                      error={errors.farmerFirstName}
-                    />
-                  </Field>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      
+                      <Field
+                        label="First name"
+                        required
+                        error={errors.farmerFirstName}
+                      >
+                        <Input
+                          type="text"
+                          required
+                          value={farmerFirstName}
+                          onChange={(e) => {
+                            setFarmerFirstName(e.target.value);
+                            setFieldError(
+                              "farmerFirstName",
+                              e.target.value.trim()
+                                ? ""
+                                : "First name is required."
+                            );
+                          }}
+                          onBlur={() => {
+                            if (!farmerFirstName.trim())
+                              setFieldError(
+                                "farmerFirstName",
+                                "First name is required."
+                              );
+                          }}
+                          placeholder="Juan"
+                          error={errors.farmerFirstName}
+                        />
+                      </Field>
 
-                  <Field
-                    label="Last Name"
-                    required
-                    error={errors.farmerLastName}
-                  >
-                    <Input
-                      type="text"
+                      <Field
+                        label="Last name"
+                        required
+                        error={errors.farmerLastName}
+                      >
+                        <Input
+                          type="text"
+                          required
+                          value={farmerLastName}
+                          onChange={(e) => {
+                            setFarmerLastName(e.target.value);
+                            setFieldError(
+                              "farmerLastName",
+                              e.target.value.trim()
+                                ? ""
+                                : "Last name is required."
+                            );
+                          }}
+                          onBlur={() => {
+                            if (!farmerLastName.trim())
+                              setFieldError(
+                                "farmerLastName",
+                                "Last name is required."
+                              );
+                          }}
+                          placeholder="Dela Cruz"
+                          error={errors.farmerLastName}
+                        />
+                      </Field>
+                    </div>
+
+                    <Field
+                      label="Mobile number"
                       required
-                      value={farmerLastName}
-                      onChange={(e) => {
-                        setFarmerLastName(e.target.value);
-                        setFieldError(
-                          "farmerLastName",
-                          e.target.value.trim()
-                            ? ""
-                            : "Last name is required."
-                        );
-                      }}
-                      onBlur={() => {
-                        if (!farmerLastName.trim())
+                      error={errors.farmerMobile}
+                    >
+                      <Input
+                        type="text"
+                        required
+                        inputMode="numeric"
+                        pattern="^09\\d{9}$"
+                        title="Use PH format: 09XXXXXXXXX"
+                        value={farmerMobile}
+                        onChange={(e) => {
+                          setFarmerMobile(e.target.value);
+                          const ok = /^09\d{9}$/.test(e.target.value);
                           setFieldError(
-                            "farmerLastName",
-                            "Last name is required."
+                            "farmerMobile",
+                            ok ? "" : "Use PH format: 09XXXXXXXXX."
                           );
-                      }}
-                      placeholder="Dela Cruz"
-                      error={errors.farmerLastName}
-                    />
-                  </Field>
+                        }}
+                        onBlur={() => {
+                          const ok = /^09\d{9}$/.test(farmerMobile);
+                          if (!ok)
+                            setFieldError(
+                              "farmerMobile",
+                              "Use PH format: 09XXXXXXXXX."
+                            );
+                        }}
+                        placeholder="09123456789"
+                        error={errors.farmerMobile}
+                      />
+                    </Field>
+
+                    <Field
+                      label="Barangay"
+                      required
+                      error={errors.farmerBarangay}
+                    >
+                      <Select
+                        error={errors.farmerBarangay}
+                        required
+                        value={farmerBarangay}
+                        onChange={(e) => {
+                          setFarmerBarangay(e.target.value);
+                          setFieldError("farmerBarangay", "");
+                        }}
+                        onBlur={() => {
+                          if (!farmerBarangay)
+                            setFieldError(
+                              "farmerBarangay",
+                              "Please choose a barangay."
+                            );
+                        }}
+                      >
+                        <option value="">Select barangay</option>
+                        {mergedBarangays.map((bgy) => (
+                          <option key={bgy} value={bgy}>
+                            {bgy}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+
+                    <Field
+                      label="Complete address"
+                      required
+                      error={errors.farmerAddress}
+                    >
+                      <Input
+                        type="text"
+                        required
+                        value={farmerAddress}
+                        onChange={(e) => {
+                          setFarmerAddress(e.target.value);
+                          setFieldError(
+                            "farmerAddress",
+                            e.target.value.trim()
+                              ? ""
+                              : "Complete address is required."
+                          );
+                        }}
+                        onBlur={() => {
+                          if (!farmerAddress.trim())
+                            setFieldError(
+                              "farmerAddress",
+                              "Complete address is required."
+                            );
+                        }}
+                        placeholder="House no., street, purok/sitio"
+                        error={errors.farmerAddress}
+                      />
+                    </Field>
+                  </Section>
                 </div>
+              )}
 
-                <Field
-                  label="Mobile Number"
-                  required
-                  error={errors.farmerMobile}
+              {/* Step-level error (optional) */}
+              {errors._form && <ErrorText>{errors._form}</ErrorText>}
+            </form>
+          </div>
+
+          {/* Footer (sticky) */}
+          <div className="sticky bottom-0 z-10 px-6 py-4 bg-white/95 backdrop-blur border-t border-gray-200 flex justify-between items-center gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2.5 text-sm font-medium text-gray-600 hover:text-gray-800"
+            >
+              Cancel
+            </button>
+
+            <div className="flex gap-3">
+              {currentStep > 1 && (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-gray-300 text-sm font-medium text-gray-700 rounded-xl hover:bg-gray-50 transition"
                 >
-                  <Input
-                    type="text"
-                    required
-                    inputMode="numeric"
-                    pattern="^09\\d{9}$"
-                    title="Use PH format: 09XXXXXXXXX"
-                    value={farmerMobile}
-                    onChange={(e) => {
-                      setFarmerMobile(e.target.value);
-                      const ok = /^09\d{9}$/.test(e.target.value);
-                      setFieldError(
-                        "farmerMobile",
-                        ok ? "" : "Use PH format: 09XXXXXXXXX."
-                      );
-                    }}
-                    onBlur={() => {
-                      const ok = /^09\d{9}$/.test(farmerMobile);
-                      if (!ok)
-                        setFieldError(
-                          "farmerMobile",
-                          "Use PH format: 09XXXXXXXXX."
-                        );
-                    }}
-                    placeholder="09123456789"
-                    error={errors.farmerMobile}
-                  />
-                </Field>
+                  <ArrowLeft size={18} /> Back
+                </button>
+              )}
 
-                <Field
-                  label="Barangay"
-                  required
-                  error={errors.farmerBarangay}
+              {currentStep < totalSteps ? (
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={
+                    (currentStep === 1 && !isStep1Valid()) ||
+                    (currentStep === 2 && !isStep2Valid())
+                  }
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-600 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Select
-                    error={errors.farmerBarangay}
-                    required
-                    value={farmerBarangay}
-                    onChange={(e) => {
-                      setFarmerBarangay(e.target.value);
-                      setFieldError("farmerBarangay", "");
-                    }}
-                    onBlur={() => {
-                      if (!farmerBarangay)
-                        setFieldError(
-                          "farmerBarangay",
-                          "Please choose a barangay."
-                        );
-                    }}
-                  >
-                    <option value="">Select Barangay</option>
-                    {mergedBarangays.map((bgy) => (
-                      <option key={bgy} value={bgy}>
-                        {bgy}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-
-                <Field
-                  label="Complete Address"
-                  required
-                  error={errors.farmerAddress}
+                  Next <ArrowRight size={18} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleShowConfirmation}
+                  disabled={!isStep3Valid()}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-600 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Input
-                    type="text"
-                    required
-                    value={farmerAddress}
-                    onChange={(e) => {
-                      setFarmerAddress(e.target.value);
-                      setFieldError(
-                        "farmerAddress",
-                        e.target.value.trim()
-                          ? ""
-                          : "Complete address is required."
-                      );
-                    }}
-                    onBlur={() => {
-                      if (!farmerAddress.trim())
-                        setFieldError(
-                          "farmerAddress",
-                          "Complete address is required."
-                        );
-                    }}
-                    placeholder="House No., Street, Purok/Sitio"
-                    error={errors.farmerAddress}
-                  />
-                </Field>
-              </div>
-            )}
-          </form>
-        </div>
-
-        {/* Footer (STICKY) */}
-        <div className="sticky bottom-0 z-10 px-6 md:px-8 py-4 bg-white/95 backdrop-blur border-t border-gray-200 flex justify-between items-center gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition"
-          >
-            Cancel
-          </button>
-
-          <div className="flex gap-3">
-            {currentStep > 1 && (
-              <button
-                type="button"
-                onClick={handleBack}
-                className="flex items-center gap-2 px-5 py-2.5 bg-white border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition font-medium"
-              >
-                <ArrowLeft size={18} /> Back
-              </button>
-            )}
-
-            {currentStep < 2 ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                disabled={!isStep1Valid()}
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-medium transition disabled:opacity-40 disabled:cursor-not-allowed bg-${THEME.primary} hover:bg-${THEME.primaryHover}`}
-              >
-                Next <ArrowRight size={18} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleShowConfirmation}
-                disabled={!isStep2Valid()}
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-medium transition disabled:opacity-40 disabled:cursor-not-allowed bg-${THEME.primary} hover:bg-${THEME.primaryHover}`}
-              >
-                <SaveIcon size={18} /> Save
-              </button>
-            )}
+                  <SaveIcon size={18} /> Save
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1488,31 +1568,29 @@ const TagCropForm = ({
           <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden">
             {/* sticky header */}
             <div className="sticky top-0 z-10 px-6 py-5 border-b bg-white/95 backdrop-blur">
-              <h3 className="text-xl font-bold text-gray-900">
-                Review Details
-              </h3>
+              <h3 className="text-xl font-bold text-gray-900">Review details</h3>
               <p className="text-sm text-gray-500 mt-0.5">
-                Please verify before saving.
+                Please confirm before saving this tagged crop.
               </p>
             </div>
 
-            <div className="p-6 max-h-[62vh] overflow-y-auto">
+            <div className="p-6 max-h-[62vh] overflow-y-auto space-y-6">
               {/* Crop */}
               <section>
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Crop Information
+                  Crop information
                 </h4>
-                <div className="mt-3 rounded-xl border">
+                <div className="mt-3 rounded-xl border border-gray-200">
                   {[
                     ["Crop", getCropTypeName()],
                     ...(selectedVarietyId
                       ? [["Variety", getVarietyName()]]
                       : []),
-                    ["Cropping System", getCroppingSystemLabel()],
+                    ["Cropping system", getCroppingSystemLabel()],
                     ...(interCropTypeId
                       ? [
                           [
-                            "Secondary Crop",
+                            "Secondary crop",
                             cropTypes.find((c) => c.id === interCropTypeId)
                               ?.name || "—",
                           ],
@@ -1521,7 +1599,7 @@ const TagCropForm = ({
                     ...(intercropVarietyId
                       ? [
                           [
-                            "Secondary Variety",
+                            "Secondary variety",
                             intercropVarieties.find(
                               (v) => v.id === parseInt(intercropVarietyId)
                             )?.name || "—",
@@ -1542,14 +1620,14 @@ const TagCropForm = ({
                           ],
                         ]
                       : []),
-                    ["Area", `${hectares} ha`],
+                    ["Area", hectares ? `${hectares} ha` : "—"],
                     ...(avgElevation
-                      ? [["Avg Elevation", `${avgElevation} m`]]
+                      ? [["Avg elevation", `${avgElevation} m`]]
                       : []),
                     ...(estimatedVolume
                       ? [
                           [
-                            "Estimated Yield",
+                            "Est. yield",
                             `${estimatedVolume} ${
                               yieldUnitMap[selectedCropType] || "units"
                             }`,
@@ -1559,7 +1637,7 @@ const TagCropForm = ({
                     ...(secondaryEstimatedVolume && interCropTypeId
                       ? [
                           [
-                            "Secondary Estimated Yield",
+                            "Secondary est. yield",
                             `${secondaryEstimatedVolume} ${
                               yieldUnitMap[interCropTypeId] || "units"
                             }`,
@@ -1567,7 +1645,7 @@ const TagCropForm = ({
                         ]
                       : []),
                     [
-                      "Location",
+                      "Barangay",
                       manualBarangay || detectedBarangayName || "—",
                     ],
                     ...(selectedCropType && ecosystems.length > 0
@@ -1584,7 +1662,7 @@ const TagCropForm = ({
                     <div
                       key={k}
                       className={`flex items-center justify-between px-4 py-3 ${
-                        i < a.length - 1 ? "border-b" : ""
+                        i < a.length - 1 ? "border-b border-gray-200" : ""
                       }`}
                     >
                       <span className="text-sm text-gray-600">{k}</span>
@@ -1597,13 +1675,13 @@ const TagCropForm = ({
               </section>
 
               {/* Farmer */}
-              <section className="mt-6">
+              <section>
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Farmer Information
+                  Farmer information
                 </h4>
-                <div className="mt-3 rounded-xl border">
+                <div className="mt-3 rounded-xl border border-gray-200">
                   {[
-                    ["Name", `${farmerFirstName} ${farmerLastName}`],
+                    ["Name", `${farmerFirstName} ${farmerLastName}`.trim()],
                     ["Mobile", farmerMobile],
                     ["Barangay", farmerBarangay],
                     ["Address", farmerAddress],
@@ -1611,12 +1689,12 @@ const TagCropForm = ({
                     <div
                       key={k}
                       className={`flex items-start justify-between px-4 py-3 ${
-                        i < a.length - 1 ? "border-b" : ""
+                        i < a.length - 1 ? "border-b border-gray-200" : ""
                       }`}
                     >
                       <span className="text-sm text-gray-600">{k}</span>
-                      <span className="text-sm font-semibold text-gray-900 text-right max-w-[60%]">
-                        {v}
+                      <span className="text-sm font-semibold text-gray-900 text-right max-w-[60%] break-words">
+                        {v || "—"}
                       </span>
                     </div>
                   ))}
@@ -1625,16 +1703,16 @@ const TagCropForm = ({
             </div>
 
             {/* sticky footer */}
-            <div className="sticky bottom-0 z-10 px-6 py-4 bg-white/95 backdrop-blur border-t flex gap-3">
+            <div className="sticky bottom-0 z-10 px-6 py-4 bg-white/95 backdrop-blur border-t border-gray-200 flex gap-3">
               <button
                 onClick={() => setShowConfirmation(false)}
-                className="flex-1 px-4 py-2.5 rounded-xl border text-gray-700 hover:bg-gray-50 transition"
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
               >
-                Go Back
+                Go back
               </button>
               <button
                 onClick={handleSubmit}
-                className={`flex-1 px-4 py-2.5 rounded-xl bg-${THEME.primary} hover:bg-${THEME.primaryHover} text-white font-semibold transition`}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-sm font-semibold text-white transition"
               >
                 Confirm &amp; Save
               </button>
@@ -1644,7 +1722,10 @@ const TagCropForm = ({
       )}
 
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: translateY(0);} }
+        @keyframes fadeIn { 
+          from { opacity: 0; transform: translateY(6px);} 
+          to { opacity: 1; transform: translateY(0);} 
+        }
         .animate-fadeIn { animation: fadeIn 0.20s ease-out; }
       `}</style>
     </div>

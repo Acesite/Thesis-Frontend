@@ -126,6 +126,11 @@ const CalamitySidebar = ({
   const [ecosystemMap, setEcosystemMap] = useState({});
   const [varietyMap, setVarietyMap] = useState({});
 
+  // NEW: farmer info state
+  const [farmerInfo, setFarmerInfo] = useState(null);
+  const [farmerLoading, setFarmerLoading] = useState(false);
+  const [farmerError, setFarmerError] = useState("");
+
   // lookups
   useEffect(() => {
     let abort = false;
@@ -144,7 +149,9 @@ const CalamitySidebar = ({
         const em = {};
         ecoData.forEach((e) => (em[String(e.id)] = e.name));
         setEcosystemMap(em);
-      } catch {}
+      } catch {
+        // silent
+      }
     })();
     return () => {
       abort = true;
@@ -166,7 +173,9 @@ const CalamitySidebar = ({
         const vm = {};
         data.forEach((v) => (vm[String(v.id)] = v.name));
         setVarietyMap(vm);
-      } catch {}
+      } catch {
+        // silent
+      }
     })();
     return () => {
       abort = true;
@@ -191,6 +200,56 @@ const CalamitySidebar = ({
       onBarangaySelect?.({ name: brgy, coordinates });
     }
   };
+
+  // 🔥 NEW: fetch farmer info when selectedCalamity changes
+  useEffect(() => {
+    setFarmerInfo(null);
+    setFarmerError("");
+
+    const id = selectedCalamity?.calamity_id || selectedCalamity?.id;
+    if (!id) return;
+
+    let abort = false;
+    const run = async () => {
+      try {
+        setFarmerLoading(true);
+        const res = await fetch(
+          `http://localhost:5000/api/calamities/${id}/farmer`
+        );
+
+        if (!res.ok) {
+          if (res.status === 404) {
+            if (!abort) {
+              setFarmerInfo(null);
+              setFarmerError("");
+            }
+          } else {
+            if (!abort) {
+              setFarmerInfo(null);
+              setFarmerError("Failed to load farmer info.");
+            }
+          }
+          return;
+        }
+
+        const data = await res.json();
+        if (abort) return;
+        setFarmerInfo(data || null);
+      } catch (err) {
+        if (!abort) {
+          setFarmerInfo(null);
+          setFarmerError("Failed to load farmer info.");
+        }
+      } finally {
+        if (!abort) setFarmerLoading(false);
+      }
+    };
+
+    run();
+    return () => {
+      abort = true;
+    };
+  }, [selectedCalamity?.calamity_id, selectedCalamity?.id]);
 
   // filter list by type + barangay + status (robust lower-casing)
   const filteredCalamities = useMemo(() => {
@@ -315,6 +374,22 @@ const CalamitySidebar = ({
     return s;
   }, [selectedCalamity]);
 
+  // ✅ Combine farmer from backend + any inline "farmer" field from calamity (future-proof)
+  const farmerData = useMemo(() => {
+    if (selectedCalamity?.farmer) return selectedCalamity.farmer;
+    return farmerInfo;
+  }, [selectedCalamity, farmerInfo]);
+
+  const farmerFullName = useMemo(() => {
+    if (!farmerData) return null;
+    const first =
+      farmerData.first_name || farmerData.farmer_first_name || "";
+    const last =
+      farmerData.last_name || farmerData.farmer_last_name || "";
+    const full = [first, last].filter(Boolean).join(" ").trim();
+    return full || null;
+  }, [farmerData]);
+
   return (
     <div
       className={clsx(
@@ -349,6 +424,7 @@ const CalamitySidebar = ({
             <KV label="Municipality" value="Bago City" />
           </dl>
         </Section>
+
 
         {/* Filters */}
         <Section title="Filters">
@@ -422,31 +498,29 @@ const CalamitySidebar = ({
 
               {selectedCalamity.status && (
                 <span
-  className={clsx(
-    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
-    statusBadge(selectedCalamity.status).replace("text-", "border-")
-  )}
->
-  <span className={statusBadge(selectedCalamity.status).split(" ")[1]}>
-    {selectedCalamity.status}
-  </span>
-</span>
-
+                  className={clsx(
+                    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
+                    statusBadge(selectedCalamity.status).replace("text-", "border-")
+                  )}
+                >
+                  <span className={statusBadge(selectedCalamity.status).split(" ")[1]}>
+                    {selectedCalamity.status}
+                  </span>
+                </span>
               )}
 
               {severityValue && (
                 <span
-  className={clsx(
-    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
-    severityBadge(severityValue).replace("text-", "border-")
-  )}
-  title="Severity"
->
-  <span className={severityBadge(severityValue).split(" ")[1]}>
-    {severityValue}
-  </span>
-</span>
-
+                  className={clsx(
+                    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
+                    severityBadge(severityValue).replace("text-", "border-")
+                  )}
+                  title="Severity"
+                >
+                  <span className={severityBadge(severityValue).split(" ")[1]}>
+                    {severityValue}
+                  </span>
+                </span>
               )}
 
               {selectedCalamity.affected_area && (
@@ -465,7 +539,7 @@ const CalamitySidebar = ({
               <KV label="Variety" value={fmt(varietyName(selectedCalamity.crop_variety_id))} />
               <KV label="Affected Area" value={fmtHa(selectedCalamity.affected_area)} />
               <KV
-                label="Severity" 
+                label="Severity"
                 value={fmt(
                   selectedCalamity.severity_level || selectedCalamity.severity
                 )}
@@ -499,65 +573,114 @@ const CalamitySidebar = ({
               </p>
             </div>
 
-           {photoUrls.length > 0 && (() => {
-  const n = photoUrls.length;
-  const isSingle = n === 1;
+            {photoUrls.length > 0 &&
+              (() => {
+                const n = photoUrls.length;
+                const isSingle = n === 1;
 
-  return (
-    <div className="mt-4">
-      <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
-        Photos
-      </div>
+                return (
+                  <div className="mt-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                      Photos
+                    </div>
 
-      {/* 1 photo = wide hero; 2+ photos = responsive grid */}
-      {isSingle ? (
-        <button
-          type="button"
-          className="group relative block overflow-hidden rounded-lg border border-gray-200 bg-gray-50 aspect-[16/9] w-full"
-          onClick={() => setEnlargedImage?.(photoUrls[0])}
-          title="View photo"
-        >
-          <img
-            src={photoUrls[0]}
-            alt={`${selectedCalamity?.calamity_type || "Calamity"} 1`}
-            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
-            loading="lazy"
-          />
-        </button>
-      ) : (
-        <div
-          className="grid gap-2"
-          style={{
-            // auto-fits nicely for 2..N photos; each tile grows up to a column
-            gridTemplateColumns:
-              n === 2 ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(110px, 1fr))",
-          }}
-        >
-          {photoUrls.map((url, idx) => (
-            <button
-              key={idx}
-              type="button"
-              className="group relative block overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
-              onClick={() => setEnlargedImage?.(url)}
-              title={`View photo ${idx + 1}`}
-            >
-              <img
-                src={url}
-                alt={`${selectedCalamity?.calamity_type || "Calamity"} ${idx + 1}`}
-                className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                loading="lazy"
-              />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-})()}
-
+                    {/* 1 photo = wide hero; 2+ photos = responsive grid */}
+                    {isSingle ? (
+                      <button
+                        type="button"
+                        className="group relative block overflow-hidden rounded-lg border border-gray-200 bg-gray-50 aspect-[16/9] w-full"
+                        onClick={() => setEnlargedImage?.(photoUrls[0])}
+                        title="View photo"
+                      >
+                        <img
+                          src={photoUrls[0]}
+                          alt={`${selectedCalamity?.calamity_type || "Calamity"} 1`}
+                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                          loading="lazy"
+                        />
+                      </button>
+                    ) : (
+                      <div
+                        className="grid gap-2"
+                        style={{
+                          gridTemplateColumns:
+                            n === 2
+                              ? "repeat(2, 1fr)"
+                              : "repeat(auto-fill, minmax(110px, 1fr))",
+                        }}
+                      >
+                        {photoUrls.map((url, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            className="group relative block overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
+                            onClick={() => setEnlargedImage?.(url)}
+                            title={`View photo ${idx + 1}`}
+                          >
+                            <img
+                              src={url}
+                              alt={`${selectedCalamity?.calamity_type || "Calamity"} ${
+                                idx + 1
+                              }`}
+                              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                              loading="lazy"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
           </Section>
         )}
+ {/* 🧑‍🌾 Farmer details */}
+        {selectedCalamity && (
+          <Section title="Farmer details">
+            {farmerLoading && (
+              <p className="text-xs text-gray-500">Loading farmer info…</p>
+            )}
 
+            {!farmerLoading && farmerError && (
+              <p className="text-xs text-red-600">{farmerError}</p>
+            )}
+
+            {!farmerLoading && !farmerError && !farmerData && (
+              <p className="text-xs text-gray-500">
+                No farmer information encoded for this calamity.
+              </p>
+            )}
+
+            {farmerData && (
+              <dl className="grid grid-cols-2 gap-4 mt-1">
+                <KV
+                  label="Farmer Name"
+                  value={fmt(farmerFullName || "—")}
+                />
+                <KV
+                  label="Mobile Number"
+                  value={fmt(
+                    farmerData.mobile_number ||
+                      farmerData.farmer_mobile_number
+                  )}
+                />
+                <KV
+                  label="Farmer Barangay"
+                  value={fmt(
+                    farmerData.barangay || farmerData.farmer_barangay
+                  )}
+                />
+                <KV
+                  label="Full Address"
+                  value={fmt(
+                    farmerData.full_address ||
+                      farmerData.farmer_full_address
+                  )}
+                />
+              </dl>
+            )}
+          </Section>
+        )}
         {/* Legend */}
         <Section title="Legend">
           <details className="text-sm">
