@@ -275,6 +275,9 @@ const CalamitySidebar = ({
     return byStatus;
   }, [calamities, selectedCalamityType, selectedBarangay, selectedStatus]);
 
+  const totalCount = Array.isArray(calamities) ? calamities.length : 0;
+  const filteredCount = filteredCalamities.length;
+
   // Build full list of photo URLs (multi-photo support + robust fallback)
   const photoUrls = useMemo(() => {
     if (!selectedCalamity) return [];
@@ -398,7 +401,7 @@ const CalamitySidebar = ({
       )}
     >
       <div className={clsx("transition-all", visible ? "px-6 py-6" : "px-0 py-0")}>
-        {/* Hero image / logo */}
+        {/* Hero image / placeholder */}
         <div className="mb-4">
           <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50 aspect-[16/9]">
             {heroImg ? (
@@ -409,14 +412,17 @@ const CalamitySidebar = ({
                 onClick={() => setEnlargedImage?.(heroImg)}
               />
             ) : (
-              <div className="h-full w-full flex items-center justify-center">
+              <div className="h-full w-full flex flex-col items-center justify-center gap-2">
                 <img src={AgriGISLogo} alt="AgriGIS" className="h-12 opacity-70" />
+                <p className="text-xs text-gray-500">
+                  Select a calamity marker on the map to see details here.
+                </p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Location */}
+        {/* Location (static) */}
         <Section title="Location">
           <dl className="grid grid-cols-3 gap-3">
             <KV label="Region" value="Western Visayas" />
@@ -425,13 +431,12 @@ const CalamitySidebar = ({
           </dl>
         </Section>
 
-
-        {/* Filters */}
-        <Section title="Filters">
+        {/* Map filters */}
+        <Section title="Map filters">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-                Calamity Type
+                Calamity type
               </label>
               <select
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -456,7 +461,7 @@ const CalamitySidebar = ({
                 onChange={handleBarangayChange}
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
-                <option value="">All</option>
+                <option value="">All barangays</option>
                 {Object.keys(BARANGAY_COORDS).map((brgy) => (
                   <option key={brgy} value={brgy}>
                     {brgy}
@@ -483,12 +488,20 @@ const CalamitySidebar = ({
               </select>
             </div>
           </div>
+
+          {/* 🔢 Filter summary */}
+          <p className="mt-3 text-[11px] text-gray-500">
+            Showing <span className="font-semibold text-gray-800">{filteredCount}</span>{" "}
+            of <span className="font-semibold text-gray-800">{totalCount}</span>{" "}
+            incident{totalCount === 1 ? "" : "s"} matching filters
+          </p>
         </Section>
 
-        {/* Details */}
+        {/* Selected report (details + photos + farmer info) */}
         {selectedCalamity && (
-          <Section title="Report details">
-            <div className="flex flex-wrap gap-2 mb-3">
+          <Section title="Selected report">
+            {/* Top chips: barangay, type, status, severity, area */}
+            <div className="flex flex-wrap gap-2 mb-4">
               {selectedCalamity.location && (
                 <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                   <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
@@ -496,30 +509,31 @@ const CalamitySidebar = ({
                 </span>
               )}
 
+              {selectedCalamity.calamity_type && (
+                <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-800 border border-gray-300">
+                  {selectedCalamity.calamity_type}
+                </span>
+              )}
+
               {selectedCalamity.status && (
                 <span
                   className={clsx(
-                    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
-                    statusBadge(selectedCalamity.status).replace("text-", "border-")
+                    "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border",
+                    statusBadge(selectedCalamity.status)
                   )}
                 >
-                  <span className={statusBadge(selectedCalamity.status).split(" ")[1]}>
-                    {selectedCalamity.status}
-                  </span>
+                  {selectedCalamity.status}
                 </span>
               )}
 
               {severityValue && (
                 <span
                   className={clsx(
-                    "inline-flex items-center justify-center text-xs px-3 py-1 rounded-full border",
-                    severityBadge(severityValue).replace("text-", "border-")
+                    "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border",
+                    severityBadge(severityValue)
                   )}
-                  title="Severity"
                 >
-                  <span className={severityBadge(severityValue).split(" ")[1]}>
-                    {severityValue}
-                  </span>
+                  Severity: {severityValue}
                 </span>
               )}
 
@@ -531,40 +545,44 @@ const CalamitySidebar = ({
               )}
             </div>
 
+            {/* Key fields */}
             <dl className="grid grid-cols-2 gap-4">
-              <KV label="Calamity Type" value={fmt(selectedCalamity.calamity_type)} />
-              <KV label="Crop Stage" value={fmt(selectedCalamity.crop_stage)} />
-              <KV label="Crop Type" value={fmt(cropName(selectedCalamity.crop_type_id))} />
-              <KV label="Ecosystem" value={fmt(ecoName(selectedCalamity.ecosystem_id))} />
-              <KV label="Variety" value={fmt(varietyName(selectedCalamity.crop_variety_id))} />
-              <KV label="Affected Area" value={fmtHa(selectedCalamity.affected_area)} />
+              <KV label="Calamity type" value={fmt(selectedCalamity.calamity_type)} />
+              <KV label="Crop stage" value={fmt(selectedCalamity.crop_stage)} />
+              <KV
+                label="Crop type"
+                value={fmt(cropName(selectedCalamity.crop_type_id))}
+              />
+              <KV
+                label="Ecosystem"
+                value={fmt(ecoName(selectedCalamity.ecosystem_id))}
+              />
+              <KV
+                label="Variety"
+                value={fmt(varietyName(selectedCalamity.crop_variety_id))}
+              />
+              <KV label="Affected area" value={fmtHa(selectedCalamity.affected_area)} />
               <KV
                 label="Severity"
                 value={fmt(
                   selectedCalamity.severity_level || selectedCalamity.severity
                 )}
               />
-              <KV label="Location (Barangay)" value={fmt(selectedCalamity.location)} />
-              <KV label="Reported By" value={fmt(adminFullName)} />
               <KV
-                label="Reported"
+                label="Location (barangay)"
+                value={fmt(selectedCalamity.location)}
+              />
+              <KV label="Reported by" value={fmt(adminFullName)} />
+              <KV
+                label="Reported on"
                 value={fmtDate(
                   selectedCalamity.date_reported || selectedCalamity.created_at
                 )}
               />
-              <div className="col-span-2">
-                <span
-                  className={clsx(
-                    "inline-block px-2 py-1 rounded-full text-xs font-medium",
-                    statusBadge(selectedCalamity.status || "Pending")
-                  )}
-                >
-                  {selectedCalamity.status || "Pending"}
-                </span>
-              </div>
             </dl>
 
-            <div className="mt-3">
+            {/* Description */}
+            <div className="mt-4">
               <div className="text-xs uppercase tracking-wide text-gray-500">
                 Description
               </div>
@@ -573,6 +591,7 @@ const CalamitySidebar = ({
               </p>
             </div>
 
+            {/* Photos */}
             {photoUrls.length > 0 &&
               (() => {
                 const n = photoUrls.length;
@@ -584,7 +603,6 @@ const CalamitySidebar = ({
                       Photos
                     </div>
 
-                    {/* 1 photo = wide hero; 2+ photos = responsive grid */}
                     {isSingle ? (
                       <button
                         type="button"
@@ -632,55 +650,59 @@ const CalamitySidebar = ({
                   </div>
                 );
               })()}
-          </Section>
-        )}
- {/* 🧑‍🌾 Farmer details */}
-        {selectedCalamity && (
-          <Section title="Farmer details">
-            {farmerLoading && (
-              <p className="text-xs text-gray-500">Loading farmer info…</p>
-            )}
 
-            {!farmerLoading && farmerError && (
-              <p className="text-xs text-red-600">{farmerError}</p>
-            )}
-
-            {!farmerLoading && !farmerError && !farmerData && (
-              <p className="text-xs text-gray-500">
-                No farmer information encoded for this calamity.
+            {/* Farmer info embedded */}
+            <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                Farmer details
               </p>
-            )}
 
-            {farmerData && (
-              <dl className="grid grid-cols-2 gap-4 mt-1">
-                <KV
-                  label="Farmer Name"
-                  value={fmt(farmerFullName || "—")}
-                />
-                <KV
-                  label="Mobile Number"
-                  value={fmt(
-                    farmerData.mobile_number ||
-                      farmerData.farmer_mobile_number
-                  )}
-                />
-                <KV
-                  label="Farmer Barangay"
-                  value={fmt(
-                    farmerData.barangay || farmerData.farmer_barangay
-                  )}
-                />
-                <KV
-                  label="Full Address"
-                  value={fmt(
-                    farmerData.full_address ||
-                      farmerData.farmer_full_address
-                  )}
-                />
-              </dl>
-            )}
+              {farmerLoading && (
+                <p className="text-xs text-gray-500">Loading farmer info…</p>
+              )}
+
+              {!farmerLoading && farmerError && (
+                <p className="text-xs text-red-600">{farmerError}</p>
+              )}
+
+              {!farmerLoading && !farmerError && !farmerData && (
+                <p className="text-xs text-gray-500">
+                  No farmer information encoded for this calamity.
+                </p>
+              )}
+
+              {farmerData && (
+                <dl className="grid grid-cols-2 gap-4 mt-1">
+                  <KV
+                    label="Farmer name"
+                    value={fmt(farmerFullName || "—")}
+                  />
+                  <KV
+                    label="Mobile number"
+                    value={fmt(
+                      farmerData.mobile_number ||
+                        farmerData.farmer_mobile_number
+                    )}
+                  />
+                  <KV
+                    label="Farmer barangay"
+                    value={fmt(
+                      farmerData.barangay || farmerData.farmer_barangay
+                    )}
+                  />
+                  <KV
+                    label="Full address"
+                    value={fmt(
+                      farmerData.full_address ||
+                        farmerData.farmer_full_address
+                    )}
+                  />
+                </dl>
+              )}
+            </div>
           </Section>
         )}
+
         {/* Legend */}
         <Section title="Legend">
           <details className="text-sm">
@@ -701,6 +723,7 @@ const CalamitySidebar = ({
           </details>
         </Section>
 
+        {/* Home */}
         <div className="mt-5">
           <Button to="/AdminLanding" variant="outline" size="md">
             Home

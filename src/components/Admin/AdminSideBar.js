@@ -45,6 +45,24 @@ const CROPPING_SYSTEM_LABELS = {
   5: "Mixed cropping / Polyculture",
 };
 
+// 🔹 Legend / crop chip colors
+const CROP_COLORS = {
+  Rice: "#facc15", // yellow
+  Corn: "#fb923c", // orange
+  Banana: "#a3e635", // bright green
+  Sugarcane: "#34d399", // teal/green
+  Cassava: "#60a5fa", // blue
+  Vegetables: "#f472b6", // pink
+};
+
+const getCropColor = (name) => {
+  if (!name) return null;
+  const key = Object.keys(CROP_COLORS).find(
+    (k) => k.toLowerCase() === String(name).toLowerCase()
+  );
+  return key ? CROP_COLORS[key] : null;
+};
+
 const AdminSideBar = ({
   visible,
   zoomToBarangay,
@@ -356,8 +374,13 @@ const AdminSideBar = ({
         visible ? "w-[500px]" : "w-0 overflow-hidden"
       )}
     >
-      <div className={clsx("transition-all", visible ? "px-6 py-6" : "px-0 py-0")}>
-        {/* Hero image */}
+      <div
+        className={clsx(
+          "transition-all",
+          visible ? "px-6 py-6" : "px-0 py-0"
+        )}
+      >
+        {/* Hero image / placeholder */}
         <div className="mb-4">
           <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50 aspect-[16/9]">
             {selectedCrop?.photos ? (
@@ -372,8 +395,11 @@ const AdminSideBar = ({
                 }
               />
             ) : (
-              <div className="h-full w-full flex items-center justify-center">
-                <img src={AgriGISLogo} alt="AgriGIS" className="h-12 opacity-70" />
+              <div className="h-full w-full flex flex-col items-center justify-center gap-2">
+                <img src={AgriGISLogo} alt="AgriGIS" className="h-10 opacity-70" />
+                <p className="text-xs text-gray-500">
+                  Select a field on the map to see details here.
+                </p>
               </div>
             )}
           </div>
@@ -388,12 +414,182 @@ const AdminSideBar = ({
           </dl>
         </Section>
 
-        {/* Filters */}
-        <Section title="Filters">
+       {/* Selected field – cleaner header layout */}
+{selectedCrop && (
+  <Section title="Selected field">
+    <div className="space-y-4">
+      {/* Header row: name + chips on left, status on right */}
+      <div className="flex items-start justify-between gap-3">
+        {/* Left: crop name, variety, chips */}
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-gray-900">
+            {selectedCrop.crop_name || "Crop"}
+          </p>
+          <p className="text-xs text-gray-500">
+            {selectedCrop.variety_name || "— variety"}
+          </p>
+
+          {/* Chips directly under name */}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {/* Crop type colored chip */}
+            {selectedCrop.crop_name &&
+              (() => {
+                const cropColor = getCropColor(selectedCrop.crop_name);
+                const dotColor = cropColor || "#9CA3AF";
+                const borderColor = cropColor || "#e5e7eb";
+                const textColor = cropColor || "#374151";
+
+                return (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-1 text-xs font-medium"
+                    style={{ borderColor, color: textColor }}
+                  >
+                    <span
+                      className="h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: dotColor }}
+                    />
+                    {selectedCrop.crop_name}
+                  </span>
+                );
+              })()}
+
+            {/* Hectares chip */}
+            {selectedCrop.estimated_hectares && (
+              <span className="inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-1 text-xs font-medium border-emerald-200 text-emerald-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {Number(selectedCrop.estimated_hectares).toFixed(2)} ha
+              </span>
+            )}
+
+            {/* Cropping system chip */}
+            {croppingSystemLabel && (
+              <span className="inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-1 text-xs font-medium border-gray-200 text-gray-700">
+                {croppingSystemLabel}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Right: harvest status + button */}
+        <div className="flex flex-col items-end gap-1">
+          <p className="text-[11px] uppercase tracking-wide text-gray-500">
+            Harvest status
+          </p>
+          <p
+            className={clsx(
+              "text-xs font-semibold",
+              isHarvested ? "text-emerald-700" : "text-amber-700"
+            )}
+          >
+            {isHarvested
+              ? `Harvested (${fmtDate(selectedCrop.harvested_date)})`
+              : "Not yet harvested"}
+          </p>
+          {!isHarvested && (
+            <button
+              type="button"
+              onClick={handleMarkHarvested}
+              className="mt-1 inline-flex items-center rounded-md border border-green-600 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50"
+            >
+              Mark as harvested
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Info grid */}
+      <dl className="grid grid-cols-2 gap-3">
+        <KV label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
+        <KV label="Est. volume" value={fmt(selectedCrop.estimated_volume)} />
+        <KV label="Planted date" value={fmtDate(selectedCrop.planted_date)} />
+        <KV label="Est. harvest" value={fmtDate(selectedCrop.estimated_harvest)} />
+
+        {croppingSystemLabel && (
+          <KV label="Cropping system" value={croppingSystemLabel} />
+        )}
+        {hasSecondaryCrop && (
+          <KV
+            label="Secondary crop"
+            value={
+              secondaryCropName
+                ? `${secondaryCropName}${
+                    selectedCrop.intercrop_variety_name
+                      ? " · " + selectedCrop.intercrop_variety_name
+                      : ""
+                  }`
+                : "—"
+            }
+          />
+        )}
+        {hasSecondaryCrop && secondaryVolume != null && (
+          <KV
+            label="Secondary volume"
+            value={
+              secondaryUnit
+                ? `${fmt(secondaryVolume)} ${secondaryUnit}`
+                : fmt(secondaryVolume)
+            }
+          />
+        )}
+
+        <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
+        <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
+      </dl>
+
+      {/* Note */}
+      {selectedCrop.note?.trim() && (
+        <div className="pt-2 border-t border-gray-100">
+          <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+            Note
+          </dt>
+          <dd className="text-sm text-gray-900">{selectedCrop.note.trim()}</dd>
+        </div>
+      )}
+
+      {/* Farmer info box */}
+      {(selectedCrop.farmer_first_name ||
+        selectedCrop.farmer_barangay ||
+        selectedCrop.farmer_mobile ||
+        selectedCrop.farmer_address) && (
+        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">
+            Farmer details
+          </p>
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            {selectedCrop.farmer_first_name && (
+              <KV
+                label="Farmer name"
+                value={`${selectedCrop.farmer_first_name} ${
+                  selectedCrop.farmer_last_name || ""
+                }`.trim()}
+              />
+            )}
+            {selectedCrop.farmer_mobile && (
+              <KV label="Mobile number" value={selectedCrop.farmer_mobile} />
+            )}
+            {selectedCrop.farmer_barangay && (
+              <KV
+                label="Farmer barangay"
+                value={selectedCrop.farmer_barangay}
+              />
+            )}
+            {selectedCrop.farmer_address && (
+              <KV label="Full address" value={selectedCrop.farmer_address} />
+            )}
+          </dl>
+        </div>
+      )}
+    </div>
+  </Section>
+)}
+
+
+        {/* Map filters only */}
+        <Section title="Map filters">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-                Filter Crop
+                Filter crop
               </label>
               <select
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -418,7 +614,7 @@ const AdminSideBar = ({
                 onChange={handleBarangayChange}
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
-                <option value="">Select a barangay</option>
+                <option value="">All barangays</option>
                 {Object.keys(barangayCoordinates).map((brgy) => (
                   <option key={brgy} value={brgy}>
                     {brgy}
@@ -427,10 +623,9 @@ const AdminSideBar = ({
               </select>
             </div>
 
-            {/* Harvest status filter */}
             <div className="col-span-2">
               <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
-                Harvest Status
+                Harvest status
               </label>
               <select
                 value={harvestFilter}
@@ -443,301 +638,304 @@ const AdminSideBar = ({
               </select>
             </div>
           </div>
+        </Section>
 
-          {/* Harvest history filter (global, by year/month) */}
-          <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-700">
-                Harvest history on map
-              </span>
-              <label className="inline-flex items-center gap-1 text-xs text-gray-600">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded border-gray-300"
-                  checked={historyEnabled}
-                  onChange={(e) => handleHistoryToggle(e.target.checked)}
-                />
-                <span>{historyEnabled ? "On" : "Off"}</span>
-              </label>
+        {/* Harvest history (time filter for map) */}
+        <Section title="Harvest history on map">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-700">
+              Filter map by harvested date
+            </span>
+            <label className="inline-flex items-center gap-1 text-xs text-gray-600">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded border-gray-300"
+                checked={historyEnabled}
+                onChange={(e) => handleHistoryToggle(e.target.checked)}
+              />
+              <span>{historyEnabled ? "On" : "Off"}</span>
+            </label>
+          </div>
+
+          {historyEnabled ? (
+            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+              {/* Year */}
+              <div className="col-span-3">
+                <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                  Year
+                </label>
+                <select
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                  value={historyYear}
+                  onChange={(e) => handleHistoryYearChange(e.target.value)}
+                >
+                  {Array.from({ length: 6 }).map((_, i) => {
+                    const y = currentYear - i;
+                    return (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* From month */}
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                  From
+                </label>
+                <select
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                  value={historyMonthFrom}
+                  onChange={(e) => handleHistoryMonthFromChange(e.target.value)}
+                >
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <option key={i + 1} value={String(i + 1)}>
+                      {i + 1}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* To month */}
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-gray-600">
+                  To
+                </label>
+                <select
+                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
+                  value={historyMonthTo}
+                  onChange={(e) => handleHistoryMonthToChange(e.target.value)}
+                >
+                  {Array.from({ length: 12 }).map((_, i) => (
+                    <option key={i + 1} value={String(i + 1)}>
+                      {i + 1}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
+          ) : (
+            <p className="mt-1 text-xs text-gray-500">
+              Turn on to limit the map to fields harvested within a specific year
+              and month range.
+            </p>
+          )}
+        </Section>
 
-            {historyEnabled && (
-              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                {/* Year */}
-                <div className="col-span-3">
-                  <label className="mb-1 block text-[11px] font-medium text-gray-600">
-                    Year
-                  </label>
-                  <select
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                    value={historyYear}
-                    onChange={(e) => handleHistoryYearChange(e.target.value)}
-                  >
-                    {Array.from({ length: 6 }).map((_, i) => {
-                      const y = currentYear - i;
-                      return (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
+        {/* Year vs Year harvest comparison (analytics) */}
+        <Section title="Harvest analytics (year vs year)">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-800">
+              Compare harvested fields
+            </span>
+            {yearOptions.length > 0 && (
+              <span className="text-[10px] text-gray-500">
+                Based on harvested fields only
+              </span>
+            )}
+          </div>
 
-                {/* From month */}
+          {!yearOptions.length ? (
+            <p className="text-xs text-gray-500">
+              No harvested crops recorded yet for comparison.
+            </p>
+          ) : (
+            <>
+              {/* Year pickers */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-gray-600">
-                    From
+                  <label className="block mb-1 font-medium text-gray-600">
+                    Year A
                   </label>
                   <select
                     className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                    value={historyMonthFrom}
-                    onChange={(e) =>
-                      handleHistoryMonthFromChange(e.target.value)
-                    }
+                    value={compareYearA}
+                    onChange={(e) => setCompareYearA(e.target.value)}
                   >
-                    {Array.from({ length: 12 }).map((_, i) => (
-                      <option key={i + 1} value={String(i + 1)}>
-                        {i + 1}
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
                       </option>
                     ))}
                   </select>
                 </div>
-
-                {/* To month */}
                 <div>
-                  <label className="mb-1 block text-[11px] font-medium text-gray-600">
-                    To
+                  <label className="block mb-1 font-medium text-gray-600">
+                    Year B
                   </label>
                   <select
                     className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                    value={historyMonthTo}
-                    onChange={(e) => handleHistoryMonthToChange(e.target.value)}
+                    value={compareYearB}
+                    onChange={(e) => setCompareYearB(e.target.value)}
                   >
-                    {Array.from({ length: 12 }).map((_, i) => (
-                      <option key={i + 1} value={String(i + 1)}>
-                        {i + 1}
+                    {yearOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* 🔹 Year vs Year harvest comparison */}
-          <div className="mt-4 rounded-lg border border-gray-200 bg-white px-3 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-800">
-                Compare harvest by year
-              </span>
-              {yearOptions.length > 0 && (
-                <span className="text-[10px] text-gray-500">
-                  Based on harvested fields
-                </span>
-              )}
-            </div>
+              {/* Quick apply to map */}
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleApplyYearToMap(compareYearA)}
+                  className="flex-1 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Show {compareYearA} on map
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyYearToMap(compareYearB)}
+                  className="flex-1 inline-flex items-center justify-center rounded-md border border-emerald-500 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
+                >
+                  Show {compareYearB} on map
+                </button>
+              </div>
 
-            {!yearOptions.length ? (
-              <p className="text-xs text-gray-500">
-                No harvested crops recorded yet for comparison.
-              </p>
-            ) : (
-              <>
-                {/* Year pickers */}
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="block mb-1 font-medium text-gray-600">
-                      Year A
-                    </label>
-                    <select
-                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                      value={compareYearA}
-                      onChange={(e) => setCompareYearA(e.target.value)}
-                    >
-                      {yearOptions.map((y) => (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
-                      ))}
-                    </select>
+              {/* Stats & mini bars */}
+              <div className="mt-4 space-y-3 text-xs">
+                {/* Field count */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-gray-700">
+                      Fields harvested
+                    </span>
                   </div>
-                  <div>
-                    <label className="block mb-1 font-medium text-gray-600">
-                      Year B
-                    </label>
-                    <select
-                      className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                      value={compareYearB}
-                      onChange={(e) => setCompareYearB(e.target.value)}
-                    >
-                      {yearOptions.map((y) => (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Quick apply to map */}
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleApplyYearToMap(compareYearA)}
-                    className="flex-1 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                  >
-                    Show {compareYearA} on map
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyYearToMap(compareYearB)}
-                    className="flex-1 inline-flex items-center justify-center rounded-md border border-emerald-500 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
-                  >
-                    Show {compareYearB} on map
-                  </button>
-                </div>
-
-                {/* Stats & mini bars */}
-                <div className="mt-4 space-y-3 text-xs">
-                  {/* Field count */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-gray-700">
-                        Fields harvested
-                      </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="text-[11px] text-gray-500 mb-1">
+                        {compareYearA}
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {statsA.count}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <div className="text-[11px] text-gray-500 mb-1">
+                    <div>
+                      <div className="text-[11px] text-gray-500 mb-1">
+                        {compareYearB}
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {statsB.count}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Area (ha) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-gray-700">
+                      Total area harvested (ha)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Year A */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-500">
                           {compareYearA}
-                        </div>
-                        <div className="text-sm font-semibold text-gray-900">
-                          {statsA.count}
-                        </div>
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-900">
+                          {formatNum(statsA.area)}
+                        </span>
                       </div>
-                      <div>
-                        <div className="text-[11px] text-gray-500 mb-1">
+                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-500"
+                          style={{
+                            width: `${(statsA.area / maxArea) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {/* Year B */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-500">
                           {compareYearB}
-                        </div>
-                        <div className="text-sm font-semibold text-gray-900">
-                          {statsB.count}
-                        </div>
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-900">
+                          {formatNum(statsB.area)}
+                        </span>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Area (ha) */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-gray-700">
-                        Total area harvested (ha)
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Year A */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] text-gray-500">
-                            {compareYearA}
-                          </span>
-                          <span className="text-[11px] font-semibold text-gray-900">
-                            {formatNum(statsA.area)}
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-emerald-500"
-                            style={{
-                              width: `${(statsA.area / maxArea) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                      {/* Year B */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] text-gray-500">
-                            {compareYearB}
-                          </span>
-                          <span className="text-[11px] font-semibold text-gray-900">
-                            {formatNum(statsB.area)}
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-emerald-600"
-                            style={{
-                              width: `${(statsB.area / maxArea) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Volume */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-semibold text-gray-700">
-                        Total estimated volume
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Year A */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] text-gray-500">
-                            {compareYearA}
-                          </span>
-                          <span className="text-[11px] font-semibold text-gray-900">
-                            {formatNum(statsA.volume)}
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-sky-500"
-                            style={{
-                              width: `${(statsA.volume / maxVolume) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                      {/* Year B */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] text-gray-500">
-                            {compareYearB}
-                          </span>
-                          <span className="text-[11px] font-semibold text-gray-900">
-                            {formatNum(statsB.volume)}
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-sky-600"
-                            style={{
-                              width: `${(statsB.volume / maxVolume) * 100}%`,
-                            }}
-                          />
-                        </div>
+                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-600"
+                          style={{
+                            width: `${(statsB.area / maxArea) * 100}%`,
+                          }}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
-              </>
-            )}
-          </div>
+
+                {/* Volume */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-gray-700">
+                      Total estimated volume
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Year A */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-500">
+                          {compareYearA}
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-900">
+                          {formatNum(statsA.volume)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-sky-500"
+                          style={{
+                            width: `${(statsA.volume / maxVolume) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {/* Year B */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] text-gray-500">
+                          {compareYearB}
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-900">
+                          {formatNum(statsB.volume)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-sky-600"
+                          style={{
+                            width: `${(statsB.volume / maxVolume) * 100}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </Section>
 
         {/* Barangay details */}
         {barangayDetails && (
-          <Section title="Barangay Details">
+          <Section title="Barangay overview">
             <div className="text-sm text-gray-900">
               <span className="font-medium">{barangayDetails.name}</span>
               <div className="mt-1">
                 <span className="text-xs uppercase tracking-wide text-gray-500">
-                  Crops
+                  Common crops
                 </span>
                 <div className="text-sm">
                   {barangayDetails.crops.join(", ") || "—"}
@@ -746,148 +944,6 @@ const AdminSideBar = ({
             </div>
           </Section>
         )}
-
-        {/* Selected crop */}
-        {selectedCrop && (
-          <Section title={selectedCrop.crop_name || "Crop"}>
-            <dl className="space-y-3">
-              <div className="grid grid-cols-2 gap-x-4">
-                <KV label="Variety" value={fmt(selectedCrop.variety_name)} />
-                <KV
-                  label="Hectares"
-                  value={fmt(selectedCrop.estimated_hectares)}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-x-4">
-                <KV
-                  label="Planted Date"
-                  value={fmtDate(selectedCrop.planted_date)}
-                />
-                <KV
-                  label="Est. Harvest"
-                  value={fmtDate(selectedCrop.estimated_harvest)}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-x-4">
-                <KV label="Volume" value={fmt(selectedCrop.estimated_volume)} />
-                {hasSecondaryCrop && secondaryVolume != null ? (
-                  <KV
-                    label="Secondary Volume"
-                    value={
-                      secondaryUnit
-                        ? `${fmt(secondaryVolume)} ${secondaryUnit}`
-                        : fmt(secondaryVolume)
-                    }
-                  />
-                ) : (
-                  <div />
-                )}
-              </div>
-
-              {croppingSystemLabel && (
-                <div className="grid grid-cols-2 gap-x-4">
-                  <KV label="Cropping System" value={croppingSystemLabel} />
-                  {hasSecondaryCrop && (
-                    <KV
-                      label="Secondary Crop"
-                      value={
-                        secondaryCropName
-                          ? `${secondaryCropName}${
-                              selectedCrop.intercrop_variety_name
-                                ? " · " + selectedCrop.intercrop_variety_name
-                                : ""
-                            }`
-                          : "—"
-                      }
-                    />
-                  )}
-                </div>
-              )}
-
-              {selectedCrop.note?.trim() && (
-                <div className="pt-2 border-t border-gray-100">
-                  <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
-                    Note
-                  </dt>
-                  <dd className="text-sm text-gray-900">
-                    {selectedCrop.note.trim()}
-                  </dd>
-                </div>
-              )}
-
-              <div className="pt-2 border-t border-gray-100 grid grid-cols-2 gap-x-4">
-                <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
-                <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
-              </div>
-
-              {/* Harvest status + action */}
-              <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-3">
-                <KV
-                  label="Harvest status"
-                  value={
-                    isHarvested
-                      ? `Harvested on ${fmtDate(selectedCrop.harvested_date)}`
-                      : "Not yet harvested"
-                  }
-                />
-                {!isHarvested && (
-                  <button
-                    type="button"
-                    onClick={handleMarkHarvested}
-                    className="inline-flex items-center rounded-md border border-green-600 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50"
-                  >
-                    Mark as harvested
-                  </button>
-                )}
-              </div>
-            </dl>
-          </Section>
-        )}
-
-        {/* Farmer Information Section */}
-        {selectedCrop &&
-          (selectedCrop.farmer_first_name || selectedCrop.farmer_barangay) && (
-            <Section title="Farmer Information">
-              <dl className="space-y-3">
-                <div className="grid grid-cols-2 gap-x-4">
-                  {selectedCrop.farmer_first_name && (
-                    <KV
-                      label="Farmer Name"
-                      value={`${selectedCrop.farmer_first_name} ${
-                        selectedCrop.farmer_last_name || ""
-                      }`.trim()}
-                    />
-                  )}
-                  {selectedCrop.farmer_barangay && (
-                    <KV
-                      label="Barangay"
-                      value={fmt(selectedCrop.farmer_barangay)}
-                    />
-                  )}
-                </div>
-
-                {selectedCrop.farmer_mobile && (
-                  <KV
-                    label="Mobile Number"
-                    value={fmt(selectedCrop.farmer_mobile)}
-                  />
-                )}
-
-                {selectedCrop.farmer_address && (
-                  <div className="pt-2 border-t border-gray-100">
-                    <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
-                      Address
-                    </dt>
-                    <dd className="text-sm text-gray-900">
-                      {fmt(selectedCrop.farmer_address)}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-            </Section>
-          )}
 
         {/* Photos of selected crop */}
         {selectedCrop?.photos &&
@@ -970,7 +1026,7 @@ const AdminSideBar = ({
             );
           })()}
 
-        {/* Photos by barangay (now respects harvestFilter) */}
+        {/* Photos by barangay (respects harvestFilter) */}
         {barangayDetails && crops.length > 0 && (
           <Section title={`Photos from ${barangayDetails.name}`}>
             <div className="grid grid-cols-2 gap-2">
@@ -1014,7 +1070,7 @@ const AdminSideBar = ({
           </Section>
         )}
 
-        {/* Legend */}
+        {/* Legend – now reuses CROP_COLORS */}
         <Section title="Legend">
           <details className="text-sm">
             <summary className="cursor-pointer select-none text-gray-900">
@@ -1022,12 +1078,7 @@ const AdminSideBar = ({
             </summary>
             <ul className="mt-2 space-y-1">
               {Object.entries({
-                Rice: "#facc15",
-                Corn: "#fb923c",
-                Banana: "#a3e635",
-                Sugarcane: "#34d399",
-                Cassava: "#60a5fa",
-                Vegetables: "#f472b6",
+                ...CROP_COLORS,
                 "Harvested field": "#9CA3AF",
               }).map(([label, color]) => (
                 <li key={label} className="flex items-center">

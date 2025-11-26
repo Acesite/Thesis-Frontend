@@ -70,10 +70,22 @@ const Pill = ({ color = "emerald", children }) => (
 
 /* ---------- Wizard steps meta ---------- */
 const STEPS = [
-  { id: 1, title: "Farmer details", subtitle: "Who owns / manages the affected field?" },
+  {
+    id: 1,
+    title: "Farmer details",
+    subtitle: "Who owns / manages the affected field?",
+  },
   { id: 2, title: "Incident details", subtitle: "What happened and where?" },
-  { id: 3, title: "Crop & ecosystem", subtitle: "What crop and environment are affected?" },
-  { id: 4, title: "Area & evidence", subtitle: "How large is the damage and proof?" },
+  {
+    id: 3,
+    title: "Crop & ecosystem",
+    subtitle: "What crop and environment are affected?",
+  },
+  {
+    id: 4,
+    title: "Area & evidence",
+    subtitle: "How large is the damage and proof?",
+  },
 ];
 
 /* ---------- Component ---------- */
@@ -119,6 +131,7 @@ const TagCalamityForm = ({
   const [varietyError, setVarietyError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   // derived — keep coords string (for chips, if needed)
   const coordStr = useMemo(() => {
@@ -134,7 +147,10 @@ const TagCalamityForm = ({
     if (ha != null && !Number.isNaN(ha)) {
       const val = Number(ha).toFixed(2);
       setAffectedArea(val);
-      setNewTagLocation?.((prev) => ({ ...(prev || {}), hectares: Number(val) }));
+      setNewTagLocation?.((prev) => ({
+        ...(prev || {}),
+        hectares: Number(val),
+      }));
     }
   }, [defaultLocation?.hectares, setNewTagLocation]);
 
@@ -204,7 +220,9 @@ const TagCalamityForm = ({
         setCrops(Array.isArray(cropData) ? cropData : []);
       } catch {
         if (!abort) {
-          setFetchError("Unable to load dropdown data. Check your connection or try again.");
+          setFetchError(
+            "Unable to load dropdown data. Check your connection or try again."
+          );
           setAllEcosystems([]);
           setEcosystems([]);
           setCrops([]);
@@ -237,7 +255,10 @@ const TagCalamityForm = ({
         (eco) => String(eco.crop_type_id) === String(cropTypeId)
       );
       setEcosystems(filtered);
-      if (ecosystemId && !filtered.find((eco) => String(eco.id) === String(ecosystemId))) {
+      if (
+        ecosystemId &&
+        !filtered.find((eco) => String(eco.id) === String(ecosystemId))
+      ) {
         setEcosystemId("");
       }
 
@@ -278,12 +299,16 @@ const TagCalamityForm = ({
     ];
     const invalid = files.find((f) => !validTypes.includes(f.type));
     if (invalid) {
-      setSubmitError("Unsupported image type. Please upload JPG, PNG, WEBP, or HEIC.");
+      setSubmitError(
+        "Unsupported image type. Please upload JPG, PNG, WEBP, or HEIC."
+      );
       return;
     }
     const tooBig = files.find((f) => f.size > maxMB * 1024 * 1024);
     if (tooBig) {
-      setSubmitError(`One or more images are too large. Max size is ${maxMB} MB each.`);
+      setSubmitError(
+        `One or more images are too large. Max size is ${maxMB} MB each.`
+      );
       return;
     }
     setSubmitError("");
@@ -311,19 +336,11 @@ const TagCalamityForm = ({
     description.trim().length > 0;
 
   const step3Valid =
-    cropTypeId &&
-    ecosystemId &&
-    (varieties.length === 0 || varietyId);
+    cropTypeId && ecosystemId && (varieties.length === 0 || varietyId);
 
-  const step4Valid =
-    affectedArea ||
-    defaultLocation?.hectares;
+  const step4Valid = affectedArea || defaultLocation?.hectares;
 
-  const canSubmitAll =
-    step1Valid &&
-    step2Valid &&
-    step3Valid &&
-    step4Valid;
+  const canSubmitAll = step1Valid && step2Valid && step3Valid && step4Valid;
 
   const canGoNextFromStep = (step) => {
     if (step === 1) return !!step1Valid;
@@ -332,9 +349,25 @@ const TagCalamityForm = ({
     return true;
   };
 
+  /* ---------- Helper for names in review modal ---------- */
+  const getCropName = () => {
+    const c = crops.find((c) => String(c.id) === String(cropTypeId));
+    return c?.name || "—";
+  };
+
+  const getEcosystemName = () => {
+    const e = ecosystems.find((e) => String(e.id) === String(ecosystemId));
+    return e?.name || "—";
+  };
+
+  const getVarietyName = () => {
+    const v = varieties.find((v) => String(v.id) === String(varietyId));
+    return v?.name || "—";
+  };
+
   /* ---------- Submit (final step) ---------- */
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.();
     setSubmitError("");
 
     const adminId = Number(
@@ -387,7 +420,8 @@ const TagCalamityForm = ({
 
       photos.forEach((file) => formData.append("photos", file));
 
-      onSave(formData);
+      await onSave(formData);
+      // on success parent will usually close the form
     } catch (err) {
       console.error(err);
       setSubmitError("Something went wrong preparing your submission.");
@@ -398,7 +432,9 @@ const TagCalamityForm = ({
   /* ---------- Wizard navigation ---------- */
   const handleNext = () => {
     if (!canGoNextFromStep(currentStep)) {
-      setSubmitError("Please complete the required fields for this step before continuing.");
+      setSubmitError(
+        "Please complete the required fields for this step before continuing."
+      );
       return;
     }
     setSubmitError("");
@@ -419,8 +455,6 @@ const TagCalamityForm = ({
           subtitle="Encode the farmer information for this affected field."
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          
-
             <div>
               <Label htmlFor="farmer_first_name" required>
                 First Name
@@ -450,7 +484,7 @@ const TagCalamityForm = ({
                 required
               />
             </div>
-            
+
             <div>
               <Label htmlFor="farmer_mobile">Mobile Number</Label>
               <input
@@ -528,7 +562,9 @@ const TagCalamityForm = ({
                 <option value="Landslide">Landslide</option>
                 <option value="Wildfire">Wildfire</option>
               </select>
-              <HelpText>Choose the category that best matches the event.</HelpText>
+              <HelpText>
+                Choose the category that best matches the event.
+              </HelpText>
             </div>
 
             <div>
@@ -859,141 +895,303 @@ const TagCalamityForm = ({
   const totalSteps = STEPS.length;
 
   return (
-    <div className="fixed inset-0 bg-black/45 flex items-center justify-center z-50 p-4">
-      <div className="max-w-2xl w-full">
-        {/* Card clips rounded corners */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* Make this the scroll container so sticky header is scoped to the card */}
-          <div className="max-h-[92vh] overflow-y-auto [scrollbar-gutter:stable]">
-            {/* Sticky header */}
-            <div className="sticky top-0 z-10 px-6 py-5 bg-white/90 backdrop-blur border-b rounded-t-2xl supports-[backdrop-filter]:bg-white/80">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900">
-                    Report Calamity
-                  </h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Provide clear incident details for mapping and
-                    analysis.
-                  </p>
+    <>
+      <div className="fixed inset-0 bg-black/45 flex items-center justify-center z-50 p-4">
+        <div className="max-w-2xl w-full">
+          {/* Card clips rounded corners */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            {/* Make this the scroll container so sticky header is scoped to the card */}
+            <div className="max-h-[92vh] overflow-y-auto [scrollbar-gutter:stable]">
+              {/* Sticky header */}
+              <div className="sticky top-0 z-10 px-6 py-5 bg-white/90 backdrop-blur border-b rounded-t-2xl supports-[backdrop-filter]:bg-white/80">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">
+                      Report Calamity
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Provide clear incident details for mapping and analysis.
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-medium text-gray-500">
+                      Step {currentStep} of {totalSteps}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {activeStepMeta?.title}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-medium text-gray-500">
-                    Step {currentStep} of {totalSteps}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {activeStepMeta?.title}
-                  </p>
-                </div>
+
+                {/* Stepper */}
+                <ol className="mt-4 flex items-center gap-3 text-xs font-medium text-gray-500">
+                  {STEPS.map((step, index) => {
+                    const isCurrent = step.id === currentStep;
+                    const isCompleted = step.id < currentStep;
+                    return (
+                      <li key={step.id} className="flex items-center gap-2">
+                        <div
+                          className={[
+                            "flex h-6 w-6 items-center justify-center rounded-full border text-[11px]",
+                            isCompleted
+                              ? "bg-green-600 border-green-600 text-white"
+                              : isCurrent
+                              ? "bg-green-50 border-green-600 text-green-700"
+                              : "bg-gray-100 border-gray-300 text-gray-500",
+                          ].join(" ")}
+                        >
+                          {step.id}
+                        </div>
+                        <span
+                          className={
+                            isCurrent || isCompleted
+                              ? "text-gray-900"
+                              : "text-gray-400"
+                          }
+                        >
+                          {step.title}
+                        </span>
+                        {index < STEPS.length - 1 && (
+                          <span className="h-px w-6 bg-gray-200" />
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
               </div>
 
-              {/* Stepper */}
-              <ol className="mt-4 flex items-center gap-3 text-xs font-medium text-gray-500">
-                {STEPS.map((step, index) => {
-                  const isCurrent = step.id === currentStep;
-                  const isCompleted = step.id < currentStep;
-                  return (
-                    <li key={step.id} className="flex items-center gap-2">
-                      <div
-                        className={[
-                          "flex h-6 w-6 items-center justify-center rounded-full border text-[11px]",
-                          isCompleted
-                            ? "bg-green-600 border-green-600 text-white"
-                            : isCurrent
-                            ? "bg-green-50 border-green-600 text-green-700"
-                            : "bg-gray-100 border-gray-300 text-gray-500",
-                        ].join(" ")}
-                      >
-                        {step.id}
-                      </div>
-                      <span
-                        className={
-                          isCurrent || isCompleted
-                            ? "text-gray-900"
-                            : "text-gray-400"
+              {/* Body */}
+              <form className="p-6 space-y-7">
+                {/* Context chips — barangay + area + coords */}
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {(barangay || selectedBarangay) && (
+                    <Pill color="blue">{barangay || selectedBarangay}</Pill>
+                  )}
+                  {defaultLocation?.hectares && (
+                    <Pill color="emerald">
+                      {Number(defaultLocation.hectares).toFixed(2)} ha (from map)
+                    </Pill>
+                  )}
+                  {/* if you want coords pill again, uncomment:
+                  {coordStr && <Pill color="gray">{coordStr}</Pill>} */}
+                </div>
+
+                {/* Step content */}
+                {renderStepContent()}
+
+                {submitError && <ErrorText>{submitError}</ErrorText>}
+
+                {/* Actions */}
+                <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="px-4 py-2.5 border-2 border-gray-300 rounded-xl text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
+                  >
+                    Cancel
+                  </button>
+
+                  {currentStep > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleBack}
+                      className="ml-auto px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300"
+                    >
+                      Back
+                    </button>
+                  )}
+
+                  {currentStep < totalSteps && (
+                    <button
+                      type="button"
+                      onClick={handleNext}
+                      className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-600"
+                    >
+                      Next
+                    </button>
+                  )}
+
+                  {currentStep === totalSteps && (
+                    <button
+                      type="button"
+                      disabled={!canSubmitAll || isSubmitting}
+                      onClick={() => {
+                        if (!canSubmitAll) {
+                          setSubmitError(
+                            "Please complete all required fields before submitting."
+                          );
+                          return;
                         }
-                      >
-                        {step.title}
-                      </span>
-                      {index < STEPS.length - 1 && (
-                        <span className="h-px w-6 bg-gray-200" />
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
+                        setSubmitError("");
+                        setShowConfirmation(true);
+                      }}
+                      className={`px-4 py-2.5 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                        !canSubmitAll || isSubmitting
+                          ? "bg-green-400 cursor-not-allowed"
+                          : "bg-green-600 hover:bg-green-700 focus:ring-green-600"
+                      }`}
+                    >
+                      {isSubmitting && <Spinner />}
+                      {isSubmitting ? "Submitting..." : "Review & Submit"}
+                    </button>
+                  )}
+                </div>
+              </form>
             </div>
-
-            {/* Body */}
-            <form onSubmit={handleSubmit} className="p-6 space-y-7">
-              {/* Context chips — barangay + area + coords */}
-              <div className="flex flex-wrap gap-2 mb-2">
-                {(barangay || selectedBarangay) && (
-                  <Pill color="blue">{barangay || selectedBarangay}</Pill>
-                )}
-                {defaultLocation?.hectares && (
-                  <Pill color="emerald">
-                    {Number(defaultLocation.hectares).toFixed(2)} ha (from map)
-                  </Pill>
-                )}
-                {/* {coordStr && <Pill color="gray">{coordStr}</Pill>} */}
-              </div>
-
-              {/* Step content */}
-              {renderStepContent()}
-
-              {submitError && <ErrorText>{submitError}</ErrorText>}
-
-              {/* Actions */}
-              <div className="flex flex-wrap gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="px-4 py-2.5 border-2 border-gray-300 rounded-xl text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400"
-                >
-                  Cancel
-                </button>
-
-                {currentStep > 1 && (
-                  <button
-                    type="button"
-                    onClick={handleBack}
-                    className="ml-auto px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300"
-                  >
-                    Back
-                  </button>
-                )}
-
-                {currentStep < totalSteps && (
-                  <button
-                    type="button"
-                    onClick={handleNext}
-                    className="px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-600"
-                  >
-                    Next
-                  </button>
-                )}
-
-                {currentStep === totalSteps && (
-                  <button
-                    type="submit"
-                    disabled={!canSubmitAll || isSubmitting}
-                    className={`px-4 py-2.5 inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                      !canSubmitAll || isSubmitting
-                        ? "bg-green-400 cursor-not-allowed"
-                        : "bg-green-600 hover:bg-green-700 focus:ring-green-600"
-                    }`}
-                  >
-                    {isSubmitting && <Spinner />}
-                    {isSubmitting ? "Submitting..." : "Submit Report"}
-                  </button>
-                )}
-              </div>
-            </form>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* ---------- Review Modal ---------- */}
+      {showConfirmation && (
+        <div className="fixed inset-0 z-[60] bg-black/60 p-4 flex items-center justify-center">
+          <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden">
+            {/* header */}
+            <div className="sticky top-0 z-10 px-6 py-5 border-b bg-white/95 backdrop-blur">
+              <h3 className="text-xl font-bold text-gray-900">
+                Review calamity report
+              </h3>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Please confirm the details before submitting.
+              </p>
+            </div>
+
+            <div className="p-6 max-h-[62vh] overflow-y-auto space-y-6 text-sm">
+              {/* Farmer info */}
+              <section>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Farmer information
+                </h4>
+                <div className="mt-3 rounded-xl border border-gray-200">
+                  {[
+                    ["Name", `${farmerFirstName} ${farmerLastName}`.trim() || "—"],
+                    ["Mobile", farmerMobile || "—"],
+                    ["Barangay", farmerBarangay || "—"],
+                    ["Full address", farmerAddress || "—"],
+                  ].map(([k, v], i, a) => (
+                    <div
+                      key={k}
+                      className={`flex items-start justify-between px-4 py-3 ${
+                        i < a.length - 1 ? "border-b border-gray-200" : ""
+                      }`}
+                    >
+                      <span className="text-gray-600">{k}</span>
+                      <span className="font-semibold text-gray-900 text-right max-w-[60%] break-words">
+                        {v}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Incident info */}
+              <section>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Incident details
+                </h4>
+                <div className="mt-3 rounded-xl border border-gray-200">
+                  {[
+                    ["Calamity type", calamityType || "—"],
+                    ["Incident barangay", barangay || selectedBarangay || "—"],
+                    ["Crop stage", cropStage || "—"],
+                    ["Status", status || "—"],
+                    ["Severity", severityLevel || "—"],
+                    ["Description", description || "—"],
+                  ].map(([k, v], i, a) => (
+                    <div
+                      key={k}
+                      className={`flex items-start justify-between px-4 py-3 ${
+                        i < a.length - 1 ? "border-b border-gray-200" : ""
+                      }`}
+                    >
+                      <span className="text-gray-600">{k}</span>
+                      <span className="font-semibold text-gray-900 text-right max-w-[60%] break-words whitespace-pre-line">
+                        {v}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Crop & ecosystem */}
+              <section>
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                  Crop & ecosystem
+                </h4>
+                <div className="mt-3 rounded-xl border border-gray-200">
+                  {[
+                    ["Crop type", getCropName()],
+                    ["Ecosystem", getEcosystemName()],
+                    ["Variety", getVarietyName()],
+                  ].map(([k, v], i, a) => (
+                    <div
+                      key={k}
+                      className={`flex items-center justify-between px-4 py-3 ${
+                        i < a.length - 1 ? "border-b border-gray-200" : ""
+                      }`}
+                    >
+                      <span className="text-gray-600">{k}</span>
+                      <span className="font-semibold text-gray-900 text-right">
+                        {v}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              {/* Area & evidence */}
+              <section>
+  <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+    Area & evidence
+  </h4>
+  <div className="mt-3 rounded-xl border border-gray-200">
+    {[
+      [
+        "Affected area",
+        (affectedArea ||
+          (defaultLocation?.hectares != null
+            ? Number(defaultLocation.hectares).toFixed(2)
+            : "0")) + " ha",
+      ],
+    ].map(([k, v], i, a) => (
+      <div
+        key={k}
+        className={`flex items-center justify-between px-4 py-3 ${
+          i < a.length - 1 ? "border-b border-gray-200" : ""
+        }`}
+      >
+        <span className="text-gray-600">{k}</span>
+        <span className="font-semibold text-gray-900 text-right">
+          {v}
+        </span>
+      </div>
+    ))}
+  </div>
+</section>
+
+            </div>
+
+            {/* footer */}
+            <div className="sticky bottom-0 z-10 px-6 py-4 bg-white/95 backdrop-blur border-t border-gray-200 flex gap-3">
+              <button
+                onClick={() => setShowConfirmation(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+              >
+                Go back
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 text-sm font-semibold text-white transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+              >
+                {isSubmitting && <Spinner />}
+                {isSubmitting ? "Submitting..." : "Confirm & Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
