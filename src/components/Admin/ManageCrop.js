@@ -73,6 +73,9 @@ const ManageCrop = () => {
 
   const [viewingCrop, setViewingCrop] = useState(null);
 
+  // NEW: harvest status filter (all / harvested / not_harvested)
+  const [harvestFilter, setHarvestFilter] = useState("all");
+
   useEffect(() => {
     AOS.init({ duration: 400, once: true });
     (async () => {
@@ -132,14 +135,29 @@ const ManageCrop = () => {
     }
   };
 
-  /* ------- filter + search ------- */
+  /* ------- filter + search + harvest status ------- */
   const filtered = useMemo(() => {
+    // 1) by crop type
     const byType = crops.filter(
       (c) => !selectedCropTypeId || c.crop_type_id === selectedCropTypeId
     );
-    if (!search.trim()) return byType;
+
+    // 2) by harvest status
+    const byStatus = byType.filter((c) => {
+      const isHarvested =
+        c.is_harvested === 1 ||
+        c.is_harvested === "1" ||
+        c.is_harvested === true;
+      if (harvestFilter === "harvested") return isHarvested;
+      if (harvestFilter === "not_harvested") return !isHarvested;
+      return true; // "all"
+    });
+
+    // 3) search text
+    if (!search.trim()) return byStatus;
     const q = search.toLowerCase();
-    return byType.filter((c) =>
+
+    return byStatus.filter((c) =>
       [
         c.crop_name,
         c.variety_name,
@@ -158,7 +176,7 @@ const ManageCrop = () => {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q))
     );
-  }, [crops, selectedCropTypeId, search]);
+  }, [crops, selectedCropTypeId, search, harvestFilter]);
 
   /* ------- sort ------- */
   const sorted = useMemo(() => {
@@ -205,7 +223,7 @@ const ManageCrop = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [selectedCropTypeId, search, sort, pageSize]);
+  }, [selectedCropTypeId, search, sort, pageSize, harvestFilter]);
 
   /* ------- pagination ------- */
   const total = sorted.length;
@@ -357,12 +375,13 @@ const ManageCrop = () => {
 
             {/* Tools Row */}
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+              {/* Crop type chips */}
               <div className="flex flex-wrap gap-2">
                 <Chip
                   active={!selectedCropTypeId}
                   onClick={() => setSelectedCropTypeId(null)}
                 >
-                  All
+                  All crops
                 </Chip>
                 {cropTypes.map((t) => (
                   <Chip
@@ -379,7 +398,8 @@ const ManageCrop = () => {
                 ))}
               </div>
 
-              <div className="flex items-end gap-3">
+              {/* Search + sort + harvest filter */}
+              <div className="flex flex-wrap items-end gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
                     Search
@@ -412,6 +432,22 @@ const ManageCrop = () => {
                         {opt.label}
                       </option>
                     ))}
+                  </select>
+                </div>
+
+                {/* NEW: harvest filter */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Harvest status
+                  </label>
+                  <select
+                    className="border border-slate-300 px-3 py-2 rounded-md w-48 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    value={harvestFilter}
+                    onChange={(e) => setHarvestFilter(e.target.value)}
+                  >
+                    <option value="all">All status</option>
+                    <option value="harvested">Harvested only</option>
+                    <option value="not_harvested">Not yet harvested</option>
                   </select>
                 </div>
               </div>
@@ -622,6 +658,7 @@ const ManageCrop = () => {
                 onClear={() => {
                   setSelectedCropTypeId(null);
                   setSearch("");
+                  setHarvestFilter("all");
                 }}
               />
             )}
@@ -975,25 +1012,34 @@ const ManageCrop = () => {
                       </div>
 
                       {/* Cropping system label (e.g. strip, relay…) */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Cropping system (label)
-                    </label>
-                    <select
-                      name="intercrop_cropping_system"
-                      value={editForm.intercrop_cropping_system || ""}
-                      onChange={handleEditChange}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    >
-                      <option value="">— Select cropping system —</option>
-                      <option value="Strip intercropping">Strip intercropping</option>
-                      <option value="Relay intercropping">Relay intercropping</option>
-                      <option value="Mixed intercropping">Mixed intercropping</option>
-                      <option value="Row intercropping">Row intercropping</option>
-                      <option value="Alley cropping">Alley cropping</option>
-                      <option value="Others">Others</option>
-                    </select>
-                  </div>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Cropping system (label)
+                        </label>
+                        <select
+                          name="intercrop_cropping_system"
+                          value={editForm.intercrop_cropping_system || ""}
+                          onChange={handleEditChange}
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        >
+                          <option value="">— Select cropping system —</option>
+                          <option value="Strip intercropping">
+                            Strip intercropping
+                          </option>
+                          <option value="Relay intercropping">
+                            Relay intercropping
+                          </option>
+                          <option value="Mixed intercropping">
+                            Mixed intercropping
+                          </option>
+                          <option value="Row intercropping">
+                            Row intercropping
+                          </option>
+                          <option value="Alley cropping">Alley cropping</option>
+                          <option value="Others">Others</option>
+                        </select>
+                      </div>
+
                       {/* Cropping description */}
                       <div className="md:col-span-2">
                         <label className="block text-xs font-medium text-slate-600 mb-1">
