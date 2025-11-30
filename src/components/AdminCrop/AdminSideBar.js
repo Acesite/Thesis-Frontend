@@ -5,9 +5,6 @@ import Button from "./MapControls/Button";
 import clsx from "clsx";
 import axios from "axios";
 
-// ─────────────────────────────────────────────────────────────
-// Utilities & small UI primitives
-// ─────────────────────────────────────────────────────────────
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
 const fmt = (v) => (v ?? v === 0 ? v : "—");
 
