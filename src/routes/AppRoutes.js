@@ -14,12 +14,12 @@ import ManageCrop from "../components/Admin/ManageCrop";
 import SuperAdminManageCrop from "../components/SuperAdmin/SuperManageCrop";
 import SuperAdminMap from "../components/SuperAdmin/SuperAdminMap";
 import Graphs from "../components/SuperAdmin/Graphs";
-import CalamityMap from "../components/User/CalamityMap";
+import CalamityMap from "../components/AdminCalamity/CalamityMap";
 import FarmerSignup from "../components/Signup/SignupFarmer";
 import ChooseMap from "../components/ChooseRole/ChooseMap";
 import ChooseRoleLogin from "../components/ChooseRole/ChooseRoleLogin";
 import LoginFarmer from "../components/Login/LoginFarmer";
-import ManageCalamity from "../components/User/ManageCalamity";
+import ManageCalamity from "../components/AdminCalamity/ManageCalamity";
 import SuperAdminManageCalamity from "../components/SuperAdmin/SuperAdminManageCalamity";
 
 

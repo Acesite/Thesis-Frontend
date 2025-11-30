@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AgriGISLogo from "../../components/MapboxImages/AgriGIS.png";
-import Button from "./MapControls/Button";
+import Button from "../AdminCalamity/MapControls/Button";
 
 const UserSidebar = ({
   zoomToBarangay,
