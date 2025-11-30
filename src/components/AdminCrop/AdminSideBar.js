@@ -93,10 +93,6 @@ function isSoftDeletedCrop(crop) {
     return true;
   }
 
-  if (no(crop.is_active) || no(crop.active)) {
-    return true;
-  }
-
   const checkStatusStr = (val) => {
     if (typeof val !== "string") return false;
     const s = val.toLowerCase();
@@ -364,6 +360,15 @@ const AdminSideBar = ({
   const hasSecondaryCrop =
     !!secondaryCropTypeId || !!secondaryVolume || !!isIntercroppedFlag;
 
+  // 🔹 ELEVATION VALUE (uses any available field name)
+  const avgElevation =
+    selectedCrop &&
+    (selectedCrop.avg_elevation ??
+      selectedCrop.avg_elevation_m ??
+      selectedCrop.elevation_m ??
+      selectedCrop.elevation ??
+      null);
+
   // harvest-by-year stats (year vs year)
   const harvestedCropsForStats = Array.isArray(crops)
     ? crops.filter((c) => !isSoftDeletedCrop(c) && isCropHarvested(c))
@@ -590,6 +595,14 @@ const AdminSideBar = ({
                   label="Est. harvest"
                   value={fmtDate(selectedCrop.estimated_harvest)}
                 />
+
+                {/* 🔹 NEW: elevation display */}
+                {avgElevation != null && (
+                  <KV
+                    label="Avg elevation (m)"
+                    value={fmt(avgElevation)}
+                  />
+                )}
 
                 {croppingSystemLabel && (
                   <KV label="Cropping system" value={croppingSystemLabel} />

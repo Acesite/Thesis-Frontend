@@ -459,14 +459,19 @@ const TagCropForm = ({
     if (defaultLocation?.hectares) setHectares(defaultLocation.hectares);
   }, [defaultLocation]);
 
-  // Default avg elevation from defaultLocation (meters)
+  // 🔹 Default avg elevation from defaultLocation (meters) – HANDLE NUMBER OR STRING
   useEffect(() => {
-    if (
-      defaultLocation &&
-      typeof defaultLocation.avgElevationM === "number" &&
-      !Number.isNaN(defaultLocation.avgElevationM)
-    ) {
-      setAvgElevation(defaultLocation.avgElevationM.toFixed(1));
+    if (!defaultLocation) return;
+
+    // Prefer avgElevationM, but be flexible
+    const raw =
+      defaultLocation.avgElevationM ??
+      defaultLocation.avgElevation ??
+      defaultLocation.elevation;
+
+    const num = Number(raw);
+    if (Number.isFinite(num)) {
+      setAvgElevation(num.toFixed(1)); // ex: 23.4
     }
   }, [defaultLocation]);
 
@@ -631,8 +636,7 @@ const TagCropForm = ({
   };
 
   const handleSubmit = async (e) => {
-    e?.preventDefault?.();
-
+    e?.preventDefault?.()
     const ok1 = validateStep1();
     const ok2 = validateStep2();
     const ok3 = validateStep3();

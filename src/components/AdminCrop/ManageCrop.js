@@ -569,6 +569,10 @@ const ManageCrop = () => {
                         label="Hectares"
                         value={fmtNum(crop.estimated_hectares)}
                       />
+                        <Stat
+                        label="Avg elevation (m)"
+                        value={`${fmtNum(crop.avg_elevation_m)} m`}
+                      />
                       <Stat
                         label="Barangay (Crop)"
                         value={crop.crop_barangay || "N/A"}

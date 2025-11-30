@@ -63,10 +63,6 @@ const addPulseStylesOnce = () => {
 };
 
 /* ---------- helper: detect soft-deleted / inactive crops ---------- */
-/* 
-   This is the IMPORTANT part that makes the map match your ManageCrop.
-   If your DB uses a different flag (e.g. `is_removed`), just add it here.
-*/
 function isSoftDeletedCrop(crop) {
   if (!crop) return false;
 
@@ -85,7 +81,6 @@ function isSoftDeletedCrop(crop) {
     v === "false" ||
     v === "no";
 
-  // common soft-delete flags
   if (
     yes(crop.is_deleted) ||
     yes(crop.deleted) ||
@@ -97,12 +92,10 @@ function isSoftDeletedCrop(crop) {
     return true;
   }
 
-  // active flags (0/false means inactive)
   if (no(crop.is_active) || no(crop.active)) {
     return true;
   }
 
-  // status strings
   const checkStatusStr = (val) => {
     if (typeof val !== "string") return false;
     const s = val.toLowerCase();
@@ -463,6 +456,7 @@ function strictDetectBarangayForGeometry(geom, barangaysFC) {
   }
   return null;
 }
+
 const formatNum = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return "—";
@@ -515,6 +509,7 @@ const AdminMapBox = () => {
   const HILITE_ANIM_REF = useRef(null);
   const hasDeepLinkedRef = useRef(false);
   const savedMarkersRef = useRef([]);
+
 
   const [mapStyle, setMapStyle] = useState(
     "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
@@ -723,6 +718,25 @@ const AdminMapBox = () => {
       markerRef.current.togglePopup();
     }
   };
+
+  /* ---------- TERRAIN helper (DEM + terrain) ---------- */
+  const ensureTerrain = useCallback(() => {
+    if (!map.current) return;
+    const m = map.current;
+    try {
+      if (!m.getSource("mapbox-dem")) {
+        m.addSource("mapbox-dem", {
+          type: "raster-dem",
+          url: "mapbox://mapbox.terrain-rgb",
+          tileSize: 512,
+          maxzoom: 14,
+        });
+      }
+      m.setTerrain({ source: "mapbox-dem", exaggeration: 1 });
+    } catch (err) {
+      console.warn("DEM / terrain setup failed:", err);
+    }
+  }, []);
 
   /* ---------- marker rendering WITH hover preview ---------- */
   const renderSavedMarkers = useCallback(async () => {
@@ -946,74 +960,76 @@ const AdminMapBox = () => {
   );
 
   const ensureBarangayLayers = useCallback(() => {
-  if (!map.current) return;
-  const m = map.current;
-  if (!BARANGAYS_FC?.features?.length) return;
+    if (!map.current) return;
+    const m = map.current;
+    if (!BARANGAYS_FC?.features?.length) return;
 
-  // source
-  if (!m.getSource("barangays-src")) {
-    m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
-  }
-
-  // boundary line
-  if (!m.getLayer("barangays-line")) {
-    m.addLayer({
-      id: "barangays-line",
-      type: "line",
-      source: "barangays-src",
-      paint: {
-        "line-color": "#1f2937",
-        "line-width": 1,
-        "line-opacity": 0.7,
-      },
-    });
-  }
-
-  // 🔹 name labels (works on all styles, incl. Satellite)
-  if (!m.getLayer("barangays-labels")) {
-    m.addLayer({
-      id: "barangays-labels",
-      type: "symbol",
-      source: "barangays-src",
-      layout: {
-        // pick first available name property
-        "text-field": [
-          "coalesce",
-          ["get", "Barangay"],
-          ["get", "barangay"],
-          ["get", "NAME"],
-          ["get", "name"],
-          ""
-        ],
-        "symbol-placement": "point",
-        "text-size": [
-          "interpolate", ["linear"], ["zoom"],
-          10, 10,   // zoom 10 -> 10px
-          12, 12,
-          14, 14,
-          16, 18    // zoom 16 -> 18px
-        ],
-        "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
-        "text-allow-overlap": false
-      },
-      paint: {
-        // readable on satellite + light/dark
-        "text-color": "#111827",
-        "text-halo-color": "rgba(255,255,255,0.9)",
-        "text-halo-width": 1.5,
-        "text-halo-blur": 0.2
-      }
-    });
-  }
-
-  // keep labels on top of your polygons/lines
-  try {
-    if (m.getLayer("crop-polygons-outline")) {
-      m.moveLayer("barangays-labels"); // moves to top by default
+    // source
+    if (!m.getSource("barangays-src")) {
+      m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
     }
-  } catch {}
-}, []);
 
+    // boundary line
+    if (!m.getLayer("barangays-line")) {
+      m.addLayer({
+        id: "barangays-line",
+        type: "line",
+        source: "barangays-src",
+        paint: {
+          "line-color": "#1f2937",
+          "line-width": 1,
+          "line-opacity": 0.7,
+        },
+      });
+    }
+
+    // 🔹 name labels (works on all styles, incl. Satellite)
+    if (!m.getLayer("barangays-labels")) {
+      m.addLayer({
+        id: "barangays-labels",
+        type: "symbol",
+        source: "barangays-src",
+        layout: {
+          "text-field": [
+            "coalesce",
+            ["get", "Barangay"],
+            ["get", "barangay"],
+            ["get", "NAME"],
+            ["get", "name"],
+            "",
+          ],
+          "symbol-placement": "point",
+          "text-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10,
+            10,
+            12,
+            12,
+            14,
+            14,
+            16,
+            18,
+          ],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+          "text-allow-overlap": false,
+        },
+        paint: {
+          "text-color": "#111827",
+          "text-halo-color": "rgba(255,255,255,0.9)",
+          "text-halo-width": 1.5,
+          "text-halo-blur": 0.2,
+        },
+      });
+    }
+
+    try {
+      if (m.getLayer("crop-polygons-outline")) {
+        m.moveLayer("barangays-labels");
+      }
+    } catch {}
+  }, []);
 
   // GPS accuracy ring
   const USER_ACC_SOURCE = "user-accuracy-source";
@@ -1174,6 +1190,29 @@ const AdminMapBox = () => {
     let pt = turf.centerOfMass(poly);
     if (!pt?.geometry?.coordinates) pt = turf.pointOnFeature(poly);
     return pt.geometry.coordinates;
+  }
+
+  // ---------- estimate average elevation (center-based) ----------
+  function estimateAverageElevation(geom) {
+    const m = map.current;
+    if (!m || !geom) return null;
+    if (typeof m.queryTerrainElevation !== "function") return null;
+
+    try {
+      const feat = { type: "Feature", geometry: geom, properties: {} };
+      const center = turf.centroid(feat);
+      const [lng, lat] = center.geometry.coordinates;
+      const raw = m.queryTerrainElevation(
+        { lng, lat },
+        { exaggerated: false }
+      );
+      if (typeof raw === "number" && Number.isFinite(raw)) {
+        return Number(raw.toFixed(1)); // meters
+      }
+    } catch (err) {
+      console.warn("estimateAverageElevation failed:", err);
+    }
+    return null;
   }
 
   /* ---------- reuse existing polygon for new season ---------- */
@@ -1475,6 +1514,9 @@ const AdminMapBox = () => {
 
       // directions control
       m.on("load", async () => {
+        // 🔹 enable terrain / DEM
+        ensureTerrain();
+
         if (!directionsRef.current && isDirectionsVisible) {
           const directions = new MapboxDirections({
             accessToken: mapboxgl.accessToken,
@@ -1584,11 +1626,19 @@ const AdminMapBox = () => {
         });
         const hectares = +(area / 10000).toFixed(2);
 
+        // 🔹 compute average elevation (meters) for this polygon
+        const avgElevationM = estimateAverageElevation(poly);
+
         setSelectedBarangay({
           name: detection.name,
           coordinates: detection.centroid,
         });
-        setNewTagLocation({ coordinates: ring, hectares, farmGeometry: poly });
+        setNewTagLocation({
+          coordinates: ring,
+          hectares,
+          farmGeometry: poly,
+          avgElevationM, // <--- pass elevation into Tag form state
+        });
         setIsTagging(true);
         return true;
       };
@@ -1611,6 +1661,9 @@ const AdminMapBox = () => {
       // style change branch
       map.current.setStyle(mapStyle);
       map.current.once("style.load", async () => {
+        // 🔹 re-enable terrain each time style changes
+        ensureTerrain();
+
         ensureUserAccuracyLayers();
         ensureBarangayLayers();
         if (userLoc) {
@@ -1665,6 +1718,7 @@ const AdminMapBox = () => {
     lockToBago,
     ensureUserAccuracyLayers,
     ensureBarangayLayers,
+    ensureTerrain,
     renderSavedMarkers,
     loadPolygons,
     highlightSelection,
@@ -1918,7 +1972,7 @@ const AdminMapBox = () => {
           }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2Zm3.7 6.3-2.6 6.5a1 1 0 0 1-.6.6l-6.5 2.6 2.6-6.5a1 1 0 0 1 .6-.6l6.5-2.6Z" />
+            <path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2Zm3.7 6.3-2.6 6.5a1 1 0 0 1-.6.6l-6.5 2.6 2.6-6.5Z" />
           </svg>
         </IconButton>
 
@@ -2099,7 +2153,7 @@ const AdminMapBox = () => {
       {isTagging && newTagLocation && (
         <TagCropForm
           defaultLocation={{
-            ...newTagLocation,
+            ...newTagLocation, // includes avgElevationM if present
             hectares: newTagLocation.hectares,
           }}
           selectedBarangay={selectedBarangay?.name}
