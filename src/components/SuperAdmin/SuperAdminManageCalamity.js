@@ -1,9 +1,10 @@
+// pages/SuperAdminManageCalamity.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AOS from "aos";
 import "aos/dist/aos.css";
 import axios from "axios";
-import AdminNav from "../NavBar/AdminNavbar";
+import SuperAdminNav from "../NavBar/SuperAdminNav";
 import Footer from "../LandingPage/Footer";
 
 /* ---------- CONFIG ---------- */
@@ -191,7 +192,7 @@ const EmptyState = ({ onClear }) => (
 );
 
 /* ---------- PAGE ---------- */
-const AdminManageCalamity = () => {
+const SuperAdminManageCalamity = () => {
   const navigate = useNavigate();
 
   const [incidents, setIncidents] = useState([]);
@@ -212,10 +213,13 @@ const AdminManageCalamity = () => {
 
   const [viewingIncident, setViewingIncident] = useState(null);
 
-  // Lookup lists
+  // Lookups
   const [cropTypes, setCropTypes] = useState([]);
   const [varieties, setVarieties] = useState([]);
   const [ecosystems, setEcosystems] = useState([]);
+
+  // NEW: farmers modal state
+  const [farmersModal, setFarmersModal] = useState(null); // { incident, farmers, loading }
 
   useEffect(() => {
     AOS.init({ duration: 400, once: true });
@@ -258,6 +262,23 @@ const AdminManageCalamity = () => {
       console.error("Error fetching incidents:", e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /* ------- farmers modal loader ------- */
+  const openFarmersModal = async (incident) => {
+    const id = String(incident.id);
+    try {
+      setFarmersModal({ incident, farmers: [], loading: true });
+      const { data } = await axios.get(`http://localhost:5000/api/managecalamities/${id}/farmers`);
+      setFarmersModal({
+        incident,
+        farmers: Array.isArray(data) ? data : [],
+        loading: false,
+      });
+    } catch (e) {
+      console.error("Load farmers failed:", e);
+      setFarmersModal({ incident, farmers: [], loading: false });
     }
   };
 
@@ -415,7 +436,6 @@ const AdminManageCalamity = () => {
     }
 
     if (name === "crop_type_id") {
-      // when crop changes, clear invalid ecosystem/variety selections
       return setEditForm((prev) => {
         const next = { ...prev, crop_type_id: value };
         const ecoValid = filteredEcosystems.some((e) => String(e.id) === String(prev.ecosystem_id));
@@ -507,7 +527,7 @@ const AdminManageCalamity = () => {
   /* ---------- RENDER ---------- */
   return (
     <div className="flex flex-col min-h-screen bg-white font-poppins">
-      <AdminNav />
+      <SuperAdminNav />
 
       <main className="ml-[115px] pt-[92px] pr-8 flex-grow">
         <div className="max-w-7xl mx-auto px-6">
@@ -589,63 +609,59 @@ const AdminManageCalamity = () => {
 
                 return (
                   <div key={inc.id} className="rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-sm transition relative" data-aos="fade-up">
-                    {/* Actions */}
-                   {/* Header — title left, badges + kebab right */}
-            <div className="flex items-center justify-between gap-3">
-              {/* left: type */}
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                <h3 className="text-[20px] font-semibold text-slate-900 truncate">{type}</h3>
-              </div>
+                    {/* Header — title left, badges + kebab right */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                        <h3 className="text-[20px] font-semibold text-slate-900 truncate">{type}</h3>
+                      </div>
 
-              {/* right: badges + kebab in one horizontal row */}
-              <div className="flex items-center gap-2 shrink-0">
-                {inc.status && (
-                  <span className={`px-2.5 py-1 rounded-full text-xs ${statusBadge(inc.status)}`}>
-                    {inc.status}
-                  </span>
-                )}
-                {(inc.severity_level || inc.severity_text) && (
-                  <span className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(inc.severity_level || inc.severity_text)}`}>
-                    {inc.severity_level || inc.severity_text}
-                  </span>
-                )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {inc.status && (
+                          <span className={`px-2.5 py-1 rounded-full text-xs ${statusBadge(inc.status)}`}>
+                            {inc.status}
+                          </span>
+                        )}
+                        {(inc.severity_level || inc.severity_text) && (
+                          <span className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(inc.severity_level || inc.severity_text)}`}>
+                            {inc.severity_level || inc.severity_text}
+                          </span>
+                        )}
 
-                {/* kebab + dropdown */}
-                <div className="relative">
-                  <button
-                    aria-label="More actions"
-                    aria-expanded={activeActionId === inc.id}
-                    onClick={() => setActiveActionId(id => id === inc.id ? null : inc.id)}
-                    className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                  >
-                    {/* horizontal three dots for crisp alignment */}
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                      <circle cx="5"  cy="10" r="1.6" />
-                      <circle cx="10" cy="10" r="1.6" />
-                      <circle cx="15" cy="10" r="1.6" />
-                    </svg>
-                  </button>
+                        <div className="relative">
+                          <button
+                            aria-label="More actions"
+                            aria-expanded={activeActionId === inc.id}
+                            onClick={() => setActiveActionId(id => id === inc.id ? null : inc.id)}
+                            className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          >
+                            <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                              <circle cx="5"  cy="10" r="1.6" />
+                              <circle cx="10" cy="10" r="1.6" />
+                              <circle cx="15" cy="10" r="1.6" />
+                            </svg>
+                          </button>
 
-                  {activeActionId === inc.id && (
-                    <div className="absolute right-0 mt-2 w-36 rounded-xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 overflow-hidden">
-                      <button
-                        onClick={() => { setActiveActionId(null); handleEdit(inc); }}
-                        className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => { setActiveActionId(null); setPendingDelete(inc); }}
-                        className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
-                      >
-                        Delete
-                      </button>
+                          {activeActionId === inc.id && (
+                            <div className="absolute right-0 mt-2 w-36 rounded-xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 overflow-hidden">
+                              <button
+                                onClick={() => { setActiveActionId(null); handleEdit(inc); }}
+                                className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => { setActiveActionId(null); setPendingDelete(inc); }}
+                                className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
+
                     {/* Meta */}
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
                       <Stat label="Reported" value={fmtDate(inc.date_reported || inc.reported_at)} />
@@ -686,10 +702,19 @@ const AdminManageCalamity = () => {
 
                     <NoteClamp text={inc.description || inc.note} className="mt-3" />
 
+                    {/* Footer row (status + View all) */}
                     <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100">
                       <div className="text-[12px] text-slate-500">
                         Status:&nbsp;<span className="text-slate-700">{inc.status || "Pending"}</span>
                       </div>
+
+                      {/* View all button -> opens modal with farmers */}
+                      <button
+                        onClick={() => openFarmersModal(inc)}
+                        className="text-[13px] font-medium text-emerald-700 hover:underline"
+                      >
+                        View all
+                      </button>
                     </div>
                   </div>
                 );
@@ -987,61 +1012,6 @@ const AdminManageCalamity = () => {
                   </div>
                 </div>
               </section>
-
-              {/* Area & coordinates */}
-              <section>
-                <h4 className="text-sm font-semibold text-slate-900">Area &amp; coordinates</h4>
-                <p className="mt-0.5 text-[11px] text-slate-500">Geographic info of the incident.</p>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label htmlFor="affected_area" className="text-xs font-medium text-slate-700">Affected area (ha)</label>
-                    <input
-                      id="affected_area"
-                      type="number"
-                      inputMode="decimal"
-                      step="any"
-                      name="affected_area"
-                      value={editForm.affected_area ?? ""}
-                      onChange={handleEditChange}
-                      placeholder="0.00"
-                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                  </div>
-
-                  <div />
-
-                  <div>
-                    <label htmlFor="latitude" className="text-xs font-medium text-slate-700">Latitude</label>
-                    <input
-                      id="latitude"
-                      type="number"
-                      inputMode="decimal"
-                      step="any"
-                      name="latitude"
-                      value={editForm.latitude ?? ""}
-                      onChange={handleEditChange}
-                      placeholder="10.123456"
-                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="longitude" className="text-xs font-medium text-slate-700">Longitude</label>
-                    <input
-                      id="longitude"
-                      type="number"
-                      inputMode="decimal"
-                      step="any"
-                      name="longitude"
-                      value={editForm.longitude ?? ""}
-                      onChange={handleEditChange}
-                      placeholder="122.123456"
-                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                  </div>
-                </div>
-              </section>
             </div>
 
             {/* Footer */}
@@ -1063,7 +1033,7 @@ const AdminManageCalamity = () => {
         </div>
       )}
 
-      {/* VIEW MODAL */}
+      {/* VIEW MODAL (incident quick view) */}
       {viewingIncident && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
           <div className="bg-white p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl relative">
@@ -1116,6 +1086,119 @@ const AdminManageCalamity = () => {
           </div>
         </div>
       )}
+
+   {/* VIEW-ALL MODAL — clean UI like crop modal, no photos */}
+{farmersModal && (() => {
+  const inc = farmersModal.incident || {};
+  const type = inc.calamity_type || inc.incident_type || inc.type_name || "Incident";
+  const locationText = inc.location || inc.barangay || "—";
+
+  const KV = ({ label, value, className = "" }) => (
+    <div className={className}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div className="text-[14px] text-slate-900">{value ?? "N/A"}</div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-4 overflow-y-auto">
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl p-6 md:p-8 relative">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-[22px] font-semibold text-slate-900">
+              {type}
+              {inc.variety_name ? ` · ${inc.variety_name}` : ""}
+            </h3>
+            <p className="text-sm text-slate-500">{locationText}</p>
+          </div>
+          <button
+            onClick={() => setFarmersModal(null)}
+            className="p-2 -m-2 rounded-md text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+            aria-label="Close"
+            title="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Soft card: FARMER section */}
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 md:p-5">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-3">
+            Farmer
+          </div>
+
+          {farmersModal.loading ? (
+            <div className="text-sm text-slate-600">Loading farmer details…</div>
+          ) : (farmersModal.farmers || []).length === 0 ? (
+            <div className="text-sm text-slate-600">No linked farmers for this incident.</div>
+          ) : (
+            // Show only the first farmer in the header panel—same feel as your crop modal
+            (() => {
+              const f = farmersModal.farmers[0] || {};
+              const fullName =
+                f.full_name ||
+                [f.first_name, f.last_name].filter(Boolean).join(" ").trim() ||
+                "N/A";
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                  <KV label="Name" value={fullName} />
+                  <KV label="Mobile" value={f.mobile_number || f.contact_no || "N/A"} />
+                  <KV label="Barangay" value={f.barangay || "N/A"} />
+                  <KV label="Full Address" value={f.full_address || f.address || "N/A"} />
+                </div>
+              );
+            })()
+          )}
+        </div>
+
+        {/* Divider */}
+        <div className="mt-5 mb-3 h-px bg-slate-200" />
+
+        {/* Meta rows, same spacing rhythm as your crop modal */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+          <KV label="Reported" value={fmtDate(inc.date_reported || inc.reported_at)} />
+          <KV label="Severity" value={inc.severity_level || inc.severity_text || "N/A"} />
+          <KV label="Status" value={inc.status || "Pending"} />
+          <KV label="Affected Area" value={inc.affected_area ? `${Number(inc.affected_area).toFixed(2)} ha` : "N/A"} />
+          <KV label="Crop Type" value={inc.crop_type_name || inc.crop_type_id || "N/A"} />
+          <KV label="Ecosystem" value={inc.ecosystem_name || inc.ecosystem_id || "N/A"} />
+          <KV label="Variety" value={inc.variety_name || inc.crop_variety_id || "N/A"} />
+          <KV label="Coordinates" value={
+            inc.latitude != null && inc.longitude != null
+              ? `${Number(inc.latitude).toFixed(5)}, ${Number(inc.longitude).toFixed(5)}`
+              : "N/A"
+          } />
+        </div>
+
+        {/* Optional note/description (kept minimal like the crop modal) */}
+        {(inc.description || inc.note) && (
+          <div className="mt-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+              Description
+            </div>
+            <p className="text-[14px] text-slate-700 whitespace-pre-wrap">
+              {inc.description || inc.note}
+            </p>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={() => setFarmersModal(null)}
+            className="px-4 py-2 rounded-md border border-slate-300 hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+})()}
+
 
       {/* CONFIRM DELETE */}
       {pendingDelete && (
@@ -1176,4 +1259,4 @@ function renderPhotoStrip(item) {
   );
 }
 
-export default AdminManageCalamity;
+export default SuperAdminManageCalamity;

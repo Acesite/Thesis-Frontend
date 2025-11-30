@@ -3,3 +3,7 @@
 @tailwind utilities;
 @import '@fontsource/poppins';
 
+/* index.css or App.css */
+.mapboxgl-ctrl-directions {
+  display: none !important;
+}

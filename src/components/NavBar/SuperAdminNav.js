@@ -134,7 +134,7 @@ const AdminNavBar = () => {
             <a
               href="/SuperAdminLandingPage"
               className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/AdminLanding" ? "text-green-700 font-medium" : "text-black-600"
+                location.pathname === "/SuperAdminLandingPage" ? "text-green-700 font-medium" : "text-black-600"
               }`}
             >
               Home
@@ -149,9 +149,9 @@ const AdminNavBar = () => {
             </a>
             
             <a
-              href="/ManageCalamity"
+              href="/SuperAdminManageCalamity"
               className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/ManageCalamity" ? "text-green-700 font-medium" : "text-black-600"
+                location.pathname === "/SuperAdminManageCalamity" ? "text-green-700 font-medium" : "text-black-600"
               }`}
             >
              Calamity

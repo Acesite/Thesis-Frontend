@@ -946,22 +946,74 @@ const AdminMapBox = () => {
   );
 
   const ensureBarangayLayers = useCallback(() => {
-    if (!map.current) return;
-    const m = map.current;
-    if (!BARANGAYS_FC?.features?.length) return;
+  if (!map.current) return;
+  const m = map.current;
+  if (!BARANGAYS_FC?.features?.length) return;
 
-    if (!m.getSource("barangays-src")) {
-      m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
+  // source
+  if (!m.getSource("barangays-src")) {
+    m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
+  }
+
+  // boundary line
+  if (!m.getLayer("barangays-line")) {
+    m.addLayer({
+      id: "barangays-line",
+      type: "line",
+      source: "barangays-src",
+      paint: {
+        "line-color": "#1f2937",
+        "line-width": 1,
+        "line-opacity": 0.7,
+      },
+    });
+  }
+
+  // 🔹 name labels (works on all styles, incl. Satellite)
+  if (!m.getLayer("barangays-labels")) {
+    m.addLayer({
+      id: "barangays-labels",
+      type: "symbol",
+      source: "barangays-src",
+      layout: {
+        // pick first available name property
+        "text-field": [
+          "coalesce",
+          ["get", "Barangay"],
+          ["get", "barangay"],
+          ["get", "NAME"],
+          ["get", "name"],
+          ""
+        ],
+        "symbol-placement": "point",
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          10, 10,   // zoom 10 -> 10px
+          12, 12,
+          14, 14,
+          16, 18    // zoom 16 -> 18px
+        ],
+        "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+        "text-allow-overlap": false
+      },
+      paint: {
+        // readable on satellite + light/dark
+        "text-color": "#111827",
+        "text-halo-color": "rgba(255,255,255,0.9)",
+        "text-halo-width": 1.5,
+        "text-halo-blur": 0.2
+      }
+    });
+  }
+
+  // keep labels on top of your polygons/lines
+  try {
+    if (m.getLayer("crop-polygons-outline")) {
+      m.moveLayer("barangays-labels"); // moves to top by default
     }
-    if (!m.getLayer("barangays-line")) {
-      m.addLayer({
-        id: "barangays-line",
-        type: "line",
-        source: "barangays-src",
-        paint: { "line-color": "#1f2937", "line-width": 1, "line-opacity": 0.7 },
-      });
-    }
-  }, []);
+  } catch {}
+}, []);
+
 
   // GPS accuracy ring
   const USER_ACC_SOURCE = "user-accuracy-source";

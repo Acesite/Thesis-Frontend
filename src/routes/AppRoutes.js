@@ -20,7 +20,7 @@ import ChooseMap from "../components/ChooseRole/ChooseMap";
 import ChooseRoleLogin from "../components/ChooseRole/ChooseRoleLogin";
 import LoginFarmer from "../components/Login/LoginFarmer";
 import ManageCalamity from "../components/User/ManageCalamity";
-import AdminManageCalamity from "../components/Admin/AdminManageCalamity";
+import SuperAdminManageCalamity from "../components/SuperAdmin/SuperAdminManageCalamity";
 
 
 const AppRoutes = () => {
@@ -42,18 +42,18 @@ const AppRoutes = () => {
       <Route path="/SuperAdminManageCrop" element={<SuperAdminManageCrop />} />
       <Route path="/SuperAdminMap" element={<SuperAdminMap />} />
       <Route path="/Graphs" element={<Graphs/>} />
+      <Route path="/SuperAdminManageCalamity" element={<SuperAdminManageCalamity/>} />
 
       {/*User*/}
       <Route path="/UserMap" element={<UserMap />} />
-      <Route path="/CalamityFarmerMap" element={<CalamityMap />} />
-   
+
       {/*Admin*/}
       <Route path="/AdminLanding" element={<AdminLanding />} />
       <Route path="/AdminMap" element={<AdminMap />} />
       <Route path="/AdminLanding" element={<AdminLanding />} />
       <Route path="/ManageCrops" element={<ManageCrop />} />
       <Route path="/ManageCalamity" element={<ManageCalamity />} />
-        <Route path="/AdminManageCalamity" element={<AdminManageCalamity />} />
+      <Route path="/CalamityFarmerMap" element={<CalamityMap />} />
     </Routes>
   );
 };

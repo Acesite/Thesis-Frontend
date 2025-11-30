@@ -202,9 +202,9 @@ const AdminNavBar = () => {
           </a>
 
           <a
-            href="/AdminManageCalamity"
+            href="/ManageCalamity"
             className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/AdminManageCalamity" ? "text-emerald-700 font-medium" : "text-gray-800"
+              location.pathname === "/ManageCalamity" ? "text-emerald-700 font-medium" : "text-gray-800"
             }`}
           >
             Calamity
