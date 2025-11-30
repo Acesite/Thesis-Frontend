@@ -1,7 +1,7 @@
 // components/AdminNavBar.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
-import AdminProfileForm from "../Admin/AdminProfileForm";
+import AdminProfileForm from "../AdminCrop/AdminProfileForm";
 
 function AvatarButton({ profilePicture, initials, onClick }) {
   const [imgError, setImgError] = React.useState(false);
