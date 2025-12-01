@@ -132,6 +132,15 @@ const AdminSideBar = ({
   const [showCropDropdown, setShowCropDropdown] = useState(false);
   const navigate = useNavigate();
 
+  // ✅ New: back button handler
+  const handleBackToCrops = () => {
+    if (window.history.length > 1) {
+      navigate(-1); // go back to previous page (e.g., /ManageCrops)
+    } else {
+      navigate("/ManageCrops"); // fallback if opened directly
+    }
+  };
+
   // barangay data
   const barangayCoordinates = {
     Abuanan: [122.9844, 10.5275],
@@ -493,6 +502,18 @@ const AdminSideBar = ({
               </div>
             )}
           </div>
+        </div>
+
+        {/* 🔙 Back to Manage Crops */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={handleBackToCrops}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            title="Go back to Manage Crops"
+          >
+            ← Back to Manage Crops
+          </button>
         </div>
 
         {/* location */}
@@ -1240,10 +1261,22 @@ const AdminSideBar = ({
           </details>
         </Section>
 
-        {/* home button */}
-        <div className="mt-5">
+        {/* home & back buttons */}
+        <div className="mt-5 flex gap-2">
           <Button to="/AdminLanding" variant="outline" size="md">
             Home
+          </Button>
+          {/* Optional second back button using your Button component */}
+          <Button
+            to="#"
+            variant="outline"
+            size="md"
+            onClick={(e) => {
+              e.preventDefault();
+              handleBackToCrops();
+            }}
+          >
+            Back
           </Button>
         </div>
       </div>
