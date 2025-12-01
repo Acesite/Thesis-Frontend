@@ -332,6 +332,10 @@ const TagCropForm = ({
   const [farmerBarangay, setFarmerBarangay] = useState("");
   const [farmerAddress, setFarmerAddress] = useState("");
 
+  // 🔹 Tenure
+  const [tenureTypes, setTenureTypes] = useState([]);
+  const [selectedTenureId, setSelectedTenureId] = useState("");
+
   // Ecosystems
   const [ecosystems, setEcosystems] = useState([]);
   const [selectedEcosystem, setSelectedEcosystem] = useState("");
@@ -414,7 +418,7 @@ const TagCropForm = ({
   }, [selectedCropType]);
 
   const autoHarvestCandidate = useMemo(() => {
-    const days = STANDARD_MATURITY_DAYS[selectedCropType] || 0;
+     const days = STANDARD_MATURITY_DAYS[selectedCropType] || 0;
     return addDaysToISO(plantedDate, days);
   }, [plantedDate, selectedCropType]);
 
@@ -452,6 +456,14 @@ const TagCropForm = ({
       .then((res) => res.json())
       .then((data) => setCropTypes(data))
       .catch((err) => console.error("Failed to load crop types:", err));
+  }, []);
+
+  // 🔹 Tenure types
+  useEffect(() => {
+    fetch("http://localhost:5000/api/crops/tenure-types")
+      .then((res) => res.json())
+      .then((data) => setTenureTypes(data))
+      .catch((err) => console.error("Failed to load tenure types:", err));
   }, []);
 
   // Default hectares from defaultLocation
@@ -573,6 +585,9 @@ const TagCropForm = ({
     if (!farmerAddress.trim())
       newErr.farmerAddress = "Complete address is required.";
 
+    // 🔹 tenure required
+    if (!selectedTenureId) newErr.tenure = "Please choose land tenure type.";
+
     setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
   };
@@ -592,7 +607,8 @@ const TagCropForm = ({
     farmerLastName &&
     farmerMobile &&
     farmerBarangay &&
-    farmerAddress;
+    farmerAddress &&
+    selectedTenureId;
 
   /* ---------- HANDLERS ---------- */
 
@@ -710,6 +726,9 @@ const TagCropForm = ({
     formData.append("farmer_barangay", farmerBarangay || "");
     formData.append("full_address", farmerAddress || "");
 
+    // 🔹 land tenure
+    formData.append("tenure_id", selectedTenureId || "");
+
     if (photos) {
       for (let i = 0; i < photos.length; i++) formData.append("photos", photos[i]);
     }
@@ -739,6 +758,7 @@ const TagCropForm = ({
     setFarmerAddress("");
     setSelectedEcosystem("");
     setAvgElevation("");
+    setSelectedTenureId(""); // 🔹
     setErrors({});
   };
 
@@ -756,6 +776,12 @@ const TagCropForm = ({
   const getCroppingSystemLabel = () => {
     const idNum = Number(croppingSystemId);
     return CROPPING_SYSTEMS[idNum] || "Monocrop";
+  };
+
+  // 🔹 small helper to show tenure name in review
+  const getTenureLabel = () => {
+    const t = tenureTypes.find((x) => String(x.id) === String(selectedTenureId));
+    return t ? t.name : "—";
   };
 
   /* ---------- UI ---------- */
@@ -1476,6 +1502,29 @@ const TagCropForm = ({
                       </Select>
                     </Field>
 
+                    {/* 🔹 Land tenure */}
+                    <Field label="Land tenure type" required error={errors.tenure}>
+                      <Select
+                        error={errors.tenure}
+                        value={selectedTenureId}
+                        onChange={(e) => {
+                          setSelectedTenureId(e.target.value);
+                          setFieldError("tenure", "");
+                        }}
+                        onBlur={() => {
+                          if (!selectedTenureId)
+                            setFieldError("tenure", "Please choose land tenure type.");
+                        }}
+                      >
+                        <option value="">Select tenure type</option>
+                        {tenureTypes.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+
                     <Field
                       label="Complete address"
                       required
@@ -1688,6 +1737,7 @@ const TagCropForm = ({
                     ["Name", `${farmerFirstName} ${farmerLastName}`.trim()],
                     ["Mobile", farmerMobile],
                     ["Barangay", farmerBarangay],
+                    ["Land tenure", getTenureLabel()], // 🔹
                     ["Address", farmerAddress],
                   ].map(([k, v], i, a) => (
                     <div

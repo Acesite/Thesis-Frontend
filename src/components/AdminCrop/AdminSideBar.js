@@ -366,6 +366,13 @@ const AdminSideBar = ({
       selectedCrop.elevation ??
       null);
 
+  // 🔹 TENURE display text
+  const tenureDisplay =
+    (selectedCrop && selectedCrop.tenure_name) ||
+    (selectedCrop && selectedCrop.tenure_id != null
+      ? `Tenure #${selectedCrop.tenure_id}`
+      : null);
+
   // harvest-by-year stats (year vs year)
   const harvestedCropsForStats = Array.isArray(crops)
     ? crops.filter((c) => !isSoftDeletedCrop(c) && isCropHarvested(c))
@@ -647,7 +654,8 @@ const AdminSideBar = ({
               {(selectedCrop.farmer_first_name ||
                 selectedCrop.farmer_barangay ||
                 selectedCrop.farmer_mobile ||
-                selectedCrop.farmer_address) && (
+                selectedCrop.farmer_address ||
+                tenureDisplay) && (
                 <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">
                     Farmer details
@@ -675,6 +683,11 @@ const AdminSideBar = ({
                         label="Full address"
                         value={selectedCrop.farmer_address}
                       />
+                    )}
+
+                    {/* 🔹 NEW: Land tenure */}
+                    {tenureDisplay && (
+                      <KV label="Land tenure" value={tenureDisplay} />
                     )}
                   </dl>
                 </div>

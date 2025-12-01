@@ -168,6 +168,8 @@ const ManageCrop = () => {
         c.farmer_barangay,
         c.farmer_address,
         c.note,
+        // include tenure in search
+        c.tenure_name,
         // secondary crop fields
         c.intercrop_crop_name,
         c.intercrop_variety_name,
@@ -569,7 +571,7 @@ const ManageCrop = () => {
                         label="Hectares"
                         value={fmtNum(crop.estimated_hectares)}
                       />
-                        <Stat
+                      <Stat
                         label="Avg elevation (m)"
                         value={`${fmtNum(crop.avg_elevation_m)} m`}
                       />
@@ -577,6 +579,8 @@ const ManageCrop = () => {
                         label="Barangay (Crop)"
                         value={crop.crop_barangay || "N/A"}
                       />
+                      {/* Tenure */}
+                      <Stat label="Tenure" value={crop.tenure_name || "N/A"} />
                       <Stat
                         label="Map"
                         value={
@@ -630,31 +634,27 @@ const ManageCrop = () => {
                       </div>
                     )}
 
-              
-
                     {/* Notes */}
-                    <NoteClamp text={crop.note} className="mt-3" 
-                    />
+                    <NoteClamp text={crop.note} className="mt-3" />
 
-                  {/* Footer (with View all on the right) */}
-<div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100">
-  <div className="text-[12px] text-slate-500">
-    Tagged by{" "}
-    <span className="text-slate-700">
-      {crop.tagger_first_name && crop.tagger_last_name
-        ? `${crop.tagger_first_name} ${crop.tagger_last_name}`
-        : crop.tagger_email || "N/A"}
-    </span>
-  </div>
+                    {/* Footer (with View all on the right) */}
+                    <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100">
+                      <div className="text-[12px] text-slate-500">
+                        Tagged by{" "}
+                        <span className="text-slate-700">
+                          {crop.tagger_first_name && crop.tagger_last_name
+                            ? `${crop.tagger_first_name} ${crop.tagger_last_name}`
+                            : crop.tagger_email || "N/A"}
+                        </span>
+                      </div>
 
-  <button
-    onClick={() => setViewingCrop(crop)}
-    className="text-sm font-medium text-emerald-700 hover:underline"
-  >
-    View all
-  </button>
-</div>
-
+                      <button
+                        onClick={() => setViewingCrop(crop)}
+                        className="text-sm font-medium text-emerald-700 hover:underline"
+                      >
+                        View all
+                      </button>
+                    </div>
                   </div>
                 );
               })
@@ -1158,6 +1158,8 @@ const ManageCrop = () => {
                     </span>
                   }
                 />
+                {/* Tenure in modal */}
+                <Stat label="Tenure" value={viewingCrop.tenure_name || "N/A"} />
               </div>
             </div>
 
