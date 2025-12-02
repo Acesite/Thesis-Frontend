@@ -260,21 +260,9 @@ const Pill = ({ color = "emerald", children }) => {
 
 /* ---------- WIZARD STEPS ---------- */
 const STEPS = [
-  {
-    id: 1,
-    title: "Crop & dates",
-    subtitle: "Crop type, ecosystem, planting",
-  },
-  {
-    id: 2,
-    title: "Area & location",
-    subtitle: "Cropping system, area, barangay",
-  },
-  {
-    id: 3,
-    title: "Farmer details",
-    subtitle: "Owner / farmer information",
-  },
+  { id: 1, title: "Crop & dates", subtitle: "Crop type, ecosystem, planting" },
+  { id: 2, title: "Area & location", subtitle: "Cropping system, area, barangay" },
+  { id: 3, title: "Farmer details", subtitle: "Owner / farmer information" },
 ];
 
 /* ---------- COMPONENT ---------- */
@@ -331,6 +319,9 @@ const TagCropForm = ({
   const [farmerMobile, setFarmerMobile] = useState("");
   const [farmerBarangay, setFarmerBarangay] = useState("");
   const [farmerAddress, setFarmerAddress] = useState("");
+
+  // 🔹 Farmer privacy
+  const [isAnonymousFarmer, setIsAnonymousFarmer] = useState(false);
 
   // 🔹 Tenure
   const [tenureTypes, setTenureTypes] = useState([]);
@@ -418,7 +409,7 @@ const TagCropForm = ({
   }, [selectedCropType]);
 
   const autoHarvestCandidate = useMemo(() => {
-     const days = STANDARD_MATURITY_DAYS[selectedCropType] || 0;
+    const days = STANDARD_MATURITY_DAYS[selectedCropType] || 0;
     return addDaysToISO(plantedDate, days);
   }, [plantedDate, selectedCropType]);
 
@@ -565,28 +556,30 @@ const TagCropForm = ({
     return Object.keys(newErr).length === 0;
   };
 
-  // Step 3: farmer details
+  // Step 3: farmer details (conditional if anonymous)
   const validateStep3 = () => {
     const newErr = {};
 
-    if (!farmerFirstName.trim())
-      newErr.farmerFirstName = "First name is required.";
-    if (!farmerLastName.trim())
-      newErr.farmerLastName = "Last name is required.";
+    if (!isAnonymousFarmer) {
+      if (!farmerFirstName.trim())
+        newErr.farmerFirstName = "First name is required.";
+      if (!farmerLastName.trim())
+        newErr.farmerLastName = "Last name is required.";
 
-    const phoneRegex = /^09\d{9}$/;
-    if (!farmerMobile) {
-      newErr.farmerMobile = "Mobile number is required.";
-    } else if (!phoneRegex.test(farmerMobile)) {
-      newErr.farmerMobile = "Use PH format: 09XXXXXXXXX.";
+      const phoneRegex = /^09\d{9}$/;
+      if (!farmerMobile) {
+        newErr.farmerMobile = "Mobile number is required.";
+      } else if (!phoneRegex.test(farmerMobile)) {
+        newErr.farmerMobile = "Use PH format: 09XXXXXXXXX.";
+      }
+
+      if (!farmerBarangay) newErr.farmerBarangay = "Please choose a barangay.";
+      if (!farmerAddress.trim())
+        newErr.farmerAddress = "Complete address is required.";
+
+      if (!selectedTenureId)
+        newErr.tenure = "Please choose land tenure type.";
     }
-
-    if (!farmerBarangay) newErr.farmerBarangay = "Please choose a barangay.";
-    if (!farmerAddress.trim())
-      newErr.farmerAddress = "Complete address is required.";
-
-    // 🔹 tenure required
-    if (!selectedTenureId) newErr.tenure = "Please choose land tenure type.";
 
     setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
@@ -603,12 +596,13 @@ const TagCropForm = ({
     !((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId);
 
   const isStep3Valid = () =>
-    farmerFirstName &&
-    farmerLastName &&
-    farmerMobile &&
-    farmerBarangay &&
-    farmerAddress &&
-    selectedTenureId;
+    isAnonymousFarmer ||
+    (farmerFirstName &&
+      farmerLastName &&
+      farmerMobile &&
+      farmerBarangay &&
+      farmerAddress &&
+      selectedTenureId);
 
   /* ---------- HANDLERS ---------- */
 
@@ -652,7 +646,7 @@ const TagCropForm = ({
   };
 
   const handleSubmit = async (e) => {
-    e?.preventDefault?.()
+    e?.preventDefault?.();
     const ok1 = validateStep1();
     const ok2 = validateStep2();
     const ok3 = validateStep3();
@@ -720,14 +714,35 @@ const TagCropForm = ({
 
     if (adminId) formData.append("admin_id", String(adminId));
 
-    formData.append("farmer_first_name", farmerFirstName || "");
-    formData.append("farmer_last_name", farmerLastName || "");
-    formData.append("farmer_mobile", farmerMobile || "");
-    formData.append("farmer_barangay", farmerBarangay || "");
-    formData.append("full_address", farmerAddress || "");
+    // 🔹 Farmer privacy flag + conditional fields
+    formData.append("is_anonymous_farmer", isAnonymousFarmer ? "1" : "0");
+
+    formData.append(
+      "farmer_first_name",
+      isAnonymousFarmer ? "" : (farmerFirstName || "")
+    );
+    formData.append(
+      "farmer_last_name",
+      isAnonymousFarmer ? "" : (farmerLastName || "")
+    );
+    formData.append(
+      "farmer_mobile",
+      isAnonymousFarmer ? "" : (farmerMobile || "")
+    );
+    formData.append(
+      "farmer_barangay",
+      isAnonymousFarmer ? "" : (farmerBarangay || "")
+    );
+    formData.append(
+      "full_address",
+      isAnonymousFarmer ? "" : (farmerAddress || "")
+    );
 
     // 🔹 land tenure
-    formData.append("tenure_id", selectedTenureId || "");
+    formData.append(
+      "tenure_id",
+      isAnonymousFarmer ? "" : (selectedTenureId || "")
+    );
 
     if (photos) {
       for (let i = 0; i < photos.length; i++) formData.append("photos", photos[i]);
@@ -758,7 +773,8 @@ const TagCropForm = ({
     setFarmerAddress("");
     setSelectedEcosystem("");
     setAvgElevation("");
-    setSelectedTenureId(""); // 🔹
+    setSelectedTenureId("");
+    setIsAnonymousFarmer(false);
     setErrors({});
   };
 
@@ -778,7 +794,6 @@ const TagCropForm = ({
     return CROPPING_SYSTEMS[idNum] || "Monocrop";
   };
 
-  // 🔹 small helper to show tenure name in review
   const getTenureLabel = () => {
     const t = tenureTypes.find((x) => String(x.id) === String(selectedTenureId));
     return t ? t.name : "—";
@@ -1376,16 +1391,53 @@ const TagCropForm = ({
                     title="Farmer details"
                     subtitle="Information of the owner / farmer of this field."
                   >
+                    {/* 🔹 Anonymous toggle */}
+                    <div className="mb-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3">
+                      <label className="flex items-start gap-3 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                          checked={isAnonymousFarmer}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setIsAnonymousFarmer(checked);
+
+                            if (checked) {
+                              // Clear errors when switching to anonymous
+                              setErrors((prev) => ({
+                                ...prev,
+                                farmerFirstName: "",
+                                farmerLastName: "",
+                                farmerMobile: "",
+                                farmerBarangay: "",
+                                farmerAddress: "",
+                                tenure: "",
+                              }));
+                            }
+                          }}
+                        />
+                        <span>
+                          <span className="font-medium">
+                            Farmer prefers not to share personal details
+                          </span>
+                          <span className="block text-xs text-gray-500 mt-0.5">
+                            If checked, name, mobile number, address, and tenure will not be required.
+                            The crop will still be tagged to this field and barangay.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      
                       <Field
                         label="First name"
-                        required
+                        required={!isAnonymousFarmer}
                         error={errors.farmerFirstName}
                       >
                         <Input
                           type="text"
-                          required
+                          required={!isAnonymousFarmer}
+                          disabled={isAnonymousFarmer}
                           value={farmerFirstName}
                           onChange={(e) => {
                             setFarmerFirstName(e.target.value);
@@ -1397,7 +1449,7 @@ const TagCropForm = ({
                             );
                           }}
                           onBlur={() => {
-                            if (!farmerFirstName.trim())
+                            if (!isAnonymousFarmer && !farmerFirstName.trim())
                               setFieldError(
                                 "farmerFirstName",
                                 "First name is required."
@@ -1405,17 +1457,21 @@ const TagCropForm = ({
                           }}
                           placeholder="Juan"
                           error={errors.farmerFirstName}
+                          className={
+                            isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                          }
                         />
                       </Field>
 
                       <Field
                         label="Last name"
-                        required
+                        required={!isAnonymousFarmer}
                         error={errors.farmerLastName}
                       >
                         <Input
                           type="text"
-                          required
+                          required={!isAnonymousFarmer}
+                          disabled={isAnonymousFarmer}
                           value={farmerLastName}
                           onChange={(e) => {
                             setFarmerLastName(e.target.value);
@@ -1427,7 +1483,7 @@ const TagCropForm = ({
                             );
                           }}
                           onBlur={() => {
-                            if (!farmerLastName.trim())
+                            if (!isAnonymousFarmer && !farmerLastName.trim())
                               setFieldError(
                                 "farmerLastName",
                                 "Last name is required."
@@ -1435,18 +1491,22 @@ const TagCropForm = ({
                           }}
                           placeholder="Dela Cruz"
                           error={errors.farmerLastName}
+                          className={
+                            isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                          }
                         />
                       </Field>
                     </div>
 
                     <Field
                       label="Mobile number"
-                      required
+                      required={!isAnonymousFarmer}
                       error={errors.farmerMobile}
                     >
                       <Input
                         type="text"
-                        required
+                        required={!isAnonymousFarmer}
+                        disabled={isAnonymousFarmer}
                         inputMode="numeric"
                         pattern="^09\\d{9}$"
                         title="Use PH format: 09XXXXXXXXX"
@@ -1460,6 +1520,7 @@ const TagCropForm = ({
                           );
                         }}
                         onBlur={() => {
+                          if (isAnonymousFarmer) return;
                           const ok = /^09\d{9}$/.test(farmerMobile);
                           if (!ok)
                             setFieldError(
@@ -1469,29 +1530,36 @@ const TagCropForm = ({
                         }}
                         placeholder="09123456789"
                         error={errors.farmerMobile}
+                        className={
+                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                        }
                       />
                     </Field>
 
                     <Field
                       label="Barangay"
-                      required
+                      required={!isAnonymousFarmer}
                       error={errors.farmerBarangay}
                     >
                       <Select
                         error={errors.farmerBarangay}
-                        required
+                        required={!isAnonymousFarmer}
+                        disabled={isAnonymousFarmer}
                         value={farmerBarangay}
                         onChange={(e) => {
                           setFarmerBarangay(e.target.value);
                           setFieldError("farmerBarangay", "");
                         }}
                         onBlur={() => {
-                          if (!farmerBarangay)
+                          if (!isAnonymousFarmer && !farmerBarangay)
                             setFieldError(
                               "farmerBarangay",
                               "Please choose a barangay."
                             );
                         }}
+                        className={
+                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                        }
                       >
                         <option value="">Select barangay</option>
                         {mergedBarangays.map((bgy) => (
@@ -1503,18 +1571,26 @@ const TagCropForm = ({
                     </Field>
 
                     {/* 🔹 Land tenure */}
-                    <Field label="Land tenure type" required error={errors.tenure}>
+                    <Field
+                      label="Land tenure type"
+                      required={!isAnonymousFarmer}
+                      error={errors.tenure}
+                    >
                       <Select
                         error={errors.tenure}
                         value={selectedTenureId}
+                        disabled={isAnonymousFarmer}
                         onChange={(e) => {
                           setSelectedTenureId(e.target.value);
                           setFieldError("tenure", "");
                         }}
                         onBlur={() => {
-                          if (!selectedTenureId)
+                          if (!isAnonymousFarmer && !selectedTenureId)
                             setFieldError("tenure", "Please choose land tenure type.");
                         }}
+                        className={
+                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                        }
                       >
                         <option value="">Select tenure type</option>
                         {tenureTypes.map((t) => (
@@ -1527,12 +1603,13 @@ const TagCropForm = ({
 
                     <Field
                       label="Complete address"
-                      required
+                      required={!isAnonymousFarmer}
                       error={errors.farmerAddress}
                     >
                       <Input
                         type="text"
-                        required
+                        required={!isAnonymousFarmer}
+                        disabled={isAnonymousFarmer}
                         value={farmerAddress}
                         onChange={(e) => {
                           setFarmerAddress(e.target.value);
@@ -1544,7 +1621,7 @@ const TagCropForm = ({
                           );
                         }}
                         onBlur={() => {
-                          if (!farmerAddress.trim())
+                          if (!isAnonymousFarmer && !farmerAddress.trim())
                             setFieldError(
                               "farmerAddress",
                               "Complete address is required."
@@ -1552,6 +1629,9 @@ const TagCropForm = ({
                         }}
                         placeholder="House no., street, purok/sitio"
                         error={errors.farmerAddress}
+                        className={
+                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                        }
                       />
                     </Field>
                   </Section>
@@ -1734,11 +1814,16 @@ const TagCropForm = ({
                 </h4>
                 <div className="mt-3 rounded-xl border border-gray-200">
                   {[
-                    ["Name", `${farmerFirstName} ${farmerLastName}`.trim()],
-                    ["Mobile", farmerMobile],
-                    ["Barangay", farmerBarangay],
-                    ["Land tenure", getTenureLabel()], // 🔹
-                    ["Address", farmerAddress],
+                    [
+                      "Name",
+                      isAnonymousFarmer
+                        ? "Anonymous farmer"
+                        : `${farmerFirstName} ${farmerLastName}`.trim(),
+                    ],
+                    ["Mobile", isAnonymousFarmer ? "—" : farmerMobile],
+                    ["Barangay", isAnonymousFarmer ? "—" : farmerBarangay],
+                    ["Land tenure", isAnonymousFarmer ? "—" : getTenureLabel()],
+                    ["Address", isAnonymousFarmer ? "—" : farmerAddress],
                   ].map(([k, v], i, a) => (
                     <div
                       key={k}
