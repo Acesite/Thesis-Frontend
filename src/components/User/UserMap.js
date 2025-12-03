@@ -1,5 +1,4 @@
-
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import MapboxDirections from "@mapbox/mapbox-gl-directions/dist/mapbox-gl-directions";
@@ -15,10 +14,13 @@ import DefaultThumbnail from "../MapboxImages/map-default.png";
 import SatelliteThumbnail from "../MapboxImages/map-satellite.png";
 import DarkThumbnail from "../MapboxImages/map-dark.png";
 import LightThumbnail from "../MapboxImages/map-light.png";
-import SidebarToggleButton from "../AdminCalamity/MapControls/SidebarToggleButton";
+import SidebarToggleButton from "../SuperAdmin/MapControls/SidebarToggleButton";
 
+// 🔹 import same barangay GeoJSON used in AdminMapBox
+import BARANGAYS_FC from "../Barangays/barangays.json";
 
-mapboxgl.accessToken = "pk.eyJ1Ijoid29tcHdvbXAtNjkiLCJhIjoiY204emxrOHkwMGJsZjJrcjZtZmN4YXdtNSJ9.LIMPvoBNtGuj4O36r3F72w";
+mapboxgl.accessToken =
+  "pk.eyJ1Ijoid29tcHdvbXAtNjkiLCJhIjoiY204emxrOHkwMGJsZjJrcjZtZmN4YXdtNSJ9.LIMPvoBNtGuj4O36r3F72w";
 
 const UserMapBox = () => {
   const mapContainer = useRef(null);
@@ -30,37 +32,50 @@ const UserMapBox = () => {
   const [lng] = useState(122.961602);
   const [lat] = useState(10.507447);
   const [zoom] = useState(13);
-  const [mapStyle, setMapStyle] = useState("mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d");
+  const [mapStyle, setMapStyle] = useState(
+    "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
+  );
   const [showLayers, setShowLayers] = useState(false);
   const [isSwitcherVisible, setIsSwitcherVisible] = useState(false);
   const [selectedBarangay, setSelectedBarangay] = useState(null);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
-  const [isDirectionsVisible, setIsDirectionsVisible] = useState(false);  
+  const [isDirectionsVisible, setIsDirectionsVisible] = useState(false);
   const [newTagLocation, setNewTagLocation] = useState(null);
   const [isTagging, setIsTagging] = useState(false);
   const [taggedData, setTaggedData] = useState([]);
-  const [sidebarCrops, setSidebarCrops] = useState([]); 
+  const [sidebarCrops, setSidebarCrops] = useState([]);
   const [selectedCrop, setSelectedCrop] = useState(null);
   const [selectedCropType, setSelectedCropType] = useState("All");
   const [cropTypes, setCropTypes] = useState([]);
   const [areMarkersVisible, setAreMarkersVisible] = useState(true);
-const savedMarkersRef = useRef([]); // store markers so we can remove them later
+  const savedMarkersRef = useRef([]); // store markers so we can remove them later
 
-
-const cropColorMap = {
-  Rice: "#facc15",        // Yellow
-  Corn: "#fb923c",        // Orange
-  Banana: "#a3e635",      // Lime Green
-  Sugarcane: "#34d399",   // Teal
-  Cassava: "#60a5fa",     // Blue
-  Vegetables: "#f472b6"   // Pink
-};
+  const cropColorMap = {
+    Rice: "#facc15", // Yellow
+    Corn: "#fb923c", // Orange
+    Banana: "#a3e635", // Lime Green
+    Sugarcane: "#34d399", // Teal
+    Cassava: "#60a5fa", // Blue
+    Vegetables: "#f472b6", // Pink
+  };
 
   const mapStyles = {
-    Default: { url: "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d", thumbnail: DefaultThumbnail },
-    Satellite: { url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n", thumbnail: SatelliteThumbnail },
-    Dark: { url: "mapbox://styles/wompwomp-69/cm96veqvt009101szf7g42jps", thumbnail: DarkThumbnail },
-    Light: { url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0", thumbnail: LightThumbnail },
+    Default: {
+      url: "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d",
+      thumbnail: DefaultThumbnail,
+    },
+    Satellite: {
+      url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n",
+      thumbnail: SatelliteThumbnail,
+    },
+    Dark: {
+      url: "mapbox://styles/wompwomp-69/cm96veqvt009101szf7g42jps",
+      thumbnail: DarkThumbnail,
+    },
+    Light: {
+      url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0",
+      thumbnail: LightThumbnail,
+    },
   };
 
   const zoomToBarangay = (coordinates) => {
@@ -83,48 +98,64 @@ const cropColorMap = {
       el.style.border = "3px solid white";
       el.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
 
-      const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
+      const popupHTML = `
         <div class="text-sm">
           <h3 class="font-bold text-green-600 text-base">${barangayData.name}</h3>
-          <p><strong>Coordinates:</strong> ${barangayData.coordinates[1].toFixed(6)}, ${barangayData.coordinates[0].toFixed(6)}</p>
-          ${barangayData.population ? `<p><strong>Population:</strong> ${barangayData.population}</p>` : ""}
-          ${barangayData.crops ? `<p><strong>Crops:</strong> ${barangayData.crops.join(", ")}</p>` : ""}
+          <p><strong>Coordinates:</strong> ${barangayData.coordinates[1].toFixed(
+            6
+          )}, ${barangayData.coordinates[0].toFixed(6)}</p>
+          ${
+            barangayData.population
+              ? `<p><strong>Population:</strong> ${barangayData.population}</p>`
+              : ""
+          }
+          ${
+            barangayData.crops
+              ? `<p><strong>Crops:</strong> ${barangayData.crops.join(", ")}</p>`
+              : ""
+          }
         </div>
-      `);
+      `;
 
-      markerRef.current = new mapboxgl.Marker(el).setLngLat(barangayData.coordinates).setPopup(popup).addTo(map.current);
+      const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(popupHTML);
+
+      markerRef.current = new mapboxgl.Marker(el)
+        .setLngLat(barangayData.coordinates)
+        .setPopup(popup)
+        .addTo(map.current);
       markerRef.current.togglePopup();
     }
   };
 
   const renderSavedMarkers = async () => {
     try {
-      const response = await axios.get(`http://${window.location.hostname}:5000/api/crops`);
+      const response = await axios.get(
+        `http://${window.location.hostname}:5000/api/crops`
+      );
       const crops = response.data;
       setSidebarCrops(crops);
-  
-     
+
       savedMarkersRef.current.forEach((marker) => marker.remove());
       savedMarkersRef.current = [];
-  
-      const filtered = selectedCropType === "All"
-        ? crops
-        : crops.filter(crop => crop.crop_name === selectedCropType);
-        if (filtered.length === 0) {
-          toast.info("No Crops Found .", {
-            position: "top-center",
-            autoClose: 3000,
-            hideProgressBar: true,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: false,
-            theme: "light",
-          });
-          return;
-        }
-         
-      if (filtered.length === 0) return;
-  
+
+      const filtered =
+        selectedCropType === "All"
+          ? crops
+          : crops.filter((crop) => crop.crop_name === selectedCropType);
+
+      if (filtered.length === 0) {
+        toast.info("No Crops Found.", {
+          position: "top-center",
+          autoClose: 3000,
+          hideProgressBar: true,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: false,
+          theme: "light",
+        });
+        return;
+      }
+
       filtered.forEach((crop) => {
         let coords = crop.coordinates;
         if (typeof coords === "string") {
@@ -135,31 +166,34 @@ const cropColorMap = {
             return;
           }
         }
-  
+
         if (Array.isArray(coords) && coords.length > 2) {
           const first = coords[0];
           const last = coords[coords.length - 1];
           if (JSON.stringify(first) !== JSON.stringify(last)) coords.push(first);
-  
-          const center = turf.centerOfMass(turf.polygon([coords])).geometry.coordinates;
-  
+
+          const center = turf.centerOfMass(turf.polygon([coords])).geometry
+            .coordinates;
+
           const marker = new mapboxgl.Marker({ color: "#10B981" })
             .setLngLat(center)
             .setPopup(
               new mapboxgl.Popup({ offset: 15 }).setHTML(`
                 <div class="text-sm">
                   <h3 class='font-bold text-green-600'>${crop.crop_name}</h3>
-                  <p><strong>Variety:</strong> ${crop.variety_name || "N/A"}</p>
+                  <p><strong>Variety:</strong> ${
+                    crop.variety_name || "N/A"
+                  }</p>
                 </div>
               `)
             )
             .addTo(map.current);
-  
+
           marker.getElement().addEventListener("click", () => {
             setSelectedCrop(crop);
             setIsSidebarVisible(true);
           });
-  
+
           savedMarkersRef.current.push(marker);
         }
       });
@@ -167,50 +201,60 @@ const cropColorMap = {
       console.error("Failed to load saved markers:", error);
     }
   };
-  
 
-  
   const loadPolygons = async (geojsonData = null, isFiltered = false) => {
-    const res = await axios.get(`http://${window.location.hostname}:5000/api/crops/polygons`);
+    const res = await axios.get(
+      `http://${window.location.hostname}:5000/api/crops/polygons`
+    );
 
     const fullData = geojsonData || res.data;
-  
+
     const paintStyle = isFiltered
       ? {
           "fill-color": [
             "match",
             ["get", "crop_name"],
-            "Rice", "#facc15",
-            "Corn", "#fb923c",
-            "Banana", "#a3e635",
-            "Sugarcane", "#34d399",
-            "Cassava", "#60a5fa",
-            "Vegetables", "#f472b6",
-            "#10B981" // fallback
+            "Rice",
+            "#facc15",
+            "Corn",
+            "#fb923c",
+            "Banana",
+            "#a3e635",
+            "Sugarcane",
+            "#34d399",
+            "Cassava",
+            "#60a5fa",
+            "Vegetables",
+            "#f472b6",
+            "#10B981", // fallback
           ],
           "fill-opacity": 0.4,
         }
       : {
-          "fill-color": "#10B981", // 🔰 all green initially
+          "fill-color": "#10B981", // all green initially
           "fill-opacity": 0.4,
         };
-  
+
     if (map.current.getSource("crop-polygons")) {
       map.current.getSource("crop-polygons").setData(fullData);
-      map.current.setPaintProperty("crop-polygons-layer", "fill-color", paintStyle["fill-color"]);
+      map.current.setPaintProperty(
+        "crop-polygons-layer",
+        "fill-color",
+        paintStyle["fill-color"]
+      );
     } else {
       map.current.addSource("crop-polygons", {
         type: "geojson",
         data: fullData,
       });
-  
+
       map.current.addLayer({
         id: "crop-polygons-layer",
         type: "fill",
         source: "crop-polygons",
         paint: paintStyle,
       });
-  
+
       map.current.addLayer({
         id: "crop-polygons-outline",
         type: "line",
@@ -222,8 +266,72 @@ const cropColorMap = {
       });
     }
   };
-  
-  
+
+  // 🔹 Add barangay borders + labels (same idea as AdminMapBox)
+  const ensureBarangayLayers = useCallback(() => {
+    if (!map.current) return;
+    const m = map.current;
+    if (!BARANGAYS_FC?.features?.length) return;
+
+    if (!m.getSource("barangays-src")) {
+      m.addSource("barangays-src", {
+        type: "geojson",
+        data: BARANGAYS_FC,
+      });
+    }
+
+    // bright green borders, like in AdminMapBox
+    if (!m.getLayer("barangays-line")) {
+      m.addLayer(
+        {
+          id: "barangays-line",
+          type: "line",
+          source: "barangays-src",
+          paint: {
+            "line-color": "#00BD00",
+            "line-width": 1,
+            "line-opacity": 0.9,
+          },
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+          },
+        },
+        // draw on top of crop polygons outline if present
+        m.getLayer("crop-polygons-outline") ? "crop-polygons-outline" : undefined
+      );
+    }
+
+    // optional: barangay name labels
+    if (!m.getLayer("barangays-label")) {
+      m.addLayer(
+        {
+          id: "barangays-label",
+          type: "symbol",
+          source: "barangays-src",
+          layout: {
+            "text-field": [
+              "coalesce",
+              ["get", "Barangay"],
+              ["get", "barangay"],
+              ["get", "NAME"],
+              ["get", "name"],
+            ],
+            "text-size": 11,
+            "text-offset": [0, 0.6],
+            "text-anchor": "top",
+          },
+          paint: {
+            "text-color": "#064e3b",
+            "text-halo-color": "#FFFFFF",
+            "text-halo-width": 1,
+          },
+        },
+        "barangays-line"
+      );
+    }
+  }, []);
+
   useEffect(() => {
     if (!map.current) {
       map.current = new mapboxgl.Map({
@@ -233,18 +341,21 @@ const cropColorMap = {
         zoom,
       });
 
-     axios.get(`http://${window.location.hostname}:5000/api/crops/types`).then((res) => {
-  setCropTypes(res.data);
-});
-
+      axios
+        .get(`http://${window.location.hostname}:5000/api/crops/types`)
+        .then((res) => {
+          setCropTypes(res.data);
+        });
 
       map.current.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+
       map.current.on("load", async () => {
         try {
-          const res = await axios.get("http://localhost:5000/api/crops/polygons");
+          const res = await axios.get(
+            `http://${window.location.hostname}:5000/api/crops/polygons`
+          );
           const geojson = res.data;
-      
-          // Add or update GeoJSON source
+
           if (map.current.getSource("crop-polygons")) {
             map.current.getSource("crop-polygons").setData(geojson);
           } else {
@@ -252,7 +363,7 @@ const cropColorMap = {
               type: "geojson",
               data: geojson,
             });
-      
+
             map.current.addLayer({
               id: "crop-polygons-layer",
               type: "fill",
@@ -262,7 +373,7 @@ const cropColorMap = {
                 "fill-opacity": 0.4,
               },
             });
-      
+
             map.current.addLayer({
               id: "crop-polygons-outline",
               type: "line",
@@ -274,25 +385,28 @@ const cropColorMap = {
             });
           }
         } catch (err) {
-          console.error(" Failed to load polygons:", err);
+          console.error("Failed to load polygons:", err);
         }
-      
+
+        // 🔹 add barangay borders + labels when map finishes loading
+        ensureBarangayLayers();
+
         await renderSavedMarkers();
       });
 
       map.current.on("click", "crop-polygons-layer", (e) => {
-        const feature = e.features[0];
+        const feature = e.features && e.features[0];
+        if (!feature) return;
+
         const cropId = feature.properties?.id;
-      
         if (!cropId) return;
-      
+
         const cropData = sidebarCrops.find((c) => c.id === cropId);
         if (cropData) {
-          setSelectedCrop(cropData); 
-          
+          setSelectedCrop(cropData);
         }
       });
-      
+
       map.current.on("draw.create", (e) => {
         const feature = e.features[0];
         if (feature.geometry.type === "Polygon") {
@@ -305,50 +419,56 @@ const cropColorMap = {
         }
       });
     } else {
+      // when style changes, re-apply sources/layers
       map.current.setStyle(mapStyle);
-    
+
       map.current.once("style.load", async () => {
         await loadPolygons();
         await renderSavedMarkers();
+        ensureBarangayLayers();
       });
     }
-    
-  }, [mapStyle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapStyle, ensureBarangayLayers]);
 
   useEffect(() => {
-  if (map.current) {
-    taggedData.forEach((entry) => {
-      const center = turf.centerOfMass(turf.polygon([entry.coordinates])).geometry.coordinates;
+    if (map.current) {
+      taggedData.forEach((entry) => {
+        const center = turf.centerOfMass(
+          turf.polygon([entry.coordinates])
+        ).geometry.coordinates;
 
-      new mapboxgl.Marker({ color: "#f59e0b" })
-        .setLngLat(center)
-        .setPopup(
-          new mapboxgl.Popup({ offset: 15 }).setHTML(`
+        new mapboxgl.Marker({ color: "#f59e0b" })
+          .setLngLat(center)
+          .setPopup(
+            new mapboxgl.Popup({ offset: 15 }).setHTML(`
             <div class="text-sm">
               <h3 class='font-bold text-green-600'>${entry.crop_name}</h3>
               <p><strong>Variety:</strong> ${entry.variety || "N/A"}</p>            
             </div>
           `)
-        )
-        .addTo(map.current);
-    });
-  }
-}, [taggedData]);
+          )
+          .addTo(map.current);
+      });
+    }
+  }, [taggedData]);
 
-useEffect(() => {
-  if (map.current) {
-    renderSavedMarkers();
-  }
-}, [selectedCropType]);
-
+  useEffect(() => {
+    if (map.current) {
+      renderSavedMarkers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCropType]);
 
   useEffect(() => {
     const filterPolygonsByCrop = async () => {
-      const res = await axios.get("http://localhost:5000/api/crops/polygons");
+      const res = await axios.get(
+        `http://${window.location.hostname}:5000/api/crops/polygons`
+      );
       const geojson = res.data;
-  
+
       if (selectedCropType === "All") {
-        await loadPolygons(geojson, true); 
+        await loadPolygons(geojson, true);
       } else {
         const filtered = {
           ...geojson,
@@ -356,24 +476,24 @@ useEffect(() => {
             (feature) => feature.properties.crop_name === selectedCropType
           ),
         };
-        await loadPolygons(filtered, true); // show filtered with color
+        await loadPolygons(filtered, true);
       }
     };
-  
+
     if (map.current?.getSource("crop-polygons")) {
       filterPolygonsByCrop();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCropType]);
 
   return (
     <div className="relative h-screen w-screen">
-     
-
       <div ref={mapContainer} className="h-full w-full" />
 
-
-
-<SidebarToggleButton onClick={() => setIsSidebarVisible(!isSidebarVisible)} isSidebarVisible={isSidebarVisible} />
+      <SidebarToggleButton
+        onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+        isSidebarVisible={isSidebarVisible}
+      />
 
       {!isSidebarVisible && (
         <button
@@ -395,7 +515,13 @@ useEffect(() => {
           }}
           className="absolute top-4 left-16 bg-white border border-gray-300 rounded-full w-10 h-10 flex items-center justify-center shadow-md hover:shadow-lg z-50"
         >
-          <svg className="w-5 h-5 text-gray-800" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <svg
+            className="w-5 h-5 text-gray-800"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
         </button>
@@ -408,7 +534,11 @@ useEffect(() => {
             className="absolute bottom-6 left-4 w-20 h-20 rounded-xl shadow-md overflow-hidden z-30 bg-white border border-gray-300 hover:shadow-lg transition"
           >
             <div className="w-full h-full relative">
-              <img src={DefaultThumbnail} alt="Layers" className="w-full h-full object-cover" />
+              <img
+                src={DefaultThumbnail}
+                alt="Layers"
+                className="w-full h-full object-cover"
+              />
               <div className="absolute bottom-0 left-0 right-0 text-white text-xs font-semibold px-2 py-1 bg-black/60 text-center">
                 Layers
               </div>
@@ -426,7 +556,11 @@ useEffect(() => {
                   }}
                   className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
                 >
-                  <img src={thumbnail} alt={label} className="w-full h-full object-cover" />
+                  <img
+                    src={thumbnail}
+                    alt={label}
+                    className="w-full h-full object-cover"
+                  />
                   <div className="absolute bottom-0 w-full text-[10px] text-white text-center bg-black bg-opacity-60 py-[2px]">
                     {label}
                   </div>
@@ -436,35 +570,37 @@ useEffect(() => {
           )}
         </>
       )}
-    {!isTagging && (
-<button
-  onClick={() => {
-    if (areMarkersVisible) {
-      savedMarkersRef.current.forEach(marker => marker.remove());
-    } else {
-      renderSavedMarkers();
-    }
-    setAreMarkersVisible(!areMarkersVisible);
-  }}
-  className="absolute bottom-[123px] right-[9px] z-50 bg-white border border-gray-300 rounded-[5px] w-8 h-8 flex items-center justify-center shadow-[0_0_8px_2px_rgba(0,0,0,0.15)] "
-  title={areMarkersVisible ? "Hide Markers" : "Show Markers"}
->
-  <svg
-    className="w-5 h-5 text-black"
-    fill={!areMarkersVisible ? "currentColor" : "none"}
-    stroke="currentColor"
-    strokeWidth="2"
-    viewBox="0 0 24 24"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      d="M12 21s6-5.686 6-10a6 6 0 10-12 0c0 4.314 6 10 6 10z"
-    />
-    <circle cx="12" cy="11" r="2" fill="white" />
-  </svg>
-</button>
-)}
+
+      {!isTagging && (
+        <button
+          onClick={() => {
+            if (areMarkersVisible) {
+              savedMarkersRef.current.forEach((marker) => marker.remove());
+            } else {
+              renderSavedMarkers();
+            }
+            setAreMarkersVisible(!areMarkersVisible);
+          }}
+          className="absolute bottom-[123px] right-[9px] z-50 bg-white border border-gray-300 rounded-[5px] w-8 h-8 flex items-center justify-center shadow-[0_0_8px_2px_rgba(0,0,0,0.15)] "
+          title={areMarkersVisible ? "Hide Markers" : "Show Markers"}
+        >
+          <svg
+            className="w-5 h-5 text-black"
+            fill={!areMarkersVisible ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 21s6-5.686 6-10a6 6 0 10-12 0c0 4.314 6 10 6 10z"
+            />
+            <circle cx="12" cy="11" r="2" fill="white" />
+          </svg>
+        </button>
+      )}
+
       <div
         className={`absolute top-0 left-0 h-full w-80 transition-transform duration-500 ease-in-out z-40 ${
           isSidebarVisible ? "translate-x-0" : "-translate-x-full"
@@ -481,9 +617,9 @@ useEffect(() => {
           cropTypes={cropTypes}
           selectedCropType={selectedCropType}
           setSelectedCropType={setSelectedCropType}
-          crops={sidebarCrops}              
-          selectedCrop={selectedCrop}      
-          />
+          crops={sidebarCrops}
+          selectedCrop={selectedCrop}
+        />
       </div>
 
       <ToastContainer
@@ -497,9 +633,9 @@ useEffect(() => {
         draggable={false}
         pauseOnHover
         theme="light"
-        style={{ zIndex: 9999 }} 
-        />
-    </div>  
+        style={{ zIndex: 9999 }}
+      />
+    </div>
   );
 };
 

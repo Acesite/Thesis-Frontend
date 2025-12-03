@@ -2,8 +2,46 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AgriGISLogo from "../../components/MapboxImages/AgriGIS.png";
 import Button from "../AdminCalamity/MapControls/Button";
+import clsx from "clsx";
 
-const UserSidebar = ({
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
+const fmt = (v) => (v ?? v === 0 ? v : "—");
+
+const Section = ({ title, children }) => (
+  <div className="rounded-xl border border-gray-200 bg-white p-4 mb-4 shadow-sm">
+    {title && (
+      <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
+    )}
+    {children}
+  </div>
+);
+
+const KV = ({ label, value }) => (
+  <div className="flex flex-col">
+    <dt className="text-xs uppercase tracking-wide text-gray-500">{label}</dt>
+    <dd className="text-sm text-gray-900">{value}</dd>
+  </div>
+);
+
+const CROP_COLORS = {
+  Rice: "#facc15",
+  Corn: "#fb923c",
+  Banana: "#a3e635",
+  Sugarcane: "#34d399",
+  Cassava: "#60a5fa",
+  Vegetables: "#f472b6",
+};
+
+const getCropColor = (name) => {
+  if (!name) return null;
+  const key = Object.keys(CROP_COLORS).find(
+    (k) => k.toLowerCase() === String(name).toLowerCase()
+  );
+  return key ? CROP_COLORS[key] : null;
+};
+
+export default function UserSideBar({
+  visible = true,
   zoomToBarangay,
   onBarangaySelect,
   crops = [],
@@ -11,66 +49,63 @@ const UserSidebar = ({
   cropTypes = [],
   selectedCropType,
   setSelectedCropType,
-}) => {
+  setEnlargedImage,
+}) {
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [barangayDetails, setBarangayDetails] = useState(null);
-  const [showCropDropdown, setShowCropDropdown] = useState(false);
-  const [enlargedImage, setEnlargedImage] = useState(null);
-
+  const [harvestFilter, setHarvestFilter] = useState("all"); // ✅ local state
   const navigate = useNavigate();
 
+  const handleBack = () => navigate("/");
+
   const barangayCoordinates = {
-    Abuanan: [122.984389, 10.527456],
-    Alianza: [122.969238, 10.516775],
-    Atipuluan: [122.973444, 10.506088],
-    Bacong: [122.962773, 10.503245],
-    Bagroy: [122.980745, 10.490189],
-    Balingasag: [122.97685, 10.499741],
-    Binubuhan: [122.964209, 10.497236],
-    Busay: [122.959844, 10.491632],
-    Calumangan: [122.937321, 10.486274],
-    Caridad: [122.940823, 10.486633],
-    Dulao: [122.958018, 10.490659],
-    Ilijan: [122.97104, 10.498089],
-    "Lag-asan": [122.951085, 10.511455],
-    Mailum: [122.977706, 10.522196],
-    "Ma-ao": [122.939712, 10.528344],
-    Malingin: [122.931746, 10.536495],
-    Napoles: [122.926812, 10.519978],
-    Pacol: [122.92825, 10.505916],
-    Poblacion: [122.960903, 10.507042],
-    Sagasa: [122.954496, 10.518531],
-    Tabunan: [122.973885, 10.506478],
-    Taloc: [122.947307, 10.531319],
-    Talon: [122.943887, 10.520805],
-    Tinongan: [122.939491, 10.49741],
+    Abuanan: [122.9844, 10.5275],
+    Alianza: [122.92424927088227, 10.471876805354725],
+    Atipuluan: [122.94997254227323, 10.51054338526979],
+    Bacong: [123.03026270744279, 10.520037893339277],
+    Bagroy: [122.87467558102158, 10.47702885963125],
+    Balingasag: [122.84330579876998, 10.528672212250575],
+    Binubuhan: [122.98236293756698, 10.457428765280468],
+    Busay: [122.8936085581886, 10.536447801424544],
+    Calumangan: [122.8857773056537, 10.55943773159997],
+    Caridad: [122.89676017560787, 10.484855427956782],
+    Dulao: [122.94775786836688, 10.549767917490168],
+    Ilijan: [123.04567999131407, 10.44537414453059],
+    "Lag-asan": [122.84543167453091, 10.519843756585255],
+    Mailum: [123.05148249170527, 10.469013722796765],
+    "Ma-ao": [123.018102985426, 10.508962844307234],
+    Malingin: [122.92533490443519, 10.51102316577104],
+    Napoles: [122.86024955431672, 10.510195807139885],
+    Pacol: [122.86326134780008, 10.48966963268301],
+    Poblacion: [122.83378471878187, 10.535871883140523],
+    Sagasa: [122.89592554988106, 10.465232192594353],
+    Tabunan: [122.93868999567334, 10.570304584775227],
+    Taloc: [122.9100707275183, 10.57850192116514],
   };
 
   const barangayInfo = {
     Abuanan: { crops: ["Banana", "Rice"] },
-  Alianza: { crops: ["Sugarcane", "Corn"] },
-  Atipuluan: { crops: ["Banana", "Rice"] },
-  Bacong: { crops: ["Rice", "Sugarcane"] },
-  Bagroy: { crops: ["Corn", "Cassava"] },
-  Balingasag: { crops: ["Rice", "Banana"] },
-  Binubuhan: { crops: ["Sugarcane", "Corn"] },
-  Busay: { crops: ["Rice", "Vegetables"] },
-  Calumangan: { crops: ["Banana", "Sugarcane"] },
-  Caridad: { crops: ["Cassava", "Sugarcane"] },
-  Dulao: { crops: ["Rice", "Banana"] },
-  Ilijan: { crops: ["Sugarcane", "Rice"] },
-  "Lag-asan": { crops: ["Banana", "Corn"] },
-  Mailum: { crops: ["Cassava", "Sugarcane"] },
-  "Ma-ao": { crops: ["Rice", "Corn"] },
-  Malingin: { crops: ["Sugarcane", "Rice"] },
-  Napoles: { crops: ["Corn", "Banana"] },
-  Pacol: { crops: ["Rice", "Vegetables"] },
-  Poblacion: { crops: ["Rice", "Sugarcane"] },
-  Sagasa: { crops: ["Cassava", "Rice"] },
-  Tabunan: { crops: ["Banana", "Cassava"] },
-  Taloc: { crops: ["Sugarcane", "Rice"] },
-  Talon: { crops: ["Rice", "Banana"] },
-  Tinongan: { crops: ["Cassava", "Rice"] },
+    Alianza: { crops: ["Sugarcane", "Corn"] },
+    Atipuluan: { crops: ["Banana", "Rice"] },
+    Bacong: { crops: ["Rice", "Sugarcane"] },
+    Bagroy: { crops: ["Corn", "Cassava"] },
+    Balingasag: { crops: ["Rice", "Banana"] },
+    Binubuhan: { crops: ["Sugarcane", "Corn"] },
+    Busay: { crops: ["Rice", "Vegetables"] },
+    Calumangan: { crops: ["Banana", "Sugarcane"] },
+    Caridad: { crops: ["Cassava", "Sugarcane"] },
+    Dulao: { crops: ["Rice", "Banana"] },
+    Ilijan: { crops: ["Sugarcane", "Rice"] },
+    "Lag-asan": { crops: ["Banana", "Corn"] },
+    Mailum: { crops: ["Cassava", "Sugarcane"] },
+    "Ma-ao": { crops: ["Rice", "Corn"] },
+    Malingin: { crops: ["Sugarcane", "Rice"] },
+    Napoles: { crops: ["Corn", "Banana"] },
+    Pacol: { crops: ["Rice", "Vegetables"] },
+    Poblacion: { crops: ["Rice", "Sugarcane"] },
+    Sagasa: { crops: ["Cassava", "Rice"] },
+    Tabunan: { crops: ["Banana", "Cassava"] },
+    Taloc: { crops: ["Sugarcane", "Rice"] },
   };
 
   const handleBarangayChange = (e) => {
@@ -79,7 +114,7 @@ const UserSidebar = ({
 
     if (barangayCoordinates[barangay]) {
       const coordinates = barangayCoordinates[barangay];
-      zoomToBarangay(coordinates);
+      zoomToBarangay?.(coordinates);
 
       const details = barangayInfo[barangay] || {};
       setBarangayDetails({
@@ -88,211 +123,164 @@ const UserSidebar = ({
         crops: details.crops || [],
       });
 
-      onBarangaySelect({ name: barangay, coordinates });
+      onBarangaySelect?.({ name: barangay, coordinates });
+    } else {
+      setBarangayDetails(null);
+      onBarangaySelect?.(null);
     }
   };
 
   return (
-    <div className="absolute top-0 left-0 h-full w-95 bg-white shadow-xl z-20 px-6 py-8 overflow-y-auto border-r border-gray-200 transition-all duration-300">
-    <div className="mb-6 w-full flex justify-center items-center">
-        {selectedCrop?.photos ? (
-          <img
-  src={`http://${window.location.hostname}:5000${JSON.parse(selectedCrop.photos)[0]}`}
-  alt="Selected Crop"
-  className="w-full h-full object-cover rounded-md border cursor-pointer"
-  onClick={() =>
-    setEnlargedImage(`http://${window.location.hostname}:5000${JSON.parse(selectedCrop.photos)[0]}`)
-  }
-/>
-
-        ) : (
-          <img
-            src={AgriGISLogo}
-            alt="AgriGIS Logo"
-            className="w-[200px] h-[70px] ml-5 object-contain transition duration-500 ease-in-out"
-          />
-        )}
-</div>
-
-      <h2 className="text-xl font-medium text-gray-800 mb-6 border-b pb-3"> Crop Information</h2>
-
-      {[{ label: "Region", value: "Western Visayas" },
-        { label: "Province", value: "Negros Occidental" },
-        { label: "Municipality", value: "Bago City" }].map((item) => (
-        <div className="mb-4" key={item.label}>
-          <label className="block text-sm text-gray-600 mb-1">{item.label}</label>
-          <input
-            type="text"
-            readOnly
-            value={item.value}
-            className="w-full bg-gray-100 border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-700 cursor-not-allowed"
-          />
-        </div>
-      ))}
-
-      {/* Crop Type Filter */}
-      <div className="mb-4">
-        <label className="block text-sm font-base text-gray-700 mb-1">Filter Crop</label>
-        <select
-          className="w-full border border-gray-300 rounded-md p-2 text-sm"
-          value={selectedCropType}
-          onChange={(e) => setSelectedCropType(e.target.value)}
-        >
-          <option value="All">All</option>
-          {cropTypes.map((type) => (
-            <option key={type.id} value={type.name}>{type.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Barangay Dropdown */}
-      <div className="mb-4">
-        <label className="block text-sm text-gray-600 mb-1">Barangay</label>
-        <select
-          value={selectedBarangay}
-          onChange={handleBarangayChange}
-          className="w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-700 shadow-sm focus:ring-green-500 focus:border-green-500"
-        >
-          <option value="">Select a barangay</option>
-          {Object.keys(barangayCoordinates).map((brgy) => (
-            <option key={brgy} value={brgy}>
-              {brgy}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {barangayDetails && (
-        <div className="mt-4 bg-green-50 border-l-4 border-green-400 p-4 rounded">
-          <h3 className="text-green-700 font-semibold text-lg">{barangayDetails.name}</h3>
-          <p className="text-sm text-gray-800">
-            <strong>Crops:</strong> {barangayDetails.crops.join(", ")}
-          </p>
-        </div>
+    <div
+      className={clsx(
+        "absolute top-0 left-0 h-full z-50 bg-gray-50 overflow-y-auto border-r border-gray-200 shadow-md transition-all duration-300",
+        visible ? "w-[500px] px-6 py-6" : "w-0 overflow-hidden px-0 py-0"
       )}
-{selectedCrop && (
-  <div className="mt-6 ">
-    <h4 className="text-lg font-semibold text-green-700 mb-2">{selectedCrop.crop_name || "Unnamed Crop"}</h4>
-    <p className="text-sm text-gray-700">
-    <strong>Variety:</strong> {selectedCrop.variety_name || "N/A"}</p>
-    <p className="text-sm text-gray-700"><strong>Planted Date:</strong> {selectedCrop.planted_date?.split("T")[0] || "N/A"}</p>
-    <p className="text-sm text-gray-700"><strong>Est. Harvest:</strong> {selectedCrop.estimated_harvest?.split("T")[0] || "N/A"}</p>
-    <p className="text-sm text-gray-700"><strong>Volume:</strong> {selectedCrop.estimated_volume || "N/A"}</p>
-    <p className="text-sm text-gray-700"><strong>Hectares:</strong> {selectedCrop.estimated_hectares || "N/A"}</p>
-    <p className="text-sm text-gray-700 italic mt-2">{selectedCrop.note || "No note provided."}</p>
-  </div>
-)}
-
-      {/* Photos of selected crop */}
-      {selectedCrop && selectedCrop.photos && (
-        <div className="mt-6">
-          <h4 className="text-sm font-base text-gray-700 mb-2">
-            Photos of: {selectedCrop.crop_name || "Unnamed Crop"}
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-           {JSON.parse(selectedCrop.photos).map((url, i) => (
-  <img
-    key={i}
-    src={`http://${window.location.hostname}:5000${url}`}
-    alt={`Crop photo ${i + 1}`}
-    className="w-full h-24 object-cover rounded-md border cursor-pointer"
-    onClick={() => setEnlargedImage(`http://${window.location.hostname}:5000${url}`)}
-
-  />
-))}
-
-          </div>
-        </div>
-      )}
-
-      {/* Photos by Barangay */}
-      {barangayDetails && crops.length > 0 && (
-        <div className="mt-6">
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">
-            Photos from {barangayDetails.name}
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-            {crops
-  .filter((crop) => crop.barangay?.toLowerCase() === barangayDetails.name.toLowerCase())
-  .flatMap((crop, idx) => {
-    const photoArray = crop.photos ? JSON.parse(crop.photos) : [];
-    return photoArray.map((url, i) => (
-      <img
-  key={`${idx}-${i}`}
-  src={`http://${window.location.hostname}:5000${url}`}
-  alt={`Crop ${idx}`}
-  className="w-full h-24 object-cover rounded-md border cursor-pointer"
-  onClick={() => setEnlargedImage(`http://${window.location.hostname}:5000${url}`)}
-/>
-
-    ));
-  })}
-
-          </div>
-        </div>
-      )}
-
-      {/* Legend as Dropdown */}
-<div className="mt-6">
-  <button
-    onClick={() => setShowCropDropdown(!showCropDropdown)}
-    className="w-full flex justify-between items-center bg-white border border-gray-300 rounded-md px-3 py-2 text-sm font-base text-gray-700 hover:bg-gray-50"
-  >
-    Legend
-    <svg
-      className={`w-4 h-4 transform transition-transform duration-200 ${
-        showCropDropdown ? "rotate-180" : "rotate-0"
-      }`}
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
+      style={{ pointerEvents: visible ? "auto" : "none" }}
     >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-    </svg>
-  </button>
+      {/* Hero image */}
+      <div className="mb-4">
+        <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50 aspect-[16/9]">
+          {selectedCrop?.photos ? (
+            <img
+              src={`http://localhost:5000${JSON.parse(selectedCrop.photos)[0]}`}
+              alt={`${selectedCrop?.crop_name || "Crop"} photo`}
+              className="h-full w-full object-cover cursor-pointer"
+              onClick={() =>
+                setEnlargedImage?.(
+                  `http://localhost:5000${JSON.parse(selectedCrop.photos)[0]}`
+                )
+              }
+            />
+          ) : (
+            <div className="h-full w-full flex flex-col items-center justify-center gap-2">
+              <img src={AgriGISLogo} alt="AgriGIS" className="h-10 opacity-70" />
+              <p className="text-xs text-gray-500">
+                Select a field on the map to see details.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
-  {showCropDropdown && (
-    <ul className="mt-2 space-y-1 text-sm">
-      {Object.entries({
-        Rice: "#facc15",
-        Corn: "#fb923c",
-        Banana: "#a3e635",
-        Sugarcane: "#34d399",
-        Cassava: "#60a5fa",
-        Vegetables: "#f472b6",
-      }).map(([label, color]) => (
-        <li key={label} className="flex items-center">
-          <span
-            className="inline-block w-4 h-4 rounded-full mr-2"
-            style={{ backgroundColor: color }}
-          ></span>
-          {label}
-        </li>
-      ))}
-    </ul>
-  )}
-</div>
+      {/* Back button */}
+      <div className="mb-4">
+        
+      </div>
 
+      {/* Location */}
+      <Section title="Location">
+        <dl className="grid grid-cols-3 gap-3">
+          <KV label="Region" value="Western Visayas" />
+          <KV label="Province" value="Negros Occidental" />
+          <KV label="Municipality" value="Bago City" />
+        </dl>
+      </Section>
 
-    <div className="mt-5">
-      <Button to="/AdminLanding" label="Home" /></div>
-{enlargedImage && (
-  <div
-    className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center"
-    onClick={() => setEnlargedImage(null)}
-  >
-    <div className="bg-white p-4 rounded-lg shadow-lg max-w-3xl max-h-[90vh] overflow-auto">
-      <img
-        src={enlargedImage}
-        alt="Enlarged"
-        className="w-full h-auto object-contain"
-      />
-    </div>
-  </div>
-)}
+      {/* Selected Field */}
+      {selectedCrop && (
+        <Section title="Selected field">
+          <dl className="grid grid-cols-2 gap-3">
+            <KV label="Crop" value={fmt(selectedCrop.crop_name)} />
+            <KV label="Variety" value={fmt(selectedCrop.variety_name)} />
+            <KV label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
+            <KV label="Est. Volume" value={fmt(selectedCrop.estimated_volume)} />
+            <KV label="Planted Date" value={fmtDate(selectedCrop.planted_date)} />
+            <KV label="Est. Harvest" value={fmtDate(selectedCrop.estimated_harvest)} />
+            <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
+            <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
+          </dl>
+        </Section>
+      )}
 
+      {/* Barangay Overview */}
+      {barangayDetails && (
+        <Section title="Barangay overview">
+          <p className="text-sm text-gray-900 font-medium">{barangayDetails.name}</p>
+          <p className="text-xs text-gray-600 mt-1">
+            Common crops: {barangayDetails.crops.join(", ") || "—"}
+          </p>
+        </Section>
+      )}
+
+      {/* Map Filters */}
+      <Section title="Map filters">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+              Filter crop
+            </label>
+            <select
+              className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm"
+              value={selectedCropType}
+              onChange={(e) => setSelectedCropType?.(e.target.value)}
+            >
+              <option value="All">All</option>
+              {cropTypes.map((type) => (
+                <option key={type.id} value={type.name}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+              Barangay
+            </label>
+            <select
+              value={selectedBarangay}
+              onChange={handleBarangayChange}
+              className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm"
+            >
+              <option value="">All Barangays</option>
+              {Object.keys(barangayCoordinates).map((brgy) => (
+                <option key={brgy} value={brgy}>
+                  {brgy}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="col-span-2">
+            <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
+              Harvest status
+            </label>
+            <select
+              value={harvestFilter}
+              onChange={(e) => setHarvestFilter(e.target.value)} // ✅ safe local state
+              className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm"
+            >
+              <option value="all">All</option>
+              <option value="harvested">Harvested only</option>
+              <option value="not_harvested">Not yet harvested</option>
+            </select>
+          </div>
+        </div>
+      </Section>
+
+      {/* Legend */}
+      <Section title="Legend">
+        <ul className="space-y-1 text-xs">
+          {Object.entries(CROP_COLORS).map(([label, color]) => (
+            <li key={label} className="flex items-center">
+              <span
+                className="inline-block w-3.5 h-3.5 rounded-full mr-2"
+                style={{ backgroundColor: color }}
+              />
+              {label}
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      {/* Buttons */}
+      <div className="mt-5 flex gap-2">
+        <Button to="/" variant="outline" size="md">
+          Home
+        </Button>
+  
+      </div>
     </div>
   );
-};
-
-export default UserSidebar;
+}

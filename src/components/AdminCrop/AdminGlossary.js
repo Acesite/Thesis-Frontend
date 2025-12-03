@@ -1,7 +1,7 @@
 // components/Admin/AdminGlossary.js
 import React, { useMemo, useState } from "react";
 import AdminNav from "../NavBar/AdminNavbar";
-
+import Footer from "../LandingPage/Footer";
 /* ------------------------------- Glossary data ------------------------------ */
 const GLOSSARY_ITEMS = [
   // SYSTEM / GENERAL
@@ -432,31 +432,48 @@ const ALL_CATEGORIES = [
 ];
 
 
+/* ----------------------------- Pagination Button ---------------------------- */
+const PageBtn = ({ disabled, onClick, children, aria }) => (
+  <button
+    disabled={disabled}
+    onClick={onClick}
+    aria-label={aria}
+    className={`px-2 py-1 border border-slate-300 rounded-md text-sm ${
+      disabled
+        ? "text-slate-400 cursor-not-allowed bg-slate-100"
+        : "hover:bg-slate-50 text-slate-700"
+    }`}
+  >
+    {children}
+  </button>
+);
+
+/* ------------------------------- Main Component ----------------------------- */
 const AdminGlossary = () => {
   const [activeCategory, setActiveCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
 
+  // pagination states
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(8);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-
     let items = GLOSSARY_ITEMS.filter((item) => {
       const matchesCategory =
         activeCategory === "All" || item.category === activeCategory;
-
-      // Search only in term/title
       const matchesSearch = !q || item.term.toLowerCase().includes(q);
-
       return matchesCategory && matchesSearch;
     });
-
-    // keep them alphabetically sorted by term
-    items = [...items].sort((a, b) => a.term.localeCompare(b.term));
-
-    return items;
+    return [...items].sort((a, b) => a.term.localeCompare(b.term));
   }, [activeCategory, search]);
 
-  const totalCount = filtered.length;
+  const total = filtered.length;
+  const totalPages = Math.ceil(total / pageSize);
+  const start = (page - 1) * pageSize;
+  const paginated = filtered.slice(start, start + pageSize);
+  const isLoading = false;
 
   return (
     <div className="flex flex-col min-h-screen bg-white font-poppins">
@@ -472,16 +489,16 @@ const AdminGlossary = () => {
                   Glossary
                 </h1>
                 <p className="text-[15px] text-slate-600">
-                  View, search, and browse key terms used in the AgriGIS
-                  system. Use the filters to quickly find definitions for
-                  crops, mapping, calamities, and more.
+                  View, search, and browse key terms used in the AgriGIS system.
+                  Use the filters to quickly find definitions for crops, mapping,
+                  calamities, and more.
                 </p>
               </div>
             </div>
 
             {/* Tools row */}
             <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-              {/* TERMS pill with count + category dropdown */}
+              {/* Category Dropdown */}
               <div className="relative">
                 <button
                   type="button"
@@ -493,11 +510,9 @@ const AdminGlossary = () => {
                       ? "All Terms"
                       : `${activeCategory} terms`}
                   </span>
-
                   <span className="inline-flex items-center rounded-full bg-slate-100 px-2 text-[11px] font-medium text-slate-600">
-                    {totalCount}
+                    {total}
                   </span>
-
                   <svg
                     className={`h-4 w-4 text-slate-500 transition-transform ${
                       showCategoryMenu ? "rotate-180" : ""
@@ -515,7 +530,6 @@ const AdminGlossary = () => {
                   </svg>
                 </button>
 
-                {/* dropdown menu */}
                 {showCategoryMenu && (
                   <div className="absolute z-20 mt-2 w-52 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                     {ALL_CATEGORIES.map((cat) => (
@@ -525,6 +539,7 @@ const AdminGlossary = () => {
                         onClick={() => {
                           setActiveCategory(cat);
                           setShowCategoryMenu(false);
+                          setPage(1);
                         }}
                         className={`block w-full px-3 py-1.5 text-left text-sm ${
                           activeCategory === cat
@@ -539,92 +554,142 @@ const AdminGlossary = () => {
                 )}
               </div>
 
-            {/* Search only */}
-<div className="flex items-end">
-  <div className="flex flex-col gap-1">
-    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-      Search
-    </span>
-
-    <div className="relative">
-      {/* icon pill */}
-      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
-      🔍︎
-      </div>
-
-      <input
-        id="glossary-search"
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by term…"
-        className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
-                   placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
-                   focus:ring-2 focus:ring-emerald-500/70"
-      />
-    </div>
-  </div>
-</div>
+              {/* Search */}
+              <div className="flex items-end">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                    Search
+                  </span>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+                      🔍︎
+                    </div>
+                    <input
+                      id="glossary-search"
+                      type="text"
+                      value={search}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                      }}
+                      placeholder="Search by term…"
+                      className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Result summary */}
-          <p className="mb-4 text-xs text-slate-500">
-            Showing{" "}
-            <span className="font-medium text-slate-700">{totalCount}</span>{" "}
-            {totalCount === 1 ? "term" : "terms"}
-            {search.trim()
-              ? ` matching "${search.trim()}".`
-    : activeCategory !== "All"
-    ? ` in category "${activeCategory}".`
-    : "."}
-          </p>
-
-          {/* Table-style list */}
-          {filtered.length === 0 ? (
+          {/* Table */}
+          {paginated.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
               No terms found. Try a different keyword or clear the filters.
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              {/* header row */}
               <div className="grid grid-cols-[minmax(0,0.35fr)_minmax(0,1.65fr)] items-center border-b border-slate-200 bg-slate-50 px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                <div className="flex items-center gap-2">
-                  <span>Name</span>
-                </div>
+                <div>Name</div>
                 <div>Description</div>
               </div>
 
-              {/* rows */}
               <div className="divide-y divide-slate-200">
-                {filtered.map((item) => (
+                {paginated.map((item) => (
                   <div
                     key={item.term}
                     className="grid grid-cols-[minmax(0,0.35fr)_minmax(0,1.65fr)] items-start px-6 py-3 text-sm hover:bg-slate-50 transition"
                   >
-                    {/* Name */}
                     <div className="min-w-0">
                       <div className="truncate text-emerald-700 font-medium cursor-default">
                         {item.term}
                       </div>
                       <div className="mt-0.5 text-[11px] text-slate-500">
-                        {item.category || "General"}
+                        {item.category}
                       </div>
                     </div>
-
-                    {/* Description */}
                     <div className="text-slate-700 text-sm leading-relaxed">
-                      <p className="line-clamp-2 md:line-clamp-3">
-                        {item.definition}
-                      </p>
+                      {item.definition}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
+
+          {/* Pagination */}
+          {!isLoading && total > 0 && (
+            <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="text-sm text-slate-600">
+                Showing{" "}
+                <span className="font-medium">
+                  {total === 0 ? 0 : start + 1}
+                </span>
+                {"–"}
+                <span className="font-medium">
+                  {Math.min(start + pageSize, total)}
+                </span>{" "}
+                of <span className="font-medium">{total}</span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <select
+                  className="border border-slate-300 px-2 py-1 rounded-md"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                >
+                  {[8, 12, 16, 24].map((n) => (
+                    <option key={n} value={n}>
+                      {n} per page
+                    </option>
+                  ))}
+                </select>
+
+                <div className="inline-flex items-center gap-1">
+                  <PageBtn
+                    disabled={page === 1}
+                    onClick={() => setPage(1)}
+                    aria="First"
+                  >
+                    «
+                  </PageBtn>
+                  <PageBtn
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    aria="Previous"
+                  >
+                    ‹
+                  </PageBtn>
+                  <span className="px-3 text-sm text-slate-700">
+                    Page {page} of {totalPages}
+                  </span>
+                  <PageBtn
+                    disabled={page === totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    aria="Next"
+                  >
+                    ›
+                  </PageBtn>
+                  <PageBtn
+                    disabled={page === totalPages}
+                    onClick={() => setPage(totalPages)}
+                    aria="Last"
+                  >
+                    »
+                  </PageBtn>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </main>
+
+      {/* Footer */}
+      <div className="mt-5">
+        <Footer />
+      </div>
     </div>
   );
 };

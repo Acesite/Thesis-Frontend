@@ -1267,17 +1267,6 @@ const AdminSideBar = ({
             Home
           </Button>
           {/* Optional second back button using your Button component */}
-          <Button
-            to="#"
-            variant="outline"
-            size="md"
-            onClick={(e) => {
-              e.preventDefault();
-              handleBackToCrops();
-            }}
-          >
-            Back
-          </Button>
         </div>
       </div>
     </div>
@@ -1285,3 +1274,4 @@ const AdminSideBar = ({
 };
 
 export default AdminSideBar;
+
