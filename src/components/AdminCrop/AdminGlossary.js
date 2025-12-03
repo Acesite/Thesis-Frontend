@@ -233,20 +233,204 @@ const GLOSSARY_ITEMS = [
     definition:
       "The farmer-facing map view where residents can see fields, crops, and calamity information.",
   },
+    // ECOSYSTEMS
+  {
+    term: "Irrigated Rice Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Rice fields that receive a regular water supply from irrigation canals, pumps, or other controlled water sources.",
+  },
+  {
+    term: "Flooded Rice Fields",
+    category: "Ecosystem",
+    definition:
+      "Rice areas that are intentionally kept flooded for most of the growing season to support rice growth and reduce weeds.",
+  },
+  {
+    term: "Rainfed Rice",
+    category: "Ecosystem",
+    definition:
+      "Rice fields that depend mainly on rainfall for water, with little or no irrigation support.",
+  },
+  {
+    term: "Tropical Crop Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Farming areas located in warm, tropical climates where crops like rice, corn, banana, and sugarcane are commonly grown.",
+  },
+  {
+    term: "Agroforestry Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "A system where trees or woody plants are grown together with crops or livestock on the same land.",
+  },
+  {
+    term: "Plantation Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Large, usually commercial farms planted with a single main crop such as sugarcane, banana, or other high-value crops.",
+  },
+  {
+    term: "Root Crop Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Farming areas focused on root and tuber crops such as cassava, sweet potato, or yam.",
+  },
+  {
+    term: "Rainfed Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Farms that mainly rely on natural rainfall for water, with no permanent irrigation system.",
+  },
+  {
+    term: "Tropical Farming Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "General term for farms located in tropical climates with year-round warm temperatures and distinct wet and dry seasons.",
+  },
+  {
+    term: "Dryland Corn Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Corn areas planted in drier conditions with limited or no irrigation, often depending on seasonal rains.",
+  },
+  {
+    term: "Monoculture Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Farmland where only one crop species is planted over a large area for one or more seasons.",
+  },
+  {
+    term: "Field Crop Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Open-field farms planted with crops like rice, corn, sugarcane, or other major field crops.",
+  },
+  {
+    term: "Sugarcane Plantation Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Large areas mainly planted with sugarcane for commercial sugar or biofuel production.",
+  },
+  {
+    term: "Flooded or Irrigated Ecosystem",
+    category: "Ecosystem",
+    definition:
+      "Crop areas that are regularly supplied with water through flooding or irrigation to support growth.",
+  },
+
+  // TENURE / LAND RIGHTS
+  {
+    term: "Owner",
+    category: "Tenure",
+    definition:
+      "A farmer or individual who has legal ownership of the land being used for farming.",
+  },
+  {
+    term: "Tenant Farmer",
+    category: "Tenure",
+    definition:
+      "A farmer who uses land owned by someone else and usually pays rent in cash, labor, or a share of the harvest.",
+  },
+  {
+    term: "Leasehold Farmer",
+    category: "Tenure",
+    definition:
+      "A farmer who rents land from an owner under a formal or long-term lease agreement.",
+  },
+  {
+    term: "Sharecropper (Kasama)",
+    category: "Tenure",
+    definition:
+      "A farmer who works on another person’s land and shares an agreed portion of the harvest with the landowner.",
+  },
+  {
+    term: "Farm Laborer",
+    category: "Tenure",
+    definition:
+      "A person hired to work on a farm for wages, usually without rights to the land or harvest.",
+  },
+  {
+    term: "Contract Grower",
+    category: "Tenure",
+    definition:
+      "A farmer who produces crops under a contract with a company or buyer, often with agreed price and volume.",
+  },
+  {
+    term: "Stewardship Farmer",
+    category: "Tenure",
+    definition:
+      "A farmer allowed to use and manage land through a stewardship or management agreement, without full ownership.",
+  },
+  {
+    term: "Agrarian Reform Beneficiary (ARB)",
+    category: "Tenure",
+    definition:
+      "A farmer who received land through the government’s agrarian reform program, usually with specific rights and responsibilities.",
+  },
+    // CROPPING SYSTEM
+  {
+    term: "Cropping system",
+    category: "Cropping system",
+    definition:
+      "The pattern or method of planting crops in a field, including monocrop and different types of intercropping.",
+  },
+  {
+    term: "Monocrop",
+    category: "Cropping system",
+    definition:
+      "A cropping system where only one type of crop is planted in a field during a season.",
+  },
+  {
+    term: "Intercropped (2 crops)",
+    category: "Cropping system",
+    definition:
+      "A field planted with two different crops at the same time or in overlapping periods, sharing the same area.",
+  },
+  {
+    term: "Relay intercropping",
+    category: "Cropping system",
+    definition:
+      "An intercropping method where a second crop is planted before the first crop is fully harvested, so their growth periods overlap.",
+  },
+  {
+    term: "Strip intercropping",
+    category: "Cropping system",
+    definition:
+      "Planting different crops in long strips within the same field so they can be managed separately but still interact.",
+  },
+  {
+    term: "Mixed cropping / Polyculture",
+    category: "Cropping system",
+    definition:
+      "Planting two or more crops mixed together without distinct rows or strips, often to maximize diversity and reduce risk.",
+  },
+  {
+    term: "Secondary crop",
+    category: "Cropping system",
+    definition:
+      "The additional crop planted with the main crop in an intercropped field.",
+  },
+
+
 ];
 
 /* -------------------------- categories for dropdown ------------------------- */
 const ALL_CATEGORIES = [
   "All",
-  "Crops",
-  "Mapping",
-  "Farmer",
-  "Cropping system",
-  "Calamity",
   "Analytics",
+  "Calamity",
+  "Crops",
+  "Cropping system",
+  "Ecosystem",
+  "Farmer",
+  "Mapping",
   "Roles",
   "System",
+  "Tenure",
+  "Cropping System"
 ];
+
 
 const AdminGlossary = () => {
   const [activeCategory, setActiveCategory] = useState("All");
