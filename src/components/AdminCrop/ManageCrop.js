@@ -1,3 +1,4 @@
+// pages/AdminCrop/ManageCrop.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AOS from "aos";
@@ -63,6 +64,9 @@ const ManageCrop = () => {
   const [varieties, setVarieties] = useState([]);
   const [interVarieties, setInterVarieties] = useState([]);
 
+  // ADD: tenure options
+  const [tenures, setTenures] = useState([]);
+
   const [selectedCropTypeId, setSelectedCropTypeId] = useState(null);
   const [search, setSearch] = useState("");
 
@@ -94,6 +98,36 @@ const ManageCrop = () => {
       }
     })();
   }, []);
+
+  // ADD: fetch tenure list on mount (separate effect; no edits to your fetch above)
+ // ADD: fetch tenure list on mount (normalized to {id,name})
+useEffect(() => {
+  (async () => {
+    try {
+      const res = await axios.get("http://localhost:5000/api/crops/tenures");
+      const raw = Array.isArray(res.data) ? res.data : [];
+
+      // normalize to { id, name }
+      const list = raw
+        .map((r) => ({
+          id: r.id ?? r.tenure_id ?? null,
+          name: r.name ?? r.tenure_name ?? "",
+        }))
+        .filter((r) => r.id && r.name);
+
+      setTenures(list);
+    } catch (e) {
+      console.warn("Tenure endpoint not ready — using fallback.");
+      setTenures([
+        { id: 1, name: "Landowner" },
+        { id: 2, name: "Tenant Farmer" },
+        { id: 3, name: "Leaseholder" },
+        { id: 4, name: "Sharecropper" },
+      ]);
+    }
+  })();
+}, []);
+
 
   useEffect(() => {
     if (editForm.crop_type_id) {
@@ -259,6 +293,20 @@ const ManageCrop = () => {
       farmer_full_name: initialName || "",
       farmer_first_name: crop.farmer_first_name || "",
       farmer_last_name: crop.farmer_last_name || "",
+      // NEW: show these in Edit
+      farmer_mobile: crop.farmer_mobile || "",
+      farmer_address: crop.farmer_address || "",
+      // ADD: tenure id
+      tenure_id: crop.farmer_tenure_id || "",
+
+      // harvest status + actual date (NEW)
+      is_harvested:
+        crop.is_harvested === 1 ||
+        crop.is_harvested === "1" ||
+        crop.is_harvested === true
+          ? 1
+          : 0,
+      harvested_date: crop.harvested_date || "",
 
       // intercropping fields
       is_intercropped: isIntercropped ? 1 : 0,
@@ -285,7 +333,7 @@ const ManageCrop = () => {
 
   const handleUpdate = async () => {
     try {
-      // 1) If a farmer is linked and the name changed, update farmer first
+      // 1) If a farmer is linked and something changed, update farmer first
       const hasFarmer = !!editForm.farmer_id;
       const nameChanged =
         (editingCrop?.farmer_first_name || "") !==
@@ -293,22 +341,48 @@ const ManageCrop = () => {
         (editingCrop?.farmer_last_name || "") !==
           (editForm.farmer_last_name || "");
 
-      if (hasFarmer && nameChanged) {
+      const contactChanged =
+        (editingCrop?.farmer_mobile || "") !==
+          (editForm?.farmer_mobile || "") ||
+        (editingCrop?.farmer_address || "") !==
+          (editForm?.farmer_address || "");
+
+      const tenureChanged =
+        (editingCrop?.tenure_id || "") !== (editForm?.tenure_id || "");
+
+      if (hasFarmer && (nameChanged || contactChanged || tenureChanged)) {
         await axios.put(
           `http://localhost:5000/api/managecrops/farmer/${editForm.farmer_id}`,
           {
             first_name: editForm.farmer_first_name || "",
             last_name: editForm.farmer_last_name || "",
+            mobile: editForm.farmer_mobile || "",
+            address: editForm.farmer_address || "",
+            // ADD: tenure id goes with farmer update
+            tenure_id: editForm.tenure_id || null,
           }
         );
       }
 
       // 2) Update crop (don’t re-link farmer here)
       const payload = { ...editForm };
+
+      // keep only crop fields in payload
       delete payload.farmer_full_name;
       delete payload.farmer_id;
       delete payload.farmer_first_name;
       delete payload.farmer_last_name;
+      delete payload.farmer_mobile;
+      delete payload.farmer_address;
+      delete payload.tenure_id; // tenure belongs to farmer, not crop
+
+      // normalize harvested flag
+      payload.is_harvested = Number(editForm.is_harvested) === 1 ? 1 : 0;
+
+      // if not harvested, drop any date
+      if (payload.is_harvested !== 1) {
+        payload.harvested_date = null;
+      }
 
       const { data } = await axios.put(
         `http://localhost:5000/api/managecrops/${editingCrop.id}`,
@@ -320,7 +394,9 @@ const ManageCrop = () => {
 
       alert(
         data?.message ||
-          (nameChanged ? "Farmer and crop updated." : "Crop updated.")
+          (nameChanged || contactChanged || tenureChanged
+            ? "Farmer and crop updated."
+            : "Crop updated.")
       );
     } catch (err) {
       console.error("Update error:", err);
@@ -403,98 +479,97 @@ const ManageCrop = () => {
               {/* Search + sort + harvest filter */}
               <div className="flex flex-wrap items-end gap-3 md:ml-auto md:justify-end">
                 <div className="flex items-end">
-  <div className="flex flex-col gap-1">
-    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-      Search
-    </span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      Search
+                    </span>
 
-    <div className="relative">
-      {/* icon pill */}
-      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
-      🔍︎
-      </div>
+                    <div className="relative">
+                      {/* icon pill */}
+                      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+                        🔍︎
+                      </div>
 
-      <input
-        id="glossary-search"
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by term…"
-        className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
-                   placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
-                   focus:ring-2 focus:ring-emerald-500/70"
-      />
-    </div>
-  </div>
-</div>
+                      <input
+                        id="glossary-search"
+                        type="text"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        placeholder="Search…"
+                        className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                                   placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
+                                   focus:ring-2 focus:ring-emerald-500/70"
+                      />
+                    </div>
+                  </div>
+                </div>
 
                 {/* Sort + Harvest filters with pill style like search */}
-<div className="flex items-end gap-3">
-  {/* Sort */}
-  <div className="flex flex-col gap-1">
-    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-      Sort
-    </span>
+                <div className="flex items-end gap-3">
+                  {/* Sort */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      Sort
+                    </span>
 
-    <div className="relative">
-      {/* icon pill */}
-      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
-        ⇅
-      </div>
+                    <div className="relative">
+                      {/* icon pill */}
+                      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+                        ⇅
+                      </div>
 
-      <select
-        className="h-10 w-56 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
-                   appearance-none placeholder:text-slate-400 focus:border-emerald-500
-                   focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
-        value={sort}
-        onChange={(e) => setSort(e.target.value)}
-      >
-        {SORT_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+                      <select
+                        className="h-10 w-56 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                                   appearance-none placeholder:text-slate-400 focus:border-emerald-500
+                                   focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+                        value={sort}
+                        onChange={(e) => setSort(e.target.value)}
+                      >
+                        {SORT_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
 
-      {/* dropdown arrow */}
-      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
-        ▾
-      </div>
-    </div>
-  </div>
+                      {/* dropdown arrow */}
+                      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                        ▾
+                      </div>
+                    </div>
+                  </div>
 
-  {/* Harvest status */}
-  <div className="flex flex-col gap-1">
-    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-      Harvest status
-    </span>
+                  {/* Harvest status */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                      Harvest status
+                    </span>
 
-    <div className="relative">
-      {/* icon pill */}
-      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
-        🌾
-      </div>
+                    <div className="relative">
+                      {/* icon pill */}
+                      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+                        🌾
+                      </div>
 
-      <select
-        className="h-10 w-48 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
-                   appearance-none placeholder:text-slate-400 focus:border-emerald-500
-                   focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
-        value={harvestFilter}
-        onChange={(e) => setHarvestFilter(e.target.value)}
-      >
-        <option value="all">All status</option>
-        <option value="harvested">Harvested only</option>
-        <option value="not_harvested">Not yet harvested</option>
-      </select>
+                      <select
+                        className="h-10 w-48 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                                   appearance-none placeholder:text-slate-400 focus:border-emerald-500
+                                   focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+                        value={harvestFilter}
+                        onChange={(e) => setHarvestFilter(e.target.value)}
+                      >
+                        <option value="all">All status</option>
+                        <option value="harvested">Harvested only</option>
+                        <option value="not_harvested">Not yet harvested</option>
+                      </select>
 
-      {/* dropdown arrow */}
-      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
-        ▾
-      </div>
-    </div>
-  </div>
-</div>
-
+                      {/* dropdown arrow */}
+                      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                        ▾
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -508,8 +583,6 @@ const ManageCrop = () => {
             ) : pageItems.length > 0 ? (
               pageItems.map((crop) => {
                 const color = colorByCrop[crop.crop_name] || "#16a34a";
-                const hasCoords = crop.latitude && crop.longitude; // currently unused but kept
-
                 const isHarvested =
                   crop.is_harvested === 1 ||
                   crop.is_harvested === "1" ||
@@ -597,6 +670,7 @@ const ManageCrop = () => {
                     >
                       {harvestStatusLabel}
                     </div>
+
                     {/* Meta (crop info) */}
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
                       <Stat label="Planted" value={fmtDate(crop.planted_date)} />
@@ -633,7 +707,7 @@ const ManageCrop = () => {
                               navigate("/AdminMap", {
                                 state: {
                                   cropId: String(crop.id),
-                                  zoom: 17, // map will compute center from the polygon
+                                  zoom: 17,
                                 },
                               })
                             }
@@ -891,6 +965,46 @@ const ManageCrop = () => {
                   />
                 </div>
 
+                {/* NEW: Actual harvest (status + date) */}
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center gap-3 mt-2">
+                    <input
+                      id="is_harvested"
+                      type="checkbox"
+                      name="is_harvested"
+                      checked={Number(editForm.is_harvested) === 1}
+                      onChange={handleEditChange}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600"
+                    />
+                    <label htmlFor="is_harvested" className="text-sm text-slate-700">
+                      Mark as harvested
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Harvested on
+                    </label>
+                    <input
+                      type="date"
+                      name="harvested_date"
+                      disabled={Number(editForm.is_harvested) !== 1}
+                      value={
+                        (editForm.harvested_date || "")
+                          .toString()
+                          .split("T")[0] || ""
+                      }
+                      onChange={handleEditChange}
+                      className={`w-full border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600
+                        ${
+                          Number(editForm.is_harvested) !== 1
+                            ? "bg-slate-100 border-slate-200"
+                            : "border-slate-300"
+                        }`}
+                    />
+                  </div>
+                </div>
+
                 {/* Volume */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -966,6 +1080,56 @@ const ManageCrop = () => {
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                     />
                   </div>
+
+                  {/* NEW: Mobile + Address */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Farmer mobile
+                    </label>
+                    <input
+                      name="farmer_mobile"
+                      value={editForm.farmer_mobile || ""}
+                      onChange={handleEditChange}
+                      placeholder="e.g., 0919…"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+                  <div className="md:col-span-1 md:col-start-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Full address
+                    </label>
+                    <input
+                      name="farmer_address"
+                      value={editForm.farmer_address || ""}
+                      onChange={handleEditChange}
+                      placeholder="e.g., Purok Kamatis, Ma-ao"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    />
+                  </div>
+
+                  {/* ADD: Tenure select */}
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Tenure
+                    </label>
+                    <select
+                      name="tenure_id"
+                      value={editForm.tenure_id || ""}
+                      onChange={handleEditChange}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    >
+                      <option value="">— Select tenure —</option>
+                      {tenures.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Current: {editingCrop?.tenure_name || "N/A"}
+                    </p>
+                  </div>
+
                   <p className="md:col-span-2 text-[12px] text-slate-500">
                     {editForm.farmer_id ? (
                       <>
