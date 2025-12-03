@@ -231,7 +231,7 @@ const AdminNavBar = () => {
           <a
             href="/AdminGlossary"
             className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "AdminGlossary"
+              location.pathname === "/AdminGlossary"
                 ? "text-emerald-700 font-medium"
                 : "text-gray-800"
             }`}

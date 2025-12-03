@@ -50,8 +50,6 @@ const addPulseStylesOnce = () => {
   .chip { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     font-size: 12px; font-weight: 600; padding: 4px 8px; background: #111827; color: #fff;
     border-radius: 9999px; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transform: translate(-50%, -8px); white-space: nowrap; }
-
-  /* Remove default Mapbox popup shell for our hover card */
   .mapboxgl-popup.calamity-hover-preview { pointer-events: none !important; }
   .mapboxgl-popup.calamity-hover-preview .mapboxgl-popup-content {
     background: transparent !important; padding: 0 !important; box-shadow: none !important; border: none !important; border-radius: 0 !important;
@@ -63,7 +61,6 @@ const addPulseStylesOnce = () => {
 
 /** --------- image + hover card builder --------- **/
 function resolveImageURL(calamity) {
-  // Prefer your "photos" (JSON string/array) first
   let raw =
     calamity?.thumbnail_url ||
     calamity?.image_url ||
@@ -73,16 +70,17 @@ function resolveImageURL(calamity) {
     calamity?.image_path ||
     null;
 
-  // Try calamity.photos (array or JSON) as fallback
   if (!raw && calamity?.photos) {
     try {
-      const arr = typeof calamity.photos === "string" ? JSON.parse(calamity.photos) : calamity.photos;
+      const arr =
+        typeof calamity.photos === "string"
+          ? JSON.parse(calamity.photos)
+          : calamity.photos;
       if (Array.isArray(arr) && arr[0]) raw = arr[0];
     } catch {}
   }
 
   if (!raw) return null;
-
   if (/^(https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) return raw;
   if (raw.startsWith("/")) return `${API_BASE}${raw}`;
   return `${API_BASE}/${raw}`;
@@ -96,11 +94,11 @@ function buildPreviewHTML(c) {
   const notes = c.notes || c.description || "";
 
   const sevColors = {
-    Severe:   { bg: "#fecaca", text: "#7f1d1d" },
-    High:     { bg: "#fee2e2", text: "#991b1b" },
+    Severe: { bg: "#fecaca", text: "#7f1d1d" },
+    High: { bg: "#fee2e2", text: "#991b1b" },
     Moderate: { bg: "#fef3c7", text: "#92400e" },
-    Medium:   { bg: "#fef3c7", text: "#92400e" }, // alias
-    Low:      { bg: "#dbeafe", text: "#1e40af" },
+    Medium: { bg: "#fef3c7", text: "#92400e" },
+    Low: { bg: "#dbeafe", text: "#1e40af" },
   };
   const sevColor = sevColors[sev] || { bg: "#f3f4f6", text: "#374151" };
 
@@ -124,9 +122,7 @@ function buildPreviewHTML(c) {
         }
         <div style="padding:12px;">
           <div style="font-weight:700; font-size:16px; color:#b91c1c; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="#b91c1c">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
-            </svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#b91c1c"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
             ${type}
           </div>
           ${
@@ -160,10 +156,16 @@ function makeAccuracyCircle([lng, lat], accuracy) {
 }
 function explainGeoError(err) {
   if (!err) return "Unknown geolocation error.";
-  switch (err.code) { case 1: return "Permission denied. Allow location for this site in your browser.";
-    case 2: return "Position unavailable. Try near a window or check OS location services.";
-    case 3: return "Timed out. Try again or increase the timeout.";
-    default: return err.message || "Geolocation failed."; }
+  switch (err.code) {
+    case 1:
+      return "Permission denied. Allow location for this site in your browser.";
+    case 2:
+      return "Position unavailable. Try near a window or check OS location services.";
+    case 3:
+      return "Timed out. Try again or increase the timeout.";
+    default:
+      return err.message || "Geolocation failed.";
+  }
 }
 function startGeoWatch(onPos, onErr, opts) {
   if (!("geolocation" in navigator) || typeof navigator.geolocation.watchPosition !== "function") {
@@ -171,7 +173,9 @@ function startGeoWatch(onPos, onErr, opts) {
     return () => {};
   }
   const id = navigator.geolocation.watchPosition(onPos, onErr, opts);
-  return () => { try { navigator.geolocation?.clearWatch?.(id); } catch {} };
+  return () => {
+    try { navigator.geolocation?.clearWatch?.(id); } catch {}
+  };
 }
 function extractHeadingFromEvent(e) {
   if (typeof e.webkitCompassHeading === "number") return e.webkitCompassHeading;
@@ -186,8 +190,12 @@ async function startCompass(onHeading) {
       if (p !== "granted") throw new Error("Compass permission denied.");
     }
   } catch {}
-  const handler = (e) => { const h = extractHeadingFromEvent(e); if (h != null && !Number.isNaN(h)) onHeading(h); };
-  const type = "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
+  const handler = (e) => {
+    const h = extractHeadingFromEvent(e);
+    if (h != null && !Number.isNaN(h)) onHeading(h);
+  };
+  const type =
+    "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
   window.addEventListener(type, handler, { passive: true });
   return () => window.removeEventListener(type, handler);
 }
@@ -258,7 +266,9 @@ const CalamityFarmerMap = () => {
   const directionsRef = useRef(null);
   const drawRef = useRef(null);
 
-  const [mapStyle, setMapStyle] = useState("mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d");
+  const [mapStyle, setMapStyle] = useState(
+    "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
+  );
   const [showLayers, setShowLayers] = useState(false);
   const [isSwitcherVisible, setIsSwitcherVisible] = useState(false);
   const [selectedBarangay, setSelectedBarangay] = useState(null);
@@ -266,7 +276,6 @@ const CalamityFarmerMap = () => {
   const [isDirectionsVisible, setIsDirectionsVisible] = useState(false);
   const [newTagLocation, setNewTagLocation] = useState(null);
   const [isTagging, setIsTagging] = useState(false);
-  const [taggedData] = useState([]);
   const [sidebarCalamities, setSidebarCalamities] = useState([]);
   const [selectedCalamity, setSelectedCalamity] = useState(null);
   const [selectedCalamityType, setSelectedCalamityType] = useState("All");
@@ -275,7 +284,7 @@ const CalamityFarmerMap = () => {
   const savedMarkersRef = useRef([]);
   const [enlargedImage, setEnlargedImage] = useState(null);
 
-  // NEW: hover card state like your reference file
+  // hover card state
   const hoverPopupRef = useRef(null);
   const hoverLeaveTimerRef = useRef(null);
 
@@ -319,7 +328,9 @@ const CalamityFarmerMap = () => {
     Light: { url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0", thumbnail: LightThumbnail },
   };
 
-  const zoomToBarangay = (coordinates) => { map.current?.flyTo({ center: coordinates, zoom: 14, essential: true }); };
+  const zoomToBarangay = (coordinates) => {
+    map.current?.flyTo({ center: coordinates, zoom: 14, essential: true });
+  };
 
   const handleBarangaySelect = (barangayData) => {
     setSelectedBarangay(barangayData);
@@ -335,7 +346,6 @@ const CalamityFarmerMap = () => {
       el.style.border = "3px solid white";
       el.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
 
-      // (Coordinates intentionally omitted from popup content)
       const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
         <div class="text-sm">
           <h3 class="font-bold text-red-600 text-base">${barangayData.name}</h3>
@@ -344,7 +354,10 @@ const CalamityFarmerMap = () => {
         </div>
       `);
 
-      markerRef.current = new mapboxgl.Marker(el).setLngLat(barangayData.coordinates).setPopup(popup).addTo(map.current);
+      markerRef.current = new mapboxgl.Marker(el)
+        .setLngLat(barangayData.coordinates)
+        .setPopup(popup)
+        .addTo(map.current);
       markerRef.current.togglePopup();
     }
   };
@@ -355,18 +368,25 @@ const CalamityFarmerMap = () => {
   const selectedHaloRef = useRef(null);
   const hasDeepLinkedRef = useRef(false);
 
-  const HILITE_SRC  = "selected-calamity-highlight-src";
+  const HILITE_SRC = "selected-calamity-highlight-src";
   const HILITE_FILL = "selected-calamity-highlight-fill";
   const HILITE_LINE = "selected-calamity-highlight-line";
-
-  // NEW: line glow animation timer
   const HILITE_ANIM_REF = useRef(null);
 
   /** -------- highlight helpers -------- **/
   const runWhenStyleReady = useCallback((cb) => {
-    const m = map.current; if (!m) return;
-    if (m.isStyleLoaded && m.isStyleLoaded()) { cb(); return; }
-    const onStyle = () => { if (m.isStyleLoaded && m.isStyleLoaded()) { m.off("styledata", onStyle); cb(); } };
+    const m = map.current;
+    if (!m) return;
+    if (m.isStyleLoaded && m.isStyleLoaded()) {
+      cb();
+      return;
+    }
+    const onStyle = () => {
+      if (m.isStyleLoaded && m.isStyleLoaded()) {
+        m.off("styledata", onStyle);
+        cb();
+      }
+    };
     m.on("styledata", onStyle);
   }, []);
 
@@ -374,12 +394,15 @@ const CalamityFarmerMap = () => {
     return new Promise((resolve) => {
       if (!m) return resolve();
       const ready = () =>
-        m.isStyleLoaded()
-        && !!m.getSource("calamity-polygons")
-        && !!m.getLayer("calamity-polygons-layer");
+        m.isStyleLoaded() &&
+        !!m.getSource("calamity-polygons") &&
+        !!m.getLayer("calamity-polygons-layer");
       if (ready()) return resolve();
       const onIdle = () => {
-        if (ready()) { m.off("idle", onIdle); resolve(); }
+        if (ready()) {
+          m.off("idle", onIdle);
+          resolve();
+        }
       };
       m.on("idle", onIdle);
     });
@@ -387,9 +410,14 @@ const CalamityFarmerMap = () => {
 
   const clearSelection = useCallback(() => {
     if (!map.current) return;
-    if (HILITE_ANIM_REF.current) { clearInterval(HILITE_ANIM_REF.current); HILITE_ANIM_REF.current = null; }
-    selectedLabelRef.current?.remove(); selectedLabelRef.current = null;
-    selectedHaloRef.current?.remove();  selectedHaloRef.current  = null;
+    if (HILITE_ANIM_REF.current) {
+      clearInterval(HILITE_ANIM_REF.current);
+      HILITE_ANIM_REF.current = null;
+    }
+    selectedLabelRef.current?.remove();
+    selectedLabelRef.current = null;
+    selectedHaloRef.current?.remove();
+    selectedHaloRef.current = null;
     if (map.current.getLayer(HILITE_FILL)) map.current.removeLayer(HILITE_FILL);
     if (map.current.getLayer(HILITE_LINE)) map.current.removeLayer(HILITE_LINE);
     if (map.current.getSource(HILITE_SRC)) map.current.removeSource(HILITE_SRC);
@@ -397,8 +425,10 @@ const CalamityFarmerMap = () => {
 
   const showMarkerChipAndHalo = useCallback((id, text = "Selected incident") => {
     if (!map.current) return;
-    selectedLabelRef.current?.remove(); selectedLabelRef.current = null;
-    selectedHaloRef.current?.remove();  selectedHaloRef.current  = null;
+    selectedLabelRef.current?.remove();
+    selectedLabelRef.current = null;
+    selectedHaloRef.current?.remove();
+    selectedHaloRef.current = null;
 
     const marker = calamityMarkerMapRef.current.get(String(id));
     if (!marker) return;
@@ -408,7 +438,8 @@ const CalamityFarmerMap = () => {
     chip.className = "chip";
     chip.textContent = text;
     const chipMarker = new mapboxgl.Marker({ element: chip, anchor: "bottom", offset: [0, -42] })
-      .setLngLat(at).addTo(map.current);
+      .setLngLat(at)
+      .addTo(map.current);
     selectedLabelRef.current = chipMarker;
 
     const haloWrap = document.createElement("div");
@@ -417,18 +448,28 @@ const CalamityFarmerMap = () => {
     ring.className = "pulse-ring";
     haloWrap.appendChild(ring);
     const haloMarker = new mapboxgl.Marker({ element: haloWrap, anchor: "center" })
-      .setLngLat(at).addTo(map.current);
+      .setLngLat(at)
+      .addTo(map.current);
     selectedHaloRef.current = haloMarker;
 
-    try { marker.togglePopup(); } catch {}
+    try {
+      marker.togglePopup();
+    } catch {}
   }, []);
 
   const getCalamityCenter = useCallback((item) => {
     let coords = item?.coordinates;
     if (!coords) return null;
-    if (typeof coords === "string") { try { coords = JSON.parse(coords); } catch { return null; } }
+    if (typeof coords === "string") {
+      try {
+        coords = JSON.parse(coords);
+      } catch {
+        return null;
+      }
+    }
     if (!Array.isArray(coords) || coords.length < 3) return null;
-    const first = coords[0], last = coords[coords.length - 1];
+    const first = coords[0],
+      last = coords[coords.length - 1];
     if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
     const poly = turf.polygon([coords]);
     let pt = turf.centerOfMass(poly);
@@ -436,74 +477,127 @@ const CalamityFarmerMap = () => {
     return pt.geometry.coordinates; // [lng, lat]
   }, []);
 
-  const highlightPolygon = useCallback((item) => {
-    if (!map.current || !item) return;
-    runWhenStyleReady(() => {
-      let coords = item.coordinates;
-      if (typeof coords === "string") { try { coords = JSON.parse(coords); } catch { return; } }
-      if (!Array.isArray(coords) || coords.length < 3) return;
-      const first = coords[0], last = coords[coords.length - 1];
-      if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
-      const feature = turf.polygon([coords], { id: item.calamity_id ?? item.id, calamity_type: item.calamity_type });
+  const highlightPolygon = useCallback(
+    (item) => {
+      if (!map.current || !item) return;
+      runWhenStyleReady(() => {
+        let coords = item.coordinates;
+        if (typeof coords === "string") {
+          try {
+            coords = JSON.parse(coords);
+          } catch {
+            return;
+          }
+        }
+        if (!Array.isArray(coords) || coords.length < 3) return;
+        const first = coords[0],
+          last = coords[coords.length - 1];
+        if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
+        const feature = turf.polygon([coords], {
+          id: item.calamity_id ?? item.id,
+          calamity_type: item.calamity_type,
+        });
 
-      const m = map.current;
+        const m = map.current;
 
-      if (!m.getSource(HILITE_SRC)) {
-        m.addSource(HILITE_SRC, { type: "geojson", data: { type: "FeatureCollection", features: [feature] } });
-        m.addLayer({ id: HILITE_FILL, type: "fill", source: HILITE_SRC,
-          paint: { "fill-color": "#ef4444", "fill-opacity": 0.15 } });
-        m.addLayer({ id: HILITE_LINE, type: "line", source: HILITE_SRC,
-          paint: { "line-color": "#ef4444", "line-width": 4, "line-opacity": 1 } });
-      } else {
-        m.getSource(HILITE_SRC).setData({ type: "FeatureCollection", features: [feature] });
-      }
+        if (!m.getSource(HILITE_SRC)) {
+          m.addSource(HILITE_SRC, {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [feature] },
+          });
+          m.addLayer({
+            id: HILITE_FILL,
+            type: "fill",
+            source: HILITE_SRC,
+            paint: { "fill-color": "#ef4444", "fill-opacity": 0.15 },
+          });
+          m.addLayer({
+            id: HILITE_LINE,
+            type: "line",
+            source: HILITE_SRC,
+            paint: { "line-color": "#ef4444", "line-width": 4, "line-opacity": 1 },
+          });
+        } else {
+          m.getSource(HILITE_SRC).setData({
+            type: "FeatureCollection",
+            features: [feature],
+          });
+        }
 
-      // glowing/breathing outline
-      if (HILITE_ANIM_REF.current) { clearInterval(HILITE_ANIM_REF.current); HILITE_ANIM_REF.current = null; }
-      let w = 4, dir = +0.4;
-      HILITE_ANIM_REF.current = setInterval(() => {
-        if (!m.getLayer(HILITE_LINE)) return;
-        w += dir;
-        if (w >= 8) dir = -0.4;
-        if (w <= 3) dir = +0.4;
-        try { m.setPaintProperty(HILITE_LINE, "line-width", w); } catch {}
-      }, 80);
-    });
-  }, [runWhenStyleReady]);
+        if (HILITE_ANIM_REF.current) {
+          clearInterval(HILITE_ANIM_REF.current);
+          HILITE_ANIM_REF.current = null;
+        }
+        let w = 4,
+          dir = +0.4;
+        HILITE_ANIM_REF.current = setInterval(() => {
+          if (!m.getLayer(HILITE_LINE)) return;
+          w += dir;
+          if (w >= 8) dir = -0.4;
+          if (w <= 3) dir = +0.4;
+          try {
+            m.setPaintProperty(HILITE_LINE, "line-width", w);
+          } catch {}
+        }, 80);
+      });
+    },
+    [runWhenStyleReady]
+  );
 
-  const highlightSelection = useCallback((item) => {
-    if (!map.current || !item) return;
-    clearSelection();
-    const label = `${item.calamity_type || "Incident"}${item.severity_level ? ` – ${item.severity_level}` : ""}`;
-    const id = item.calamity_id ?? item.id;
-    showMarkerChipAndHalo(id, label);
-    highlightPolygon(item);
-    const center = getCalamityCenter(item);
-    if (center) map.current.flyTo({ center, zoom: Math.max(map.current.getZoom(), 16), essential: true });
-  }, [clearSelection, showMarkerChipAndHalo, highlightPolygon, getCalamityCenter]);
+  const highlightSelection = useCallback(
+    (item) => {
+      if (!map.current || !item) return;
+      clearSelection();
+      const label = `${item.calamity_type || "Incident"}${
+        item.severity_level ? ` – ${item.severity_level}` : ""
+      }`;
+      const id = item.calamity_id ?? item.id;
+      showMarkerChipAndHalo(id, label);
+      highlightPolygon(item);
+      const center = getCalamityCenter(item);
+      if (center)
+        map.current.flyTo({
+          center,
+          zoom: Math.max(map.current.getZoom(), 16),
+          essential: true,
+        });
+    },
+    [clearSelection, showMarkerChipAndHalo, highlightPolygon, getCalamityCenter]
+  );
 
   /** -------- calamity polygons -------- **/
-  const handlePolyClick = useCallback((e) => {
-    if (!e.features?.length) return;
-    const feature = e.features[0];
-    const polyId = String(feature.properties?.id ?? "");
-    const calam = sidebarCalamities.find((c) => String(c.calamity_id ?? c.id) === polyId);
-    if (calam) {
-      setSelectedCalamity(calam);
-      highlightSelection(calam);
-      setIsSidebarVisible(true);
-    }
-    try {
-      const coords = feature.geometry?.coordinates?.[0];
-      if (Array.isArray(coords) && coords.length > 2) {
-        const center = turf.centerOfMass(turf.polygon([coords])).geometry.coordinates;
-        map.current.easeTo({ center, zoom: Math.max(map.current.getZoom(), 13) });
+  const handlePolyClick = useCallback(
+    (e) => {
+      if (!e.features?.length) return;
+      const feature = e.features[0];
+      const polyId = String(feature.properties?.id ?? "");
+      const calam = sidebarCalamities.find(
+        (c) => String(c.calamity_id ?? c.id) === polyId
+      );
+      if (calam) {
+        setSelectedCalamity(calam);
+        highlightSelection(calam);
+        setIsSidebarVisible(true);
       }
-    } catch {}
-  }, [highlightSelection, sidebarCalamities]);
+      try {
+        const coords = feature.geometry?.coordinates?.[0];
+        if (Array.isArray(coords) && coords.length > 2) {
+          const center = turf
+            .centerOfMass(turf.polygon([coords]))
+            .geometry.coordinates;
+          map.current.easeTo({ center, zoom: Math.max(map.current.getZoom(), 13) });
+        }
+      } catch {}
+    },
+    [highlightSelection, sidebarCalamities]
+  );
 
-  const handlePolyEnter = useCallback(() => { map.current && (map.current.getCanvas().style.cursor = "pointer"); }, []);
-  const handlePolyLeave = useCallback(() => { map.current && (map.current.getCanvas().style.cursor = ""); }, []);
+  const handlePolyEnter = useCallback(() => {
+    map.current && (map.current.getCanvas().style.cursor = "pointer");
+  }, []);
+  const handlePolyLeave = useCallback(() => {
+    map.current && (map.current.getCanvas().style.cursor = "");
+  }, []);
 
   const attachPolygonInteractivity = useCallback(() => {
     if (!map.current?.getLayer("calamity-polygons-layer")) return;
@@ -515,49 +609,65 @@ const CalamityFarmerMap = () => {
     map.current.on("mouseleave", "calamity-polygons-layer", handlePolyLeave);
   }, [handlePolyClick, handlePolyEnter, handlePolyLeave]);
 
-  const loadPolygons = useCallback(async (geojsonData = null, isFiltered = false) => {
-    const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
-    const fullData = geojsonData || res.data;
+  const loadPolygons = useCallback(
+    async (geojsonData = null, isFiltered = false) => {
+      const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
+      const fullData = geojsonData || res.data;
 
-    const paintStyle = isFiltered
-      ? {
-          "fill-color": [
-            "match",
-            ["get", "calamity_type"],
-            "Flood", "#3b82f6",
-            "Earthquake", "#ef4444",
-            "Typhoon", "#8b5cf6",
-            "Landslide", "#f59e0b",
-            "Drought", "#f97316",
-            "Wildfire", "#dc2626",
-            "#ef4444"
-          ],
-          "fill-opacity": 0.4,
-        }
-      : { "fill-color": "#ef4444", "fill-opacity": 0.4 };
+      const paintStyle = isFiltered
+        ? {
+            "fill-color": [
+              "match",
+              ["get", "calamity_type"],
+              "Flood",
+              "#3b82f6",
+              "Earthquake",
+              "#ef4444",
+              "Typhoon",
+              "#8b5cf6",
+              "Landslide",
+              "#f59e0b",
+              "Drought",
+              "#f97316",
+              "Wildfire",
+              "#dc2626",
+              "#ef4444",
+            ],
+            "fill-opacity": 0.4,
+          }
+        : { "fill-color": "#ef4444", "fill-opacity": 0.4 };
 
-    if (map.current.getSource("calamity-polygons")) {
-      map.current.getSource("calamity-polygons").setData(fullData);
-      map.current.setPaintProperty("calamity-polygons-layer", "fill-color", paintStyle["fill-color"]);
-    } else {
-      map.current.addSource("calamity-polygons", { type: "geojson", data: fullData });
-      map.current.addLayer({
-        id: "calamity-polygons-layer",
-        type: "fill",
-        source: "calamity-polygons",
-        paint: paintStyle,
-      });
-      map.current.addLayer({
-        id: "calamity-polygons-outline",
-        type: "line",
-        source: "calamity-polygons",
-        paint: { "line-color": "#7f1d1d", "line-width": 2 },
-      });
-    }
-    attachPolygonInteractivity();
-  }, [attachPolygonInteractivity]);
+      if (map.current.getSource("calamity-polygons")) {
+        map.current.getSource("calamity-polygons").setData(fullData);
+        map.current.setPaintProperty(
+          "calamity-polygons-layer",
+          "fill-color",
+          paintStyle["fill-color"]
+        );
+      } else {
+        map.current.addSource("calamity-polygons", {
+          type: "geojson",
+          data: fullData,
+        });
+        map.current.addLayer({
+          id: "calamity-polygons-layer",
+          type: "fill",
+          source: "calamity-polygons",
+          paint: paintStyle,
+        });
+        map.current.addLayer({
+          id: "calamity-polygons-outline",
+          type: "line",
+          source: "calamity-polygons",
+          paint: { "line-color": "#7f1d1d", "line-width": 2 },
+        });
+      }
+      attachPolygonInteractivity();
+    },
+    [attachPolygonInteractivity]
+  );
 
-  /** -------- markers with HOVER CARD (like your sample) -------- **/
+  /** -------- markers with HOVER CARD -------- **/
   const renderSavedMarkers = useCallback(async () => {
     try {
       const response = await axios.get(`${API_BASE}/api/calamities`);
@@ -568,20 +678,39 @@ const CalamityFarmerMap = () => {
       savedMarkersRef.current.forEach((marker) => marker.remove());
       savedMarkersRef.current = [];
       calamityMarkerMapRef.current.clear();
-      if (hoverPopupRef.current) { try { hoverPopupRef.current.remove(); } catch {} hoverPopupRef.current = null; }
+      if (hoverPopupRef.current) {
+        try {
+          hoverPopupRef.current.remove();
+        } catch {}
+        hoverPopupRef.current = null;
+      }
 
-      const filtered = selectedCalamityType === "All"
-        ? calamities
-        : calamities.filter(calamity => calamity.calamity_type === selectedCalamityType);
+      const filtered =
+        selectedCalamityType === "All"
+          ? calamities
+          : calamities.filter(
+              (calamity) => calamity.calamity_type === selectedCalamityType
+            );
 
       if (filtered.length === 0) {
-        toast.info("No Calamities Found .", { position: "top-center", autoClose: 3000, hideProgressBar: true, theme: "light" });
+        toast.info("No Calamities Found .", {
+          position: "top-center",
+          autoClose: 3000,
+          hideProgressBar: true,
+          theme: "light",
+        });
         return;
       }
 
       filtered.forEach((calamity) => {
         let coords = calamity.coordinates;
-        if (typeof coords === "string") { try { coords = JSON.parse(coords); } catch { return; } }
+        if (typeof coords === "string") {
+          try {
+            coords = JSON.parse(coords);
+          } catch {
+            return;
+          }
+        }
         if (Array.isArray(coords) && coords.length > 2) {
           const first = coords[0];
           const last = coords[coords.length - 1];
@@ -589,14 +718,19 @@ const CalamityFarmerMap = () => {
 
           const center = turf.centerOfMass(turf.polygon([coords])).geometry.coordinates;
 
-          const marker = new mapboxgl.Marker({ color: calamityColorMap[calamity.calamity_type] || "#ef4444" })
+          const marker = new mapboxgl.Marker({
+            color: calamityColorMap[calamity.calamity_type] || "#ef4444",
+          })
             .setLngLat(center)
-            .setPopup(new mapboxgl.Popup({ offset: 15 }).setHTML(`
+            .setPopup(
+              new mapboxgl.Popup({ offset: 15 }).setHTML(
+                `
                 <div class="text-sm">
                   <h3 class='font-bold text-red-600'>${calamity.calamity_type}</h3>
                   <p><strong>Severity:</strong> ${calamity.severity_level || "N/A"}</p>
                 </div>
-              `)
+              `
+              )
             )
             .addTo(map.current);
 
@@ -606,10 +740,15 @@ const CalamityFarmerMap = () => {
             setIsSidebarVisible(true);
           });
 
-          // HOVER CARD exactly like your reference
+          // hover card
           marker.getElement().addEventListener("mouseenter", () => {
-            if (hoverLeaveTimerRef.current) { clearTimeout(hoverLeaveTimerRef.current); hoverLeaveTimerRef.current = null; }
-            try { hoverPopupRef.current?.remove(); } catch {}
+            if (hoverLeaveTimerRef.current) {
+              clearTimeout(hoverLeaveTimerRef.current);
+              hoverLeaveTimerRef.current = null;
+            }
+            try {
+              hoverPopupRef.current?.remove();
+            } catch {}
             const html = buildPreviewHTML(calamity);
             const popup = new mapboxgl.Popup({
               closeButton: false,
@@ -624,12 +763,15 @@ const CalamityFarmerMap = () => {
               .setHTML(html)
               .addTo(map.current);
 
-            // double-ensure the shell is transparent
             setTimeout(() => {
               const el = popup.getElement();
               const content = el?.querySelector(".mapboxgl-popup-content");
               const tip = el?.querySelector(".mapboxgl-popup-tip");
-              if (content) { content.style.background = "transparent"; content.style.padding = "0"; content.style.boxShadow = "none"; }
+              if (content) {
+                content.style.background = "transparent";
+                content.style.padding = "0";
+                content.style.boxShadow = "none";
+              }
               if (tip) tip.style.display = "none";
             }, 0);
 
@@ -638,7 +780,12 @@ const CalamityFarmerMap = () => {
 
           marker.getElement().addEventListener("mouseleave", () => {
             hoverLeaveTimerRef.current = setTimeout(() => {
-              if (hoverPopupRef.current) { try { hoverPopupRef.current.remove(); } catch {} hoverPopupRef.current = null; }
+              if (hoverPopupRef.current) {
+                try {
+                  hoverPopupRef.current.remove();
+                } catch {}
+                hoverPopupRef.current = null;
+              }
             }, 140);
           });
 
@@ -696,254 +843,450 @@ const CalamityFarmerMap = () => {
     }
   }, []);
 
-  const updateUserAccuracyCircle = useCallback((lng, lat, acc) => {
-    if (!map.current) return;
-    ensureUserAccuracyLayers();
-    const circle = makeAccuracyCircle([lng, lat], acc);
-    map.current.getSource(USER_ACC_SOURCE).setData(circle);
-  }, [ensureUserAccuracyLayers]);
+  const updateUserAccuracyCircle = useCallback(
+    (lng, lat, acc) => {
+      if (!map.current) return;
+      ensureUserAccuracyLayers();
+      const circle = makeAccuracyCircle([lng, lat], acc);
+      map.current.getSource(USER_ACC_SOURCE).setData(circle);
+    },
+    [ensureUserAccuracyLayers]
+  );
 
-  const setUserMarker = useCallback((lng, lat, acc) => {
-    if (!map.current) return;
-    const m = map.current;
+  const setUserMarker = useCallback(
+    (lng, lat, acc) => {
+      if (!map.current) return;
+      const m = map.current;
 
-    if (!userMarkerElRef.current) {
-      const el = document.createElement("div");
-      el.style.width = "36px";
-      el.style.height = "36px";
-      el.style.borderRadius = "50%";
-      el.style.position = "relative";
-      el.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.25)";
-      el.style.background = "rgba(59,130,246,0.10)";
+      if (!userMarkerElRef.current) {
+        const el = document.createElement("div");
+        el.style.width = "36px";
+        el.style.height = "36px";
+        el.style.borderRadius = "50%";
+        el.style.position = "relative";
+        el.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.25)";
+        el.style.background = "rgba(59,130,246,0.10)";
 
-      const arrow = document.createElement("div");
-      arrow.style.position = "absolute";
-      arrow.style.left = "50%";
-      arrow.style.top = "50%";
-      arrow.style.transform = "translate(-50%, -65%)";
-      arrow.style.width = "0";
-      arrow.style.height = "0";
-      arrow.style.borderLeft = "8px solid transparent";
-      arrow.style.borderRight = "8px solid transparent";
-      arrow.style.borderBottom = "16px solid #2563eb";
-      arrow.style.filter = "drop-shadow(0 1px 2px rgba(0,0,0,0.3))";
-      el.appendChild(arrow);
+        const arrow = document.createElement("div");
+        arrow.style.position = "absolute";
+        arrow.style.left = "50%";
+        arrow.style.top = "50%";
+        arrow.style.transform = "translate(-50%, -65%)";
+        arrow.style.width = "0";
+        arrow.style.height = "0";
+        arrow.style.borderLeft = "8px solid transparent";
+        arrow.style.borderRight = "8px solid transparent";
+        arrow.style.borderBottom = "16px solid #2563eb";
+        arrow.style.filter = "drop-shadow(0 1px 2px rgba(0,0,0,0.3))";
+        el.appendChild(arrow);
 
-      userMarkerElRef.current = el;
+        userMarkerElRef.current = el;
 
-      if (!userMarkerRef.current) {
-        userMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
-          .setLngLat([lng, lat])
-          .setPopup(new mapboxgl.Popup({ offset: 12 }).setText("You are here"))
-          .addTo(m);
-      } else {
-        userMarkerRef.current.setElement(el);
+        if (!userMarkerRef.current) {
+          userMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
+            .setLngLat([lng, lat])
+            .setPopup(new mapboxgl.Popup({ offset: 12 }).setText("You are here"))
+            .addTo(m);
+        } else {
+          userMarkerRef.current.setElement(el);
+        }
       }
-    }
 
-    userMarkerRef.current.setLngLat([lng, lat]);
-    updateUserAccuracyCircle(lng, lat, acc);
+      userMarkerRef.current.setLngLat([lng, lat]);
+      updateUserAccuracyCircle(lng, lat, acc);
 
-    if (typeof headingDeg === "number" && userMarkerElRef.current) {
-      userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
-    }
+      if (typeof headingDeg === "number" && userMarkerElRef.current) {
+        userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
+      }
 
-    m.easeTo({ center: [lng, lat], zoom: Math.max(m.getZoom(), 15), duration: 0, essential: true });
+      m.easeTo({
+        center: [lng, lat],
+        zoom: Math.max(m.getZoom(), 15),
+        duration: 0,
+        essential: true,
+      });
 
-    if (rotateMapWithHeading && typeof headingDeg === "number") {
-      m.setBearing(headingDeg);
-    }
-  }, [headingDeg, rotateMapWithHeading, updateUserAccuracyCircle]);
+      if (rotateMapWithHeading && typeof headingDeg === "number") {
+        m.setBearing(headingDeg);
+      }
+    },
+    [headingDeg, rotateMapWithHeading, updateUserAccuracyCircle]
+  );
 
-  const handleFix = useCallback((glng, glat, accuracy) => {
-    if (!map.current) return;
+  const handleFix = useCallback(
+    (glng, glat, accuracy) => {
+      if (!map.current) return;
 
-    if (lockToBago && !isInsideBounds([glng, glat], BAGO_CITY_BOUNDS)) {
-      const expanded = expandBoundsToIncludePoint(BAGO_CITY_BOUNDS, [glng, glat], 0.05);
-      map.current.setMaxBounds(expanded);
-      toast.info("You’re outside Bago. Temporarily expanded bounds to include your location.");
-    }
+      if (lockToBago && !isInsideBounds([glng, glat], BAGO_CITY_BOUNDS)) {
+        const expanded = expandBoundsToIncludePoint(
+          BAGO_CITY_BOUNDS,
+          [glng, glat],
+          0.05
+        );
+        map.current.setMaxBounds(expanded);
+        toast.info(
+          "You’re outside Bago. Temporarily expanded bounds to include your location."
+        );
+      }
 
-    setUserLoc({ lng: glng, lat: glat, acc: accuracy });
-    setUserMarker(glng, glat, accuracy);
-  }, [lockToBago, setUserMarker]);
+      setUserLoc({ lng: glng, lat: glat, acc: accuracy });
+      setUserMarker(glng, glat, accuracy);
+    },
+    [lockToBago, setUserMarker]
+  );
 
-  /** --- optional barangay outlines --- */
+  /** -------- barangay layers (borders + labels) -------- **/
   const ensureBarangayLayers = useCallback(() => {
     if (!map.current) return;
     if (!BARANGAYS_FC?.features?.length) return;
-
     const m = map.current;
+
+    // source
     if (!m.getSource("barangays-src")) {
       m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
+    } else {
+      try { m.getSource("barangays-src").setData(BARANGAYS_FC); } catch {}
     }
+
+    // 1) glow/casing
+    if (!m.getLayer("barangays-casing")) {
+      m.addLayer({
+        id: "barangays-casing",
+        type: "line",
+        source: "barangays-src",
+        paint: {
+          "line-color": "#9CA3AF",
+          "line-opacity": 0.9,
+          "line-blur": 1.2,
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            10, 2.0,
+            12, 3.0,
+            14, 4.0,
+            16, 6.0,
+            18, 9.0
+          ]
+        }
+      });
+    }
+
+    // 2) main stroke
     if (!m.getLayer("barangays-line")) {
       m.addLayer({
         id: "barangays-line",
         type: "line",
         source: "barangays-src",
-        paint: { "line-color": "#1f2937", "line-width": 1.5, "line-opacity": 0.7 },
+        paint: {
+          "line-color": "#065f46",
+          "line-opacity": 0.95,
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            10, 1.2,
+            12, 1.8,
+            14, 2.6,
+            16, 3.6,
+            18, 5.5
+          ]
+        }
       });
     }
+
+    // 3) labels
+    if (!m.getLayer("barangays-labels")) {
+      m.addLayer({
+        id: "barangays-labels",
+        type: "symbol",
+        source: "barangays-src",
+        layout: {
+          "text-field": [
+            "coalesce", ["get","Barangay"], ["get","barangay"], ["get","NAME"], ["get","name"], ""
+          ],
+          "symbol-placement": "point",
+          "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 12, 12, 14, 14, 16, 18],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+          "symbol-sort-key": 999999,
+          "visibility": "visible"
+        },
+        paint: {
+          "text-color": "#0b3b2e",
+          "text-halo-color": "rgba(255,255,255,0.98)",
+          "text-halo-width": 2.2,
+          "text-halo-blur": 0.4
+        }
+      });
+    }
+
+    // order
+    try {
+      m.moveLayer("barangays-casing");
+      m.moveLayer("barangays-line");
+      const layers = m.getStyle()?.layers || [];
+      const topId = layers[layers.length - 1]?.id;
+      if (topId) m.moveLayer("barangays-labels", topId); else m.moveLayer("barangays-labels");
+    } catch {}
   }, []);
 
-  /** -------- map init / lifecycle -------- **/
+  /** ---- keep barangay labels/borders alive across style changes ---- **/
+  const armBarangayKeepAlive = useCallback(() => {
+    const m = map.current;
+    if (!m) return () => {};
+
+    const reapply = () => {
+      if (!m.isStyleLoaded || !m.isStyleLoaded()) return;
+      ensureBarangayLayers();
+    };
+
+    reapply();
+    m.on("styledata", reapply);
+    m.on("idle", reapply);
+
+    return () => {
+      try {
+        m.off("styledata", reapply);
+        m.off("idle", reapply);
+      } catch {}
+    };
+  }, [ensureBarangayLayers]);
+
+  /** -------- map init: RUNS ONCE -------- **/
   useEffect(() => {
-    if (!map.current) {
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: mapStyle,
-        center: INIT_CENTER,
-        zoom: INIT_ZOOM,
-        maxBounds: BAGO_CITY_BOUNDS,
-      });
+    if (map.current) return;
 
-      axios.get(`${API_BASE}/api/calamities/types`).then((res) => setCalamityTypes(res.data));
-      map.current.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: mapStyle,
+      center: INIT_CENTER,
+      zoom: INIT_ZOOM,
+      maxBounds: BAGO_CITY_BOUNDS,
+    });
 
-      drawRef.current = new MapboxDraw({ displayControlsDefault: false, controls: { polygon: true, trash: true } });
-      map.current.addControl(drawRef.current, "bottom-right");
+    axios.get(`${API_BASE}/api/calamities/types`).then((res) => setCalamityTypes(res.data));
+    map.current.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-      map.current.on("load", async () => {
-        try {
-          const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
-          const geojson = res.data;
+    drawRef.current = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: { polygon: true, trash: true },
+    });
+    map.current.addControl(drawRef.current, "bottom-right");
 
-          if (map.current.getSource("calamity-polygons")) {
-            map.current.getSource("calamity-polygons").setData(geojson);
-          } else {
-            map.current.addSource("calamity-polygons", { type: "geojson", data: geojson });
-            map.current.addLayer({
-              id: "calamity-polygons-layer",
-              type: "fill",
-              source: "calamity-polygons",
-              paint: { "fill-color": "#ef4444", "fill-opacity": 0.4 },
-            });
-            map.current.addLayer({
-              id: "calamity-polygons-outline",
-              type: "line",
-              source: "calamity-polygons",
-              paint: { "line-color": "#7f1d1d", "line-width": 2 },
-            });
-          }
-        } catch (err) { console.error(" Failed to load polygons:", err); }
+    map.current.on("load", async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
+        const geojson = res.data;
 
-        ensureUserAccuracyLayers();
-        ensureBarangayLayers();
-        attachPolygonInteractivity();
-        await renderSavedMarkers();
-
-        // ✅ initial deep-link focus (once) with source/layer readiness
-        if (!hasDeepLinkedRef.current) {
-          await waitForPolygonsReady(map.current);
-
-          let didHighlight = false;
-
-          if (target.incidentId && sidebarCalamities.length) {
-            const hit = sidebarCalamities.find(
-              (c) => String(c.calamity_id ?? c.id) === String(target.incidentId)
-            );
-            if (hit) {
-              setSelectedCalamity(hit);
-              highlightSelection(hit);
-              setIsSidebarVisible(true);
-              const center = getCalamityCenter(hit);
-              if (center) map.current.flyTo({ center, zoom: target.zoom, essential: true });
-              didHighlight = true;
-            }
-          }
-
-          if (!didHighlight && Number.isFinite(target.lat) && Number.isFinite(target.lng)) {
-            map.current.flyTo({ center: [target.lng, target.lat], zoom: target.zoom, essential: true });
-          }
-
-          if (didHighlight) hasDeepLinkedRef.current = true;
+        if (map.current.getSource("calamity-polygons")) {
+          map.current.getSource("calamity-polygons").setData(geojson);
+        } else {
+          map.current.addSource("calamity-polygons", {
+            type: "geojson",
+            data: geojson,
+          });
+          map.current.addLayer({
+            id: "calamity-polygons-layer",
+            type: "fill",
+            source: "calamity-polygons",
+            paint: { "fill-color": "#ef4444", "fill-opacity": 0.4 },
+          });
+          map.current.addLayer({
+            id: "calamity-polygons-outline",
+            type: "line",
+            source: "calamity-polygons",
+            paint: { "line-color": "#7f1d1d", "line-width": 2 },
+          });
         }
+      } catch (err) {
+        console.error(" Failed to load polygons:", err);
+      }
 
-        /** ---- ENFORCE barangay boundary on draw ---- */
-        const handleDrawAttempt = (feature) => {
-          if (!feature?.geometry) return;
-          if (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon") return;
+      ensureUserAccuracyLayers();
+      ensureBarangayLayers();
+      // keep-alive for barangay labels/borders
+      const __disarm = armBarangayKeepAlive();
+      map.current.__barangayDisarm = __disarm;
 
-          const poly = feature.geometry;
-          const detection = strictDetectBarangayForGeometry(poly, BARANGAYS_FC);
+      attachPolygonInteractivity();
+      await renderSavedMarkers();
 
-          if (!detection) {
-            try { drawRef.current?.delete(feature.id); } catch {}
-            setIsTagging(false);
-            setNewTagLocation(null);
-            toast.error("The tagged area must be entirely inside a single barangay. Please redraw within one barangay.");
-            return false;
-          }
+      // deep-link after layers ready
+      if (!hasDeepLinkedRef.current) {
+        await waitForPolygonsReady(map.current);
 
-          const ring = poly.type === "Polygon" ? poly.coordinates?.[0] : poly.coordinates?.[0]?.[0];
-          const area = turf.area({ type: "Feature", geometry: poly, properties: {} });
-          const hectares = +(area / 10000).toFixed(2);
+        let didHighlight = false;
 
-          setSelectedBarangay({ name: detection.name, coordinates: detection.centroid });
-          setNewTagLocation({ coordinates: ring, hectares });
-          setIsTagging(true);
-          return true;
-        };
-
-        map.current.on("draw.create", (e) => handleDrawAttempt(e.features?.[0]));
-        map.current.on("draw.update", (e) => {
-          const ok = handleDrawAttempt(e.features?.[0]);
-          if (!ok) { try { drawRef.current?.delete(e.features?.[0]?.id); } catch {} }
-        });
-      });
-    } else {
-      map.current.setStyle(mapStyle);
-      map.current.once("style.load", async () => {
-        ensureUserAccuracyLayers();
-        ensureBarangayLayers();
-        if (userLoc) {
-          updateUserAccuracyCircle(userLoc.lng, userLoc.lat, userLoc.acc);
-          userMarkerRef.current?.setLngLat([userLoc.lng, userLoc.lat]).addTo(map.current);
-          if (typeof headingDeg === "number" && userMarkerElRef.current) {
-            userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
-          }
-        }
-        await loadPolygons();
-        await renderSavedMarkers();
-        attachPolygonInteractivity();
-
-        if (selectedCalamity) {
-          highlightSelection(selectedCalamity);
-        } else if (!hasDeepLinkedRef.current && target.incidentId && sidebarCalamities.length) {
-          const hit = sidebarCalamities.find(c => String(c.calamity_id ?? c.id) === String(target.incidentId));
+        if (target.incidentId && sidebarCalamities.length) {
+          const hit = sidebarCalamities.find(
+            (c) => String(c.calamity_id ?? c.id) === String(target.incidentId)
+          );
           if (hit) {
             setSelectedCalamity(hit);
             highlightSelection(hit);
             setIsSidebarVisible(true);
-            const center = getCalamityCenter(hit) ||
-              (Number.isFinite(target.lng) && Number.isFinite(target.lat) ? [target.lng, target.lat] : null);
-            if (center) { hasDeepLinkedRef.current = true; map.current.flyTo({ center, zoom: target.zoom, essential: true }); }
+            const center = getCalamityCenter(hit);
+            if (center) map.current.flyTo({ center, zoom: target.zoom, essential: true });
+            didHighlight = true;
           }
         }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapStyle, ensureUserAccuracyLayers, ensureBarangayLayers, loadPolygons, renderSavedMarkers, highlightSelection]);
 
-  // ✅ Deep-link after data ready
+        if (!didHighlight && Number.isFinite(target.lat) && Number.isFinite(target.lng)) {
+          map.current.flyTo({ center: [target.lng, target.lat], zoom: target.zoom, essential: true });
+        }
+
+        if (didHighlight) hasDeepLinkedRef.current = true;
+      }
+
+      // draw constraint
+      const handleDrawAttempt = (feature) => {
+        if (!feature?.geometry) return;
+        if (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon")
+          return;
+
+        const poly = feature.geometry;
+        const detection = strictDetectBarangayForGeometry(poly, BARANGAYS_FC);
+
+        if (!detection) {
+          try {
+            drawRef.current?.delete(feature.id);
+          } catch {}
+          setIsTagging(false);
+          setNewTagLocation(null);
+          toast.error(
+            "The tagged area must be entirely inside a single barangay. Please redraw within one barangay."
+          );
+          return false;
+        }
+
+        const ring =
+          poly.type === "Polygon" ? poly.coordinates?.[0] : poly.coordinates?.[0]?.[0];
+        const area = turf.area({ type: "Feature", geometry: poly, properties: {} });
+        const hectares = +(area / 10000).toFixed(2);
+
+        setSelectedBarangay({ name: detection.name, coordinates: detection.centroid });
+        setNewTagLocation({ coordinates: ring, hectares });
+        setIsTagging(true);
+        return true;
+      };
+
+      map.current.on("draw.create", (e) => handleDrawAttempt(e.features?.[0]));
+      map.current.on("draw.update", (e) => {
+        const ok = handleDrawAttempt(e.features?.[0]);
+        if (!ok) {
+          try {
+            drawRef.current?.delete(e.features?.[0]?.id);
+          } catch {}
+        }
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // RUNS ONCE
+
+  /** -------- style change: ONLY when mapStyle URL changes -------- **/
+  const lastStyleRef = useRef(mapStyle);
   useEffect(() => {
-    if (!map.current || hasDeepLinkedRef.current || !target.incidentId || !sidebarCalamities.length) return;
+    if (!map.current) return;
+    if (lastStyleRef.current === mapStyle) return;
+    lastStyleRef.current = mapStyle;
+
+    map.current.setStyle(mapStyle);
+    map.current.once("style.load", async () => {
+      ensureUserAccuracyLayers();
+      await loadPolygons();            // add fills/lines first
+      ensureBarangayLayers();          // then add + hoist labels to top
+
+      // re-arm keep-alive after style swap
+      map.current.__barangayDisarm?.();
+      const __disarm2 = armBarangayKeepAlive();
+      map.current.__barangayDisarm = __disarm2;
+
+      await renderSavedMarkers();
+      attachPolygonInteractivity();
+
+      // restore user marker/accuracy if we had a fix already
+      if (userLoc) {
+        updateUserAccuracyCircle(userLoc.lng, userLoc.lat, userLoc.acc);
+        userMarkerRef.current?.setLngLat([userLoc.lng, userLoc.lat]).addTo(map.current);
+        if (typeof headingDeg === "number" && userMarkerElRef.current) {
+          userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
+        }
+      }
+
+      if (selectedCalamity) {
+        highlightSelection(selectedCalamity);
+      } else if (!hasDeepLinkedRef.current && target.incidentId && sidebarCalamities.length) {
+        const hit = sidebarCalamities.find(
+          (c) => String(c.calamity_id ?? c.id) === String(target.incidentId)
+        );
+        if (hit) {
+          setSelectedCalamity(hit);
+          highlightSelection(hit);
+          setIsSidebarVisible(true);
+          const center =
+            getCalamityCenter(hit) ||
+            (Number.isFinite(target.lng) && Number.isFinite(target.lat)
+              ? [target.lng, target.lat]
+              : null);
+          if (center) {
+            hasDeepLinkedRef.current = true;
+            map.current.flyTo({ center, zoom: target.zoom, essential: true });
+          }
+        }
+      }
+    });
+  }, [
+    mapStyle,
+    ensureUserAccuracyLayers,
+    loadPolygons,
+    ensureBarangayLayers,
+    armBarangayKeepAlive,
+    renderSavedMarkers,
+    attachPolygonInteractivity,
+    selectedCalamity,
+    sidebarCalamities,
+    target.incidentId,
+    target.lng,
+    target.lat,
+    target.zoom,
+    getCalamityCenter,
+    highlightSelection,
+    updateUserAccuracyCircle,
+    headingDeg,
+    userLoc,
+  ]);
+
+  // deep-link after list arrives (no setStyle here)
+  useEffect(() => {
+    if (!map.current || hasDeepLinkedRef.current || !target.incidentId || !sidebarCalamities.length)
+      return;
     runWhenStyleReady(async () => {
       await waitForPolygonsReady(map.current);
-      const hit = sidebarCalamities.find(c => String(c.calamity_id ?? c.id) === String(target.incidentId));
+      const hit = sidebarCalamities.find(
+        (c) => String(c.calamity_id ?? c.id) === String(target.incidentId)
+      );
       if (!hit) return;
 
       setSelectedCalamity(hit);
       highlightSelection(hit);
       setIsSidebarVisible(true);
 
-      const center = getCalamityCenter(hit) ||
-        (Number.isFinite(target.lng) && Number.isFinite(target.lat) ? [target.lng, target.lat] : null);
+      const center =
+        getCalamityCenter(hit) ||
+        (Number.isFinite(target.lng) && Number.isFinite(target.lat)
+          ? [target.lng, target.lat]
+          : null);
       if (center) map.current.flyTo({ center, zoom: target.zoom ?? 16, essential: true });
       hasDeepLinkedRef.current = true;
     });
-  }, [sidebarCalamities, target.incidentId, target.lat, target.lng, target.zoom, highlightSelection, runWhenStyleReady, getCalamityCenter]);
+  }, [
+    sidebarCalamities,
+    target.incidentId,
+    target.lat,
+    target.lng,
+    target.zoom,
+    highlightSelection,
+    runWhenStyleReady,
+    getCalamityCenter,
+  ]);
 
   // lock toggle
   useEffect(() => {
@@ -957,7 +1300,9 @@ const CalamityFarmerMap = () => {
     }
   }, [lockToBago]);
 
-  useEffect(() => { if (map.current) renderSavedMarkers(); }, [selectedCalamityType, renderSavedMarkers]);
+  useEffect(() => {
+    if (map.current) renderSavedMarkers();
+  }, [selectedCalamityType, renderSavedMarkers]);
 
   useEffect(() => {
     const filterPolygonsByCalamity = async () => {
@@ -968,7 +1313,9 @@ const CalamityFarmerMap = () => {
       } else {
         const filtered = {
           ...geojson,
-          features: geojson.features.filter((f) => f.properties.calamity_type === selectedCalamityType),
+          features: geojson.features.filter(
+            (f) => f.properties.calamity_type === selectedCalamityType
+          ),
         };
         await loadPolygons(filtered, true);
       }
@@ -977,7 +1324,9 @@ const CalamityFarmerMap = () => {
   }, [selectedCalamityType, loadPolygons]);
 
   useEffect(() => {
-    const handleEsc = (e) => { if (e.key === "Escape") setEnlargedImage(null); };
+    const handleEsc = (e) => {
+      if (e.key === "Escape") setEnlargedImage(null);
+    };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
   }, []);
@@ -986,10 +1335,14 @@ const CalamityFarmerMap = () => {
   useEffect(() => {
     return () => {
       try {
+        map.current?.__barangayDisarm?.(); // remove keep-alive listeners
         watchStopRef.current?.();
         userMarkerRef.current?.remove();
         compassStopRef.current?.();
-        if (HILITE_ANIM_REF.current) { clearInterval(HILITE_ANIM_REF.current); HILITE_ANIM_REF.current = null; }
+        if (HILITE_ANIM_REF.current) {
+          clearInterval(HILITE_ANIM_REF.current);
+          HILITE_ANIM_REF.current = null;
+        }
         hoverPopupRef.current?.remove();
         clearSelection();
       } catch {}
@@ -1005,14 +1358,23 @@ const CalamityFarmerMap = () => {
           title="Locate me"
           active={false}
           onClick={async () => {
-            if (!("geolocation" in navigator)) { toast.error("Geolocation not supported by this browser."); return; }
+            if (!("geolocation" in navigator)) {
+              toast.error("Geolocation not supported by this browser.");
+              return;
+            }
             try {
               const pos = await new Promise((resolve, reject) =>
-                navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                  enableHighAccuracy: true,
+                  timeout: 15000,
+                  maximumAge: 0,
+                })
               );
               const { longitude: glng, latitude: glat, accuracy } = pos.coords;
               handleFix(glng, glat, accuracy);
-            } catch (e) { toast.error(explainGeoError(e)); }
+            } catch (e) {
+              toast.error(explainGeoError(e));
+            }
           }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -1025,7 +1387,10 @@ const CalamityFarmerMap = () => {
           title={tracking ? "Stop tracking" : "Start tracking"}
           active={tracking}
           onClick={() => {
-            if (!("geolocation" in navigator)) { toast.error("Geolocation not supported."); return; }
+            if (!("geolocation" in navigator)) {
+              toast.error("Geolocation not supported.");
+              return;
+            }
             if (!tracking) {
               const stop = startGeoWatch(
                 (pos) => {
@@ -1033,7 +1398,8 @@ const CalamityFarmerMap = () => {
                   handleFix(glng, glat, accuracy);
                   if (typeof heading === "number" && !Number.isNaN(heading)) {
                     setHeadingDeg(heading);
-                    if (userMarkerElRef.current) userMarkerElRef.current.style.transform = `rotate(${heading}deg)`;
+                    if (userMarkerElRef.current)
+                      userMarkerElRef.current.style.transform = `rotate(${heading}deg)`;
                     if (rotateMapWithHeading && map.current) map.current.setBearing(heading);
                   }
                 },
@@ -1044,16 +1410,21 @@ const CalamityFarmerMap = () => {
               setTracking(true);
               toast.success("Live tracking ON");
             } else {
-              watchStopRef.current?.(); watchStopRef.current = null;
+              watchStopRef.current?.();
+              watchStopRef.current = null;
               setTracking(false);
               toast.info("Live tracking OFF");
             }
           }}
         >
           {tracking ? (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 8h3v8H8V8zm5 0h3v8h-3V8z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 8h3v8H8V8zm5 0h3v8h-3V8z" />
+            </svg>
           ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7L8 5z" />
+            </svg>
           )}
         </IconButton>
 
@@ -1066,15 +1437,19 @@ const CalamityFarmerMap = () => {
               try {
                 const stop = await startCompass((deg) => {
                   setHeadingDeg(deg);
-                  if (userMarkerElRef.current) userMarkerElRef.current.style.transform = `rotate(${deg}deg)`;
+                  if (userMarkerElRef.current)
+                    userMarkerElRef.current.style.transform = `rotate(${deg}deg)`;
                   if (rotateMapWithHeading && map.current) map.current.setBearing(deg);
                 });
                 compassStopRef.current = stop;
                 setCompassOn(true);
                 toast.success("Compass ON");
-              } catch (e) { toast.error(e?.message || "Failed to start compass."); }
+              } catch (e) {
+                toast.error(e?.message || "Failed to start compass.");
+              }
             } else {
-              compassStopRef.current?.(); compassStopRef.current = null;
+              compassStopRef.current?.();
+              compassStopRef.current = null;
               setCompassOn(false);
               toast.info("Compass OFF");
             }
@@ -1086,16 +1461,30 @@ const CalamityFarmerMap = () => {
         </IconButton>
 
         {/* Follow heading */}
-        <IconButton title="Follow heading (rotate map)" active={rotateMapWithHeading} onClick={() => setRotateMapWithHeading((v) => !v)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 6 22l6-5 6 5-6-20z" /></svg>
+        <IconButton
+          title="Follow heading (rotate map)"
+          active={rotateMapWithHeading}
+          onClick={() => setRotateMapWithHeading((v) => !v)}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2 6 22l6-5 6 5-6-20z" />
+          </svg>
         </IconButton>
 
         {/* Lock to Bago */}
-        <IconButton title={lockToBago ? "Unlock map" : "Lock to Bago"} active={lockToBago} onClick={() => setLockToBago((v) => !v)}>
+        <IconButton
+          title={lockToBago ? "Unlock map" : "Lock to Bago"}
+          active={lockToBago}
+          onClick={() => setLockToBago((v) => !v)}
+        >
           {lockToBago ? (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 8h-1V6a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 8h-1V6a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Z" />
+            </svg>
           ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17 8h-1V6a4 4 0 0 0-7.33-2.4l1.5 1.32A2 2 0 0 1 13 6v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Z" /></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17 8h-1V6a4 4 0 0 0-7.33-2.4l1.5 1.32A2 2 0 0 1 13 6v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Z" />
+            </svg>
           )}
         </IconButton>
       </div>
@@ -1116,38 +1505,61 @@ const CalamityFarmerMap = () => {
           onSave={async (formData) => {
             let savedCalamity;
             try {
-              const response = await axios.post(`${API_BASE}/api/calamities`, formData, { headers: { "Content-Type": "multipart/form-data" } });
+              const response = await axios.post(`${API_BASE}/api/calamities`, formData, {
+                headers: { "Content-Type": "multipart/form-data" },
+              });
               savedCalamity = response.data;
             } catch (error) {
               console.error("Create failed:", error);
-              toast.error(error.response?.data?.error || "Failed to save calamity.", { position: "top-center", autoClose: 3000, hideProgressBar: true, theme: "light" });
-              setIsTagging(false); setNewTagLocation(null); drawRef.current?.deleteAll();
+              toast.error(error.response?.data?.error || "Failed to save calamity.", {
+                position: "top-center",
+                autoClose: 3000,
+                hideProgressBar: true,
+                theme: "light",
+              });
+              setIsTagging(false);
+              setNewTagLocation(null);
+              drawRef.current?.deleteAll();
               return;
             }
 
             setSidebarCalamities((prev) => [...prev, savedCalamity]);
 
             try {
-              const coords = Array.isArray(savedCalamity.coordinates) ? savedCalamity.coordinates : JSON.parse(savedCalamity.coordinates);
+              const coords = Array.isArray(savedCalamity.coordinates)
+                ? savedCalamity.coordinates
+                : JSON.parse(savedCalamity.coordinates);
               if (map.current && Array.isArray(coords)) {
                 const center = turf.centerOfMass(turf.polygon([coords])).geometry.coordinates;
-                const marker = new mapboxgl.Marker({ color: calamityColorMap[savedCalamity.calamity_type] || "#ef4444" })
+                const marker = new mapboxgl.Marker({
+                  color: calamityColorMap[savedCalamity.calamity_type] || "#ef4444",
+                })
                   .setLngLat(center)
-                  .setPopup(new mapboxgl.Popup({ offset: 15 }).setHTML(`
+                  .setPopup(
+                    new mapboxgl.Popup({ offset: 15 }).setHTML(
+                      `
                       <div class="text-sm">
                         <h3 class='font-bold text-red-600'>${savedCalamity.calamity_type}</h3>
                         <p><strong>Severity:</strong> ${savedCalamity.severity_level || "N/A"}</p>
                       </div>
-                    `)
+                    `
+                    )
                   )
                   .addTo(map.current);
                 savedMarkersRef.current.push(marker);
               }
             } catch {}
 
-            try { await loadPolygons(); } catch {}
+            try {
+              await loadPolygons();
+            } catch {}
 
-            toast.success("Calamity saved successfully!", { position: "top-center", autoClose: 3000, hideProgressBar: true, theme: "light" });
+            toast.success("Calamity saved successfully!", {
+              position: "top-center",
+              autoClose: 3000,
+              hideProgressBar: true,
+              theme: "light",
+            });
 
             setIsTagging(false);
             setNewTagLocation(null);
@@ -1157,7 +1569,13 @@ const CalamityFarmerMap = () => {
       )}
 
       <div
-        style={{ position: "absolute", left: isSidebarVisible ? "480px" : "0px", top: "50%", transform: "translateY(-50%)", zIndex: 10 }}
+        style={{
+          position: "absolute",
+          left: isSidebarVisible ? "480px" : "0px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          zIndex: 10,
+        }}
       ></div>
 
       <SidebarToggleButton
@@ -1170,9 +1588,16 @@ const CalamityFarmerMap = () => {
       {!isSidebarVisible && (
         <button
           onClick={() => {
-            if (directionsRef.current) { map.current.removeControl(directionsRef.current); directionsRef.current = null; }
-            else {
-              const directions = new MapboxDirections({ accessToken: mapboxgl.accessToken, unit: "metric", profile: "mapbox/driving", controls: { inputs: true, instructions: true } });
+            if (directionsRef.current) {
+              map.current.removeControl(directionsRef.current);
+              directionsRef.current = null;
+            } else {
+              const directions = new MapboxDirections({
+                accessToken: mapboxgl.accessToken,
+                unit: "metric",
+                profile: "mapbox/driving",
+                controls: { inputs: true, instructions: true },
+              });
               map.current.addControl(directions, "top-right");
               directionsRef.current = directions;
             }
@@ -1180,7 +1605,13 @@ const CalamityFarmerMap = () => {
           }}
           className="absolute top-4 left-16 bg-white border border-gray-300 rounded-full w-10 h-10 flex items-center justify-center shadow-md hover:shadow-lg z-50"
         >
-          <svg className="w-5 h-5 text-gray-800" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <svg
+            className="w-5 h-5 text-gray-800"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
         </button>
@@ -1205,7 +1636,10 @@ const CalamityFarmerMap = () => {
               {Object.entries(mapStyles).map(([label, { url, thumbnail }]) => (
                 <button
                   key={label}
-                  onClick={() => { setMapStyle(url); setIsSwitcherVisible(false); }}
+                  onClick={() => {
+                    setMapStyle(url);
+                    setIsSwitcherVisible(false);
+                  }}
                   className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
                 >
                   <img src={thumbnail} alt={label} className="w-full h-full object-cover" />
@@ -1223,7 +1657,7 @@ const CalamityFarmerMap = () => {
         <button
           onClick={() => {
             if (areMarkersVisible) {
-              savedMarkersRef.current.forEach(marker => marker.remove());
+              savedMarkersRef.current.forEach((marker) => marker.remove());
               hoverPopupRef.current?.remove();
               hoverPopupRef.current = null;
             } else {
@@ -1235,8 +1669,18 @@ const CalamityFarmerMap = () => {
           className="absolute bottom-[194px] right-[9px] z-50 bg:white bg-white border border-gray-300 rounded-[5px] w-8 h-8 flex items-center justify-center shadow-[0_0_8px_2px_rgba(0,0,0,0.15)] "
           title={areMarkersVisible ? "Hide Markers" : "Show Markers"}
         >
-          <svg className="w-5 h-5 text-black" fill={!areMarkersVisible ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s6-5.686 6-10a6 6 0 10-12 0c0 4.314 6 10 6 10z" />
+          <svg
+            className="w-5 h-5 text-black"
+            fill={!areMarkersVisible ? "currentColor" : "none"}
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 21s6-5.686 6-10a6 6 0 10-12 0c0 4.314 6 10 6 10z"
+            />
             <circle cx="12" cy="11" r="2" fill="white" />
           </svg>
         </button>
@@ -1267,18 +1711,35 @@ const CalamityFarmerMap = () => {
         )}
       </div>
 
-      <ToastContainer position="top-center" autoClose={3000} hideProgressBar pauseOnHover theme="light" style={{ zIndex: 9999 }} />
+      <ToastContainer
+        position="top-center"
+        autoClose={3000}
+        hideProgressBar
+        pauseOnHover
+        theme="light"
+        style={{ zIndex: 9999 }}
+      />
 
       {enlargedImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-90 z-[9999] flex justify-center items-center animate-fadeIn" onClick={() => setEnlargedImage(null)}>
+        <div
+          className="fixed inset-0 bg-black bg-opacity-90 z-[9999] flex justify-center items-center animate-fadeIn"
+          onClick={() => setEnlargedImage(null)}
+        >
           <button
-            onClick={(e) => { e.stopPropagation(); setEnlargedImage(null); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setEnlargedImage(null);
+            }}
             className="absolute top-4 right-4 text-white text-2xl font-bold z-[10000] hover:text-red-400"
             title="Close"
           >
             ×
           </button>
-          <img src={enlargedImage} alt="Fullscreen Calamity" className="max-w-full max-h-full object-contain" />
+          <img
+            src={enlargedImage}
+            alt="Fullscreen Calamity"
+            className="max-w-full max-h-full object-contain"
+          />
         </div>
       )}
     </div>

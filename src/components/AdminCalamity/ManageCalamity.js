@@ -1,5 +1,5 @@
 // pages/ManageCalamity.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AOS from "aos";
 import "aos/dist/aos.css";
@@ -16,6 +16,8 @@ const colorByIncident = {
   Earthquake: "#a3a3a3",
   Others: "#8b5cf6",
 };
+
+const CROP_STAGES = ["Planted", "Ripening", "Harvested"];
 
 const SORT_OPTIONS = [
   { value: "reported_desc", label: "Reported: Newest" },
@@ -145,13 +147,13 @@ function ConfirmDialog({ title, message, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center">
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b">
+        <div className="px-4 sm:px-6 py-4 border-b">
           <h4 className="text-base font-semibold text-slate-900">{title}</h4>
         </div>
-        <div className="px-6 py-4">
+        <div className="px-4 sm:px-6 py-4">
           <p className="text-sm text-slate-700">{message}</p>
         </div>
-        <div className="px-6 py-4 border-t flex justify-end gap-2">
+        <div className="px-4 sm:px-6 py-4 border-t flex justify-end gap-2">
           <button onClick={onCancel} className="px-4 py-2 rounded-md border border-slate-300 hover:bg-slate-50">
             Cancel
           </button>
@@ -179,7 +181,7 @@ const SkeletonCard = () => (
 );
 
 const EmptyState = ({ onClear }) => (
-  <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-10 text-center">
+  <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-8 sm:p-10 text-center">
     <h4 className="text-lg font-semibold text-slate-900">No incidents found</h4>
     <p className="mt-1 text-slate-600">Try adjusting the filters or your search.</p>
     <button
@@ -218,11 +220,38 @@ const ManageCalamity = () => {
   const [varieties, setVarieties] = useState([]);
   const [ecosystems, setEcosystems] = useState([]);
 
-  // NEW: farmers modal state
+  // Farmers “View all”
   const [farmersModal, setFarmersModal] = useState(null); // { incident, farmers, loading }
+
+  // Edit modal → farmer panel
+  const [editFarmer, setEditFarmer] = useState(null);
+  const [isEditingFarmer, setIsEditingFarmer] = useState(false);
+  const [editFarmerDraft, setEditFarmerDraft] = useState(null);
+
+  // Close kebab on outside click / Escape
+  const pageRef = useRef(null);
+  useEffect(() => {
+    const onDown = (e) => {
+      if (!activeActionId) return;
+      const el = e.target;
+      const insideMenu = el.closest?.("[data-kebab-menu='true']");
+      const isButton = el.closest?.("[data-kebab-trigger='true']");
+      if (!insideMenu && !isButton) setActiveActionId(null);
+    };
+    const onEsc = (e) => {
+      if (e.key === "Escape") setActiveActionId(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [activeActionId]);
 
   useEffect(() => {
     AOS.init({ duration: 400, once: true });
+
     (async () => {
       try {
         setIsLoading(true);
@@ -371,7 +400,7 @@ const ManageCalamity = () => {
   const pageItems = sorted.slice(start, start + pageSize);
 
   /* ------- edit/update ------- */
-  const handleEdit = (incident) => {
+  const handleEdit = async (incident) => {
     const latest = incident;
     setEditingIncident(latest);
 
@@ -387,8 +416,7 @@ const ManageCalamity = () => {
       reported_at: reportedRaw || "",
       reported_at_input: toDatetimeLocalValue(reportedRaw),
 
-      latitude: latest.latitude ?? "",
-      longitude: latest.longitude ?? "",
+      // removed lat/long from edit form (edit modal no coordinates)
       note: latest.description || latest.note || "",
       affected_area: latest.affected_area ?? "",
       crop_stage: latest.crop_stage ?? "",
@@ -401,6 +429,32 @@ const ManageCalamity = () => {
       ecosystem_name: latest.ecosystem_name ?? "",
       variety_name: latest.variety_name ?? "",
     });
+
+    // load 1st linked farmer for the panel
+    try {
+      const { data } = await axios.get(
+        `http://localhost:5000/api/managecalamities/${String(latest.id)}/farmers`
+      );
+      const arr = Array.isArray(data) ? data : [];
+      const f0 = arr[0] || null;
+      setEditFarmer(f0);
+      setEditFarmerDraft(
+        f0
+          ? {
+              first_name: f0.first_name || "",
+              last_name: f0.last_name || "",
+              mobile_number: f0.mobile_number || "",
+              barangay: f0.barangay || "",
+              full_address: f0.full_address || "",
+            }
+          : null
+      );
+      setIsEditingFarmer(false);
+    } catch (e) {
+      setEditFarmer(null);
+      setEditFarmerDraft(null);
+      setIsEditingFarmer(false);
+    }
   };
 
   const coerceNum = (v) => {
@@ -438,7 +492,7 @@ const ManageCalamity = () => {
     if (name === "crop_type_id") {
       return setEditForm((prev) => {
         const next = { ...prev, crop_type_id: value };
-        const ecoValid = filteredEcosystems.some((e) => String(e.id) === String(prev.ecosystem_id));
+        const ecoValid = filteredEcosystems.some((el) => String(el.id) === String(prev.ecosystem_id));
         const varValid = filteredVarieties.some((v) => String(v.id) === String(prev.crop_variety_id));
         if (!ecoValid) next.ecosystem_id = "";
         if (!varValid) next.crop_variety_id = "";
@@ -456,10 +510,11 @@ const ManageCalamity = () => {
         status: editForm.status || null,
         severity_text: editForm.severity_text || null,
         severity: coerceNum(editForm.severity),
-        reported_at: editForm.reported_at || fromDatetimeLocalToISO(editForm.reported_at_input) || null,
+        reported_at:
+          editForm.reported_at || fromDatetimeLocalToISO(editForm.reported_at_input) || null,
         barangay: editForm.barangay || null,
-        latitude: coerceNum(editForm.latitude),
-        longitude: coerceNum(editForm.longitude),
+
+        // coordinates deliberately NOT sent (removed from edit modal)
         affected_area: coerceNum(editForm.affected_area),
         crop_stage: editForm.crop_stage || null,
 
@@ -480,36 +535,29 @@ const ManageCalamity = () => {
     }
   };
 
-  /* ------- map names→IDs after lookups arrive ------- */
-  useEffect(() => {
-    if (!editingIncident) return;
-    if (!cropTypes.length && !ecosystems.length && !varieties.length) return;
-
-    setEditForm((prev) => {
-      const next = { ...prev };
-
-      if (!next.crop_type_id && next.crop_type_name) {
-        const match = cropTypes.find((c) => c.name === next.crop_type_name);
-        if (match) next.crop_type_id = String(match.id);
-      }
-
-      if (!next.ecosystem_id && next.ecosystem_name) {
-        const match = ecosystems.find((e) => e.name === next.ecosystem_name);
-        if (match) next.ecosystem_id = String(match.id);
-      }
-
-      if (!next.crop_variety_id && next.variety_name) {
-        const candidates = varieties.filter(
-          (v) =>
-            v.name === next.variety_name &&
-            (!next.crop_type_id || String(v.crop_type_id) === String(next.crop_type_id))
-        );
-        if (candidates[0]) next.crop_variety_id = String(candidates[0].id);
-      }
-
-      return next;
-    });
-  }, [editingIncident, cropTypes, ecosystems, varieties]);
+  /* farmer edit in edit modal */
+  const saveFarmerChanges = async () => {
+    if (!editingIncident || !editFarmer || !editFarmerDraft) return;
+    try {
+      const url = `http://localhost:5000/api/managecalamities/${String(
+        editingIncident.id
+      )}/farmers/${String(editFarmer.farmer_id)}`;
+      const payload = {
+        first_name: editFarmerDraft.first_name?.trim() || null,
+        last_name: editFarmerDraft.last_name?.trim() || null,
+        mobile_number: editFarmerDraft.mobile_number?.trim() || null,
+        barangay: editFarmerDraft.barangay?.trim() || null,
+        full_address: editFarmerDraft.full_address?.trim() || null,
+      };
+      const { data } = await axios.put(url, payload);
+      setEditFarmer(data || payload);
+      setIsEditingFarmer(false);
+      alert("Farmer credentials updated.");
+    } catch (e) {
+      console.error("Save farmer failed:", e);
+      alert("Failed to update farmer credentials.");
+    }
+  };
 
   /* ------- delete with confirm ------- */
   const confirmDelete = async () => {
@@ -526,16 +574,16 @@ const ManageCalamity = () => {
 
   /* ---------- RENDER ---------- */
   return (
-    <div className="flex flex-col min-h-screen bg-white font-poppins">
+    <div ref={pageRef} className="flex flex-col min-h-screen bg-white font-poppins">
       <AdminNav />
 
-      <main className="ml-[115px] pt-[92px] pr-8 flex-grow">
-        <div className="max-w-7xl mx-auto px-6">
+      <main className="ml-0 md:ml-[115px] pt-20 md:pt-[92px] pr-0 md:pr-8 flex-grow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="mb-6 space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-[32px] leading-tight font-bold text-slate-900">Calamity Management</h1>
-                <p className="text-[15px] text-slate-600">View, filter, and update reported incidents.</p>
+                <h1 className="text-[26px] sm:text-[32px] leading-tight font-bold text-slate-900">Calamity Management</h1>
+                <p className="text-[14px] sm:text-[15px] text-slate-600">View, filter, and update reported incidents.</p>
               </div>
             </div>
 
@@ -550,48 +598,54 @@ const ManageCalamity = () => {
                       <Chip
                         key={`${t.name || t.id || "type"}-${idx}`}
                         active={selectedType === (t.name || t.id)}
-                        onClick={() => setSelectedType(selectedType === (t.name || t.id) ? null : t.name || t.id)}
+                        onClick={() =>
+                          setSelectedType(selectedType === (t.name || t.id) ? null : t.name || t.id)
+                        }
                       >
                         {t.name || t.label || "Type"}
                       </Chip>
                     ))
                   : Object.entries(colorByIncident).map(([k], idx) => (
-                      <Chip key={`${k}-${idx}`} active={selectedType === k} onClick={() => setSelectedType(selectedType === k ? null : k)}>
+                      <Chip
+                        key={`${k}-${idx}`}
+                        active={selectedType === k}
+                        onClick={() => setSelectedType(selectedType === k ? null : k)}
+                      >
                         {k}
                       </Chip>
                     ))}
               </div>
 
               <div className="flex items-end">
-  <div className="flex flex-col gap-1">
-    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
-      Search
-    </span>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                    Search
+                  </span>
 
-    <div className="relative">
-      {/* icon pill */}
-      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
-      🔍︎
-      </div>
+                  <div className="relative">
+                    {/* icon pill */}
+                    <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+                      🔍︎
+                    </div>
 
-      <input
-        id="glossary-search"
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by term…"
-        className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
-                   placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
-                   focus:ring-2 focus:ring-emerald-500/70"
-      />
-    </div>
-  </div>
-</div>
+                    <input
+                      id="glossary-search"
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search by term…"
+                      className="h-10 w-[min(18rem,80vw)] sm:w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                                 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
+                                 focus:ring-2 focus:ring-emerald-500/70"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Grid of cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {isLoading ? (
               Array.from({ length: pageSize }).map((_, i) => <SkeletonCard key={i} />)
             ) : pageItems.length > 0 ? (
@@ -601,12 +655,16 @@ const ManageCalamity = () => {
                 const hasCoords = inc.latitude && inc.longitude;
 
                 return (
-                  <div key={inc.id} className="rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-sm transition relative" data-aos="fade-up">
+                  <div
+                    key={inc.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-sm transition relative"
+                    data-aos="fade-up"
+                  >
                     {/* Header — title left, badges + kebab right */}
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                        <h3 className="text-[20px] font-semibold text-slate-900 truncate">{type}</h3>
+                        <h3 className="text-[18px] sm:text-[20px] font-semibold text-slate-900 truncate">{type}</h3>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
@@ -616,35 +674,49 @@ const ManageCalamity = () => {
                           </span>
                         )}
                         {(inc.severity_level || inc.severity_text) && (
-                          <span className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(inc.severity_level || inc.severity_text)}`}>
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(
+                              inc.severity_level || inc.severity_text
+                            )}`}
+                          >
                             {inc.severity_level || inc.severity_text}
                           </span>
                         )}
 
                         <div className="relative">
                           <button
+                            data-kebab-trigger="true"
                             aria-label="More actions"
                             aria-expanded={activeActionId === inc.id}
-                            onClick={() => setActiveActionId(id => id === inc.id ? null : inc.id)}
+                            onClick={() => setActiveActionId(id => (id === inc.id ? null : inc.id))}
                             className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                           >
                             <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                              <circle cx="5"  cy="10" r="1.6" />
+                              <circle cx="5" cy="10" r="1.6" />
                               <circle cx="10" cy="10" r="1.6" />
                               <circle cx="15" cy="10" r="1.6" />
                             </svg>
                           </button>
 
                           {activeActionId === inc.id && (
-                            <div className="absolute right-0 mt-2 w-36 rounded-xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 overflow-hidden">
+                            <div
+                              data-kebab-menu="true"
+                              className="absolute right-0 mt-2 w-36 rounded-xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 overflow-hidden"
+                            >
                               <button
-                                onClick={() => { setActiveActionId(null); handleEdit(inc); }}
+                                onClick={() => {
+                                  setActiveActionId(null);
+                                  handleEdit(inc);
+                                }}
                                 className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
                               >
                                 Edit
                               </button>
                               <button
-                                onClick={() => { setActiveActionId(null); setPendingDelete(inc); }}
+                                onClick={() => {
+                                  setActiveActionId(null);
+                                  setPendingDelete(inc);
+                                }}
                                 className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
                               >
                                 Delete
@@ -732,7 +804,11 @@ const ManageCalamity = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <select className="border border-slate-300 px-2 py-1 rounded-md" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                <select
+                  className="border border-slate-300 px-2 py-1 rounded-md"
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                >
                   {[8, 12, 16, 24].map((n) => (
                     <option key={n} value={n}>
                       {n} per page
@@ -741,11 +817,25 @@ const ManageCalamity = () => {
                 </select>
 
                 <div className="inline-flex items-center gap-1">
-                  <PageBtn disabled={page === 1} onClick={() => setPage(1)} aria="First">«</PageBtn>
-                  <PageBtn disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria="Previous">‹</PageBtn>
-                  <span className="px-3 text-sm text-slate-700">Page {page} of {totalPages}</span>
-                  <PageBtn disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} aria="Next">›</PageBtn>
-                  <PageBtn disabled={page === totalPages} onClick={() => setPage(totalPages)} aria="Last">»</PageBtn>
+                  <PageBtn disabled={page === 1} onClick={() => setPage(1)} aria="First">
+                    «
+                  </PageBtn>
+                  <PageBtn disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} aria="Previous">
+                    ‹
+                  </PageBtn>
+                  <span className="px-3 text-sm text-slate-700">
+                    Page {page} of {totalPages}
+                  </span>
+                  <PageBtn
+                    disabled={page === totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    aria="Next"
+                  >
+                    ›
+                  </PageBtn>
+                  <PageBtn disabled={page === totalPages} onClick={() => setPage(totalPages)} aria="Last">
+                    »
+                  </PageBtn>
                 </div>
               </div>
             </div>
@@ -753,12 +843,12 @@ const ManageCalamity = () => {
         </div>
       </main>
 
-      {/* EDIT MODAL — COMPACT */}
+      {/* EDIT MODAL — COMPACT (no coordinates fields) */}
       {editingIncident && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
             {/* Header */}
-            <div className="sticky top-0 flex items-center justify-between border-b px-5 py-3 bg-white">
+            <div className="sticky top-0 flex items-center justify-between border-b px-4 sm:px-5 py-3 bg-white">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Edit Incident Details</h3>
                 <p className="text-xs text-slate-600">Provide clear details so responders can act quickly.</p>
@@ -772,23 +862,8 @@ const ManageCalamity = () => {
               </button>
             </div>
 
-            {/* Pills / quick info */}
-            <div className="border-b px-5 py-2">
-              <div className="flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-700">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-400" />
-                  {editForm.latitude ? Number(editForm.latitude).toFixed(4) : "NaN"},{" "}
-                  {editForm.longitude ? Number(editForm.longitude).toFixed(4) : "NaN"}
-                </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-700">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  {editForm.affected_area ? `${editForm.affected_area} ha` : "— ha"}
-                </span>
-              </div>
-            </div>
-
             {/* Body */}
-            <div className="max-h-[78vh] overflow-auto px-5 py-5 space-y-6">
+            <div className="max-h-[78vh] overflow-auto px-4 sm:px-5 py-5 space-y-6">
               {/* Incident details */}
               <section>
                 <h4 className="text-sm font-semibold text-slate-900">Incident details</h4>
@@ -824,17 +899,24 @@ const ManageCalamity = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="crop_stage" className="text-xs font-medium text-slate-700">
-                      Crop Development Stage <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      id="crop_stage"
-                      name="crop_stage"
-                      value={editForm.crop_stage || ""}
-                      onChange={handleEditChange}
-                      placeholder="Select stage"
-                      className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
+                  <label htmlFor="crop_stage" className="text-xs font-medium text-slate-700">
+  Crop Development Stage <span className="text-red-500">*</span>
+</label>
+<select
+  id="crop_stage"
+  name="crop_stage"
+  value={editForm.crop_stage || ""}
+  onChange={handleEditChange}
+  className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+>
+  <option value="">Select stage</option>
+  {CROP_STAGES.map((s) => (
+    <option key={s} value={s}>
+      {s}
+    </option>
+  ))}
+</select>
+
                   </div>
 
                   <div>
@@ -909,6 +991,126 @@ const ManageCalamity = () => {
                       <span>{(editForm.note?.length || 0)}/1000</span>
                     </div>
                   </div>
+                </div>
+              </section>
+
+              {/* Farmer card (editable) */}
+              <section>
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                      Farmer
+                    </div>
+                    {editFarmer && (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingFarmer((v) => !v)}
+                        className="text-[12px] text-emerald-700 hover:underline"
+                      >
+                        {isEditingFarmer ? "Cancel" : "Edit"}
+                      </button>
+                    )}
+                  </div>
+
+                  {!editFarmer ? (
+                    <div className="mt-2 text-sm text-slate-600">No linked farmer or still loading…</div>
+                  ) : !isEditingFarmer ? (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                      <Stat
+                        label="Name"
+                        value={
+                          editFarmer.full_name ||
+                          [editFarmer.first_name, editFarmer.last_name].filter(Boolean).join(" ") ||
+                          "N/A"
+                        }
+                      />
+                      <Stat label="Mobile" value={editFarmer.mobile_number || "N/A"} />
+                      <Stat label="Barangay" value={editFarmer.barangay || "N/A"} />
+                      <Stat label="Full Address" value={editFarmer.full_address || "N/A"} />
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">First name</label>
+                        <input
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          value={editFarmerDraft?.first_name || ""}
+                          onChange={(e) =>
+                            setEditFarmerDraft((p) => ({ ...p, first_name: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">Last name</label>
+                        <input
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          value={editFarmerDraft?.last_name || ""}
+                          onChange={(e) =>
+                            setEditFarmerDraft((p) => ({ ...p, last_name: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">Mobile</label>
+                        <input
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          value={editFarmerDraft?.mobile_number || ""}
+                          onChange={(e) =>
+                            setEditFarmerDraft((p) => ({ ...p, mobile_number: e.target.value }))
+                          }
+                          placeholder="09xxxxxxxxx"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">Barangay</label>
+                        <input
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          value={editFarmerDraft?.barangay || ""}
+                          onChange={(e) => setEditFarmerDraft((p) => ({ ...p, barangay: e.target.value }))}
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-medium text-slate-700">Full address</label>
+                        <input
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          value={editFarmerDraft?.full_address || ""}
+                          onChange={(e) =>
+                            setEditFarmerDraft((p) => ({ ...p, full_address: e.target.value }))
+                          }
+                        />
+                      </div>
+
+                      <div className="md:col-span-2 flex justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditingFarmer(false);
+                            setEditFarmerDraft(
+                              editFarmer
+                                ? {
+                                    first_name: editFarmer.first_name || "",
+                                    last_name: editFarmer.last_name || "",
+                                    mobile_number: editFarmer.mobile_number || "",
+                                    barangay: editFarmer.barangay || "",
+                                    full_address: editFarmer.full_address || "",
+                                  }
+                                : null
+                            );
+                          }}
+                          className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveFarmerChanges}
+                          className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        >
+                          Save farmer
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -1008,7 +1210,7 @@ const ManageCalamity = () => {
             </div>
 
             {/* Footer */}
-            <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t bg-white px-5 py-3">
+            <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t bg-white px-4 sm:px-5 py-3">
               <button
                 onClick={() => setEditingIncident(null)}
                 className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
@@ -1029,11 +1231,14 @@ const ManageCalamity = () => {
       {/* VIEW MODAL (incident quick view) */}
       {viewingIncident && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
-          <div className="bg-white p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl relative">
+          <div className="bg-white p-5 sm:p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl relative">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-xl font-semibold text-slate-900">
-                  {viewingIncident.calamity_type || viewingIncident.incident_type || viewingIncident.type_name || "Incident"}
+                <h3 className="text-lg sm:text-xl font-semibold text-slate-900">
+                  {viewingIncident.calamity_type ||
+                    viewingIncident.incident_type ||
+                    viewingIncident.type_name ||
+                    "Incident"}
                   {viewingIncident.status ? ` · ${viewingIncident.status}` : ""}
                 </h3>
                 <p className="text-sm text-slate-500">
@@ -1067,7 +1272,9 @@ const ManageCalamity = () => {
             {(viewingIncident.description || viewingIncident.note) && (
               <div className="mt-4">
                 <div className="text-[11px] uppercase tracking-wide text-slate-500">Description</div>
-                <p className="text-[14px] text-slate-700 whitespace-pre-wrap">{viewingIncident.description || viewingIncident.note}</p>
+                <p className="text-[14px] text-slate-700 whitespace-pre-wrap">
+                  {viewingIncident.description || viewingIncident.note}
+                </p>
               </div>
             )}
 
@@ -1080,118 +1287,121 @@ const ManageCalamity = () => {
         </div>
       )}
 
-   {/* VIEW-ALL MODAL — clean UI like crop modal, no photos */}
-{farmersModal && (() => {
-  const inc = farmersModal.incident || {};
-  const type = inc.calamity_type || inc.incident_type || inc.type_name || "Incident";
-  const locationText = inc.location || inc.barangay || "—";
+      {/* VIEW-ALL MODAL — farmers list (clean) */}
+      {farmersModal &&
+        (() => {
+          const inc = farmersModal.incident || {};
+          const type = inc.calamity_type || inc.incident_type || inc.type_name || "Incident";
+          const locationText = inc.location || inc.barangay || "—";
 
-  const KV = ({ label, value, className = "" }) => (
-    <div className={className}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        {label}
-      </div>
-      <div className="text-[14px] text-slate-900">{value ?? "N/A"}</div>
-    </div>
-  );
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl p-6 md:p-8 relative">
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="text-[22px] font-semibold text-slate-900">
-              {type}
-              {inc.variety_name ? ` · ${inc.variety_name}` : ""}
-            </h3>
-            <p className="text-sm text-slate-500">{locationText}</p>
-          </div>
-          <button
-            onClick={() => setFarmersModal(null)}
-            className="p-2 -m-2 rounded-md text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-            aria-label="Close"
-            title="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Soft card: FARMER section */}
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 md:p-5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-3">
-            Farmer
-          </div>
-
-          {farmersModal.loading ? (
-            <div className="text-sm text-slate-600">Loading farmer details…</div>
-          ) : (farmersModal.farmers || []).length === 0 ? (
-            <div className="text-sm text-slate-600">No linked farmers for this incident.</div>
-          ) : (
-            // Show only the first farmer in the header panel—same feel as your crop modal
-            (() => {
-              const f = farmersModal.farmers[0] || {};
-              const fullName =
-                f.full_name ||
-                [f.first_name, f.last_name].filter(Boolean).join(" ").trim() ||
-                "N/A";
-              return (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-                  <KV label="Name" value={fullName} />
-                  <KV label="Mobile" value={f.mobile_number || f.contact_no || "N/A"} />
-                  <KV label="Barangay" value={f.barangay || "N/A"} />
-                  <KV label="Full Address" value={f.full_address || f.address || "N/A"} />
-                </div>
-              );
-            })()
-          )}
-        </div>
-
-        {/* Divider */}
-        <div className="mt-5 mb-3 h-px bg-slate-200" />
-
-        {/* Meta rows, same spacing rhythm as your crop modal */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-          <KV label="Reported" value={fmtDate(inc.date_reported || inc.reported_at)} />
-          <KV label="Severity" value={inc.severity_level || inc.severity_text || "N/A"} />
-          <KV label="Status" value={inc.status || "Pending"} />
-          <KV label="Affected Area" value={inc.affected_area ? `${Number(inc.affected_area).toFixed(2)} ha` : "N/A"} />
-          <KV label="Crop Type" value={inc.crop_type_name || inc.crop_type_id || "N/A"} />
-          <KV label="Ecosystem" value={inc.ecosystem_name || inc.ecosystem_id || "N/A"} />
-          <KV label="Variety" value={inc.variety_name || inc.crop_variety_id || "N/A"} />
-          <KV label="Coordinates" value={
-            inc.latitude != null && inc.longitude != null
-              ? `${Number(inc.latitude).toFixed(5)}, ${Number(inc.longitude).toFixed(5)}`
-              : "N/A"
-          } />
-        </div>
-
-        {/* Optional note/description (kept minimal like the crop modal) */}
-        {(inc.description || inc.note) && (
-          <div className="mt-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-              Description
+          const KV = ({ label, value, className = "" }) => (
+            <div className={className}>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+              <div className="text-[14px] text-slate-900">{value ?? "N/A"}</div>
             </div>
-            <p className="text-[14px] text-slate-700 whitespace-pre-wrap">
-              {inc.description || inc.note}
-            </p>
-          </div>
-        )}
+          );
 
-        {/* Footer */}
-        <div className="mt-6 flex justify-end">
-          <button
-            onClick={() => setFarmersModal(null)}
-            className="px-4 py-2 rounded-md border border-slate-300 hover:bg-slate-50"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-})()}
+          return (
+            <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-4 overflow-y-auto">
+              <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl p-5 sm:p-6 md:p-8 relative">
+                {/* Header */}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-[20px] sm:text-[22px] font-semibold text-slate-900">
+                      {type}
+                      {inc.variety_name ? ` · ${inc.variety_name}` : ""}
+                    </h3>
+                    <p className="text-sm text-slate-500">{locationText}</p>
+                  </div>
+                  <button
+                    onClick={() => setFarmersModal(null)}
+                    className="p-2 -m-2 rounded-md text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
 
+                {/* FARMER section */}
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 md:p-5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-3">
+                    Farmer
+                  </div>
+
+                  {farmersModal.loading ? (
+                    <div className="text-sm text-slate-600">Loading farmer details…</div>
+                  ) : (farmersModal.farmers || []).length === 0 ? (
+                    <div className="text-sm text-slate-600">No linked farmers for this incident.</div>
+                  ) : (
+                    (() => {
+                      const f = farmersModal.farmers[0] || {};
+                      const fullName =
+                        f.full_name ||
+                        [f.first_name, f.last_name].filter(Boolean).join(" ").trim() ||
+                        "N/A";
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                          <KV label="Name" value={fullName} />
+                          <KV label="Mobile" value={f.mobile_number || f.contact_no || "N/A"} />
+                          <KV label="Barangay" value={f.barangay || "N/A"} />
+                          <KV label="Full Address" value={f.full_address || f.address || "N/A"} />
+                        </div>
+                      );
+                    })()
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div className="mt-5 mb-3 h-px bg-slate-200" />
+
+                {/* Meta rows */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                  <KV label="Reported" value={fmtDate(inc.date_reported || inc.reported_at)} />
+                  <KV label="Severity" value={inc.severity_level || inc.severity_text || "N/A"} />
+                  <KV label="Status" value={inc.status || "Pending"} />
+                  <KV
+                    label="Affected Area"
+                    value={inc.affected_area ? `${Number(inc.affected_area).toFixed(2)} ha` : "N/A"}
+                  />
+                  <KV label="Crop Type" value={inc.crop_type_name || inc.crop_type_id || "N/A"} />
+                  <KV label="Ecosystem" value={inc.ecosystem_name || inc.ecosystem_id || "N/A"} />
+                  <KV label="Variety" value={inc.variety_name || inc.crop_variety_id || "N/A"} />
+                  <KV
+                    label="Coordinates"
+                    value={
+                      inc.latitude != null && inc.longitude != null
+                        ? `${Number(inc.latitude).toFixed(5)}, ${Number(inc.longitude).toFixed(5)}`
+                        : "N/A"
+                    }
+                  />
+                </div>
+
+                {/* Optional note/description */}
+                {(inc.description || inc.note) && (
+                  <div className="mt-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                      Description
+                    </div>
+                    <p className="text-[14px] text-slate-700 whitespace-pre-wrap">
+                      {inc.description || inc.note}
+                    </p>
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={() => setFarmersModal(null)}
+                    className="px-4 py-2 rounded-md border border-slate-300 hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* CONFIRM DELETE */}
       {pendingDelete && (
