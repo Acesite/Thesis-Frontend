@@ -562,38 +562,31 @@ const ManageCalamity = () => {
                     ))}
               </div>
 
-              <div className="flex items-end gap-3">
-                <div>
-                  <label htmlFor="search" className="block text-xs font-medium text-slate-600 mb-1">Search</label>
-                  <div className="relative">
-                    <input
-                      id="search"
-                      type="text"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Type, status, barangay, keywords…"
-                      className="border border-slate-300 pl-9 pr-3 py-2 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">🔎</span>
-                  </div>
-                </div>
+              <div className="flex items-end">
+  <div className="flex flex-col gap-1">
+    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+      Search
+    </span>
 
-                <div>
-                  <label htmlFor="sort" className="block text-xs font-medium text-slate-600 mb-1">Sort</label>
-                  <select
-                    id="sort"
-                    className="border border-slate-300 px-3 py-2 rounded-md w-56 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value)}
-                  >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+    <div className="relative">
+      {/* icon pill */}
+      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+      🔍︎
+      </div>
+
+      <input
+        id="glossary-search"
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by term…"
+        className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                   placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
+                   focus:ring-2 focus:ring-emerald-500/70"
+      />
+    </div>
+  </div>
+</div>
             </div>
           </div>
 

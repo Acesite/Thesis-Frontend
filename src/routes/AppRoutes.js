@@ -21,6 +21,7 @@ import ChooseRoleLogin from "../components/ChooseRole/ChooseRoleLogin";
 import LoginFarmer from "../components/Login/LoginFarmer";
 import ManageCalamity from "../components/AdminCalamity/ManageCalamity";
 import SuperAdminManageCalamity from "../components/SuperAdmin/SuperAdminManageCalamity";
+import AdminGlossary from "../components/AdminCrop/AdminGlossary";
 
 
 const AppRoutes = () => {
@@ -54,6 +55,7 @@ const AppRoutes = () => {
       <Route path="/ManageCrops" element={<ManageCrop />} />
       <Route path="/ManageCalamity" element={<ManageCalamity />} />
       <Route path="/CalamityFarmerMap" element={<CalamityMap />} />
+      <Route path="/AdminGlossary" element={<AdminGlossary />} />
     </Routes>
   );
 };

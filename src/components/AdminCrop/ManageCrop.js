@@ -401,57 +401,100 @@ const ManageCrop = () => {
               </div>
 
               {/* Search + sort + harvest filter */}
-              <div className="flex flex-wrap items-end gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Search
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Crop, variety, farmer, barangay…"
-                      className="border border-slate-300 pl-9 pr-3 py-2 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    />
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">
-                      🔎
-                    </span>
-                  </div>
-                </div>
+              <div className="flex flex-wrap items-end gap-3 md:ml-auto md:justify-end">
+                <div className="flex items-end">
+  <div className="flex flex-col gap-1">
+    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+      Search
+    </span>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Sort
-                  </label>
-                  <select
-                    className="border border-slate-300 px-3 py-2 rounded-md w-56 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value)}
-                  >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+    <div className="relative">
+      {/* icon pill */}
+      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+      🔍︎
+      </div>
 
-                {/* NEW: harvest filter */}
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Harvest status
-                  </label>
-                  <select
-                    className="border border-slate-300 px-3 py-2 rounded-md w-48 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                    value={harvestFilter}
-                    onChange={(e) => setHarvestFilter(e.target.value)}
-                  >
-                    <option value="all">All status</option>
-                    <option value="harvested">Harvested only</option>
-                    <option value="not_harvested">Not yet harvested</option>
-                  </select>
-                </div>
+      <input
+        id="glossary-search"
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by term…"
+        className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                   placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
+                   focus:ring-2 focus:ring-emerald-500/70"
+      />
+    </div>
+  </div>
+</div>
+
+                {/* Sort + Harvest filters with pill style like search */}
+<div className="flex items-end gap-3">
+  {/* Sort */}
+  <div className="flex flex-col gap-1">
+    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+      Sort
+    </span>
+
+    <div className="relative">
+      {/* icon pill */}
+      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+        ⇅
+      </div>
+
+      <select
+        className="h-10 w-56 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                   appearance-none placeholder:text-slate-400 focus:border-emerald-500
+                   focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+        value={sort}
+        onChange={(e) => setSort(e.target.value)}
+      >
+        {SORT_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+
+      {/* dropdown arrow */}
+      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+        ▾
+      </div>
+    </div>
+  </div>
+
+  {/* Harvest status */}
+  <div className="flex flex-col gap-1">
+    <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+      Harvest status
+    </span>
+
+    <div className="relative">
+      {/* icon pill */}
+      <div className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 text-xs">
+        🌾
+      </div>
+
+      <select
+        className="h-10 w-48 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
+                   appearance-none placeholder:text-slate-400 focus:border-emerald-500
+                   focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+        value={harvestFilter}
+        onChange={(e) => setHarvestFilter(e.target.value)}
+      >
+        <option value="all">All status</option>
+        <option value="harvested">Harvested only</option>
+        <option value="not_harvested">Not yet harvested</option>
+      </select>
+
+      {/* dropdown arrow */}
+      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+        ▾
+      </div>
+    </div>
+  </div>
+</div>
+
               </div>
             </div>
           </div>

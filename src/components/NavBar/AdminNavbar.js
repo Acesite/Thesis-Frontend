@@ -12,41 +12,29 @@ function AvatarButton({ profilePicture, initials, onClick }) {
     "http://localhost:5000";
 
   const normalizeUploadPath = (p) => {
-    // remove leading ./ or public/ if present; normalize to /uploads/...
     let s = p.replace(/\\/g, "/").trim();
-    s = s.replace(/^\.?\/*/,""); // strip leading ./ or /
-    s = s.replace(/^public\//i, ""); // public/uploads/x.jpg -> uploads/x.jpg
+    s = s.replace(/^\.?\/*/, "");
+    s = s.replace(/^public\//i, "");
     if (s.startsWith("uploads/")) return `/${s}`;
     if (s.startsWith("/uploads/")) return s;
-    // bare filename (abc.jpg) -> /uploads/abc.jpg
     if (!s.includes("/")) return `/uploads/${s}`;
-    // already a relative path elsewhere -> prefix with /
     return s.startsWith("/") ? s : `/${s}`;
   };
 
   const buildSrc = (raw) => {
     const v = String(raw || "").trim();
     if (!v) return "";
-
-    // data URI already complete
     if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(v)) return v;
-
-    // raw base64 blob (short or long)
     if (!v.includes("/") && /^[A-Za-z0-9+/=]+$/.test(v) && v.length >= 50) {
       return `data:image/jpeg;base64,${v}`;
     }
-
-    // absolute URL stays as is
     if (/^https?:\/\//i.test(v)) return v;
-
-    // anything else -> normalize to /uploads/...
     const rel = normalizeUploadPath(v);
     return `${API_BASE}${rel}`;
   };
 
   const src = buildSrc(profilePicture);
 
-  // Reset error flag whenever input changes
   React.useEffect(() => {
     setImgError(false);
   }, [profilePicture]);
@@ -77,22 +65,38 @@ function AvatarButton({ profilePicture, initials, onClick }) {
   );
 }
 
-/* ----------------------------- Icon components ----------------------------- */
 const IconUser = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" {...props}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="h-5 w-5"
+    {...props}
+  >
     <path d="M20 21a8 8 0 1 0-16 0" />
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
 const IconLogout = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" {...props}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="h-5 w-5"
+    {...props}
+  >
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
     <path d="M16 17l5-5-5-5" />
     <path d="M21 12H9" />
   </svg>
 );
 
-/* ------------------------------- Menu item UI ------------------------------ */
 const MenuItem = React.forwardRef(({ children, icon, onClick, to }, ref) => {
   const base =
     "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-[14px] text-gray-700 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none";
@@ -105,14 +109,19 @@ const MenuItem = React.forwardRef(({ children, icon, onClick, to }, ref) => {
     );
   }
   return (
-    <button ref={ref} type="button" className={base} role="menuitem" onClick={onClick}>
+    <button
+      ref={ref}
+      type="button"
+      className={base}
+      role="menuitem"
+      onClick={onClick}
+    >
       {icon}
       {children}
     </button>
   );
 });
 
-/* --------------------------------- Nav Bar --------------------------------- */
 const AdminNavBar = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -136,7 +145,6 @@ const AdminNavBar = () => {
 
   const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 
-  /* ----------------------------- open/close logic ---------------------------- */
   useEffect(() => {
     function onDocClick(e) {
       if (!dropdownRef.current?.contains(e.target)) setShowDropdown(false);
@@ -159,13 +167,11 @@ const AdminNavBar = () => {
 
   useEffect(() => {
     if (showDropdown) {
-      // small delay to ensure element is mounted
       setTimeout(() => firstItemRef.current?.focus(), 0);
     }
   }, [showDropdown]);
 
   function handleLogout() {
-    // Clear local session data; adjust keys to your app
     localStorage.removeItem("user_id");
     localStorage.removeItem("first_name");
     localStorage.removeItem("last_name");
@@ -179,7 +185,11 @@ const AdminNavBar = () => {
       <div className="container mx-auto flex items-center justify-between px-6 py-4">
         {/* Logo */}
         <div className="ml-[159px] flex items-start">
-          <img src="/images/AgriGIS.png" alt="AgriGIS" className="h-[50px] w-auto" />
+          <img
+            src="/images/AgriGIS.png"
+            alt="AgriGIS"
+            className="h-[50px] w-auto"
+          />
         </div>
 
         {/* Nav links */}
@@ -187,15 +197,20 @@ const AdminNavBar = () => {
           <a
             href="/AdminLanding"
             className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/AdminLanding" ? "text-emerald-700 font-medium" : "text-gray-800"
+              location.pathname === "/AdminLanding"
+                ? "text-emerald-700 font-medium"
+                : "text-gray-800"
             }`}
           >
             Home
           </a>
+
           <a
             href="/ManageCrops"
             className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/ManageCrops" ? "text-emerald-700 font-medium" : "text-gray-800"
+              location.pathname === "/ManageCrops"
+                ? "text-emerald-700 font-medium"
+                : "text-gray-800"
             }`}
           >
             Crops
@@ -204,10 +219,24 @@ const AdminNavBar = () => {
           <a
             href="/ManageCalamity"
             className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/ManageCalamity" ? "text-emerald-700 font-medium" : "text-gray-800"
+              location.pathname === "/ManageCalamity"
+                ? "text-emerald-700 font-medium"
+                : "text-gray-800"
             }`}
           >
             Calamity
+          </a>
+
+          {/* NEW: Glossary link */}
+          <a
+            href="/AdminGlossary"
+            className={`tracking-wide font-light hover:text-emerald-700 ${
+              location.pathname === "AdminGlossary"
+                ? "text-emerald-700 font-medium"
+                : "text-gray-800"
+            }`}
+          >
+            Glossary
           </a>
         </nav>
 
@@ -219,19 +248,15 @@ const AdminNavBar = () => {
             onClick={() => setShowDropdown((s) => !s)}
           />
 
-          {/* Menu */}
           {showDropdown && (
             <div
               role="menu"
               aria-label="User menu"
-              className="absolute right-0 mt-2 w-64 origin-top-right rounded-xl border border-gray-100 bg-white p-2 shadow-lg ring-1 ring-black/5 transition
-                         animate-[fadeIn_.12s_ease-out]"
+              className="absolute right-0 mt-2 w-64 origin-top-right rounded-xl border border-gray-100 bg-white p-2 shadow-lg ring-1 ring-black/5 transition animate-[fadeIn_.12s_ease-out]"
               style={{ transformOrigin: "top right" }}
             >
-              {/* Small caret */}
               <div className="absolute -top-1 right-4 h-2 w-2 rotate-45 rounded-sm bg-white ring-1 ring-gray-100" />
 
-              {/* Header */}
               <div className="flex items-center gap-3 rounded-lg px-3 py-2">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
                   {initials || "U"}
@@ -240,13 +265,14 @@ const AdminNavBar = () => {
                   <div className="truncate text-[14px] font-medium text-gray-900">
                     {firstName || "Admin"} {lastName}
                   </div>
-                  <div className="truncate text-[12px] text-gray-500">{email || "—"}</div>
+                  <div className="truncate text-[12px] text-gray-500">
+                    {email || "—"}
+                  </div>
                 </div>
               </div>
 
               <div className="my-2 h-px bg-gray-100" />
 
-              {/* Items */}
               <MenuItem
                 ref={firstItemRef}
                 icon={<IconUser />}
@@ -258,13 +284,10 @@ const AdminNavBar = () => {
                 Profile
               </MenuItem>
 
-              <MenuItem
-                icon={<IconLogout />}
-                onClick={() => {
-                  setShowDropdown(false);
-                  handleLogout();
-                }}
-              >
+              <MenuItem icon={<IconLogout />} onClick={() => {
+                setShowDropdown(false);
+                handleLogout();
+              }}>
                 Logout
               </MenuItem>
             </div>
@@ -272,7 +295,6 @@ const AdminNavBar = () => {
         </div>
       </div>
 
-      {/* Profile modal */}
       {showProfileModal && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
@@ -290,7 +312,9 @@ const AdminNavBar = () => {
               ×
             </button>
 
-            <h2 className="mb-4 text-xl font-semibold text-emerald-700">Admin Profile</h2>
+            <h2 className="mb-4 text-xl font-semibold text-emerald-700">
+              Admin Profile
+            </h2>
 
             <AdminProfileForm
               onClose={() => {
@@ -298,7 +322,8 @@ const AdminNavBar = () => {
                   first_name: localStorage.getItem("first_name") || "",
                   last_name: localStorage.getItem("last_name") || "",
                   email: localStorage.getItem("email") || "",
-                  profile_picture: localStorage.getItem("profile_picture") || "",
+                  profile_picture:
+                    localStorage.getItem("profile_picture") || "",
                 });
                 setShowProfileModal(false);
               }}
