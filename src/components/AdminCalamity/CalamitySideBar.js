@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import clsx from "clsx";
 import AgriGISLogo from "../../components/MapboxImages/AgriGIS.png";
 import Button from "./MapControls/Button";
-
+import { useNavigate } from "react-router-dom";
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
 const fmt = (v) => (v ?? v === 0 ? v : "—");
 const fmtHa = (v) => (v || v === 0 ? Number(v).toFixed(2) + " ha" : "—");
@@ -130,6 +130,15 @@ const CalamitySidebar = ({
   const [farmerInfo, setFarmerInfo] = useState(null);
   const [farmerLoading, setFarmerLoading] = useState(false);
   const [farmerError, setFarmerError] = useState("");
+ const navigate = useNavigate();
+  // ✅ New: back button handler
+  const handleBackToCalamity = () => {
+    if (window.history.length > 1) {
+      navigate(-1); // go back to previous page (e.g., /ManageCrops)
+    } else {
+      navigate("/ManageCalamity"); // fallback if opened directly
+    }
+  };
 
   // lookups
   useEffect(() => {
@@ -420,6 +429,18 @@ const CalamitySidebar = ({
               </div>
             )}
           </div>
+        </div>
+
+         {/* 🔙 Back to Manage Crops */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={handleBackToCalamity}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            title="Go back to Manage Crops"
+          >
+            ← Back 
+          </button>
         </div>
 
         {/* Location (static) */}

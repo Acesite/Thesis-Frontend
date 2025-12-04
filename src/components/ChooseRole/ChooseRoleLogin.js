@@ -35,12 +35,12 @@ const ChooseRoleLogin = () => {
         </button>
 
         <p className="text-sm text-gray-500 mt-4">
-          Already have an account?{" "}
+          Dont have an account?{" "}
           <span
-            onClick={() => navigate("/login")}
+            onClick={() => navigate("/Signup")}
             className="text-green-600 hover:underline cursor-pointer"
           >
-            Log in
+            Sign up
           </span>
         </p>
       </div>

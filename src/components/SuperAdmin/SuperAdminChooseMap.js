@@ -6,9 +6,9 @@ const ChooseMap = () => {
 
   const handleSelect = (map) => {
     if (map === "calamity") {
-      navigate("/CalamityFarmerMap");
+      navigate("/SuperAdminCalamityMap");
     } else if (map === "crop") {
-      navigate("/AdminMap");
+      navigate("/SuperAdminMap");
     }
   };
 
@@ -34,7 +34,7 @@ const ChooseMap = () => {
           Crop Map
         </button>
 
-        
+       
       </div>
     </div>
   );

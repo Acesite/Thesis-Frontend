@@ -512,7 +512,7 @@ const AdminSideBar = ({
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             title="Go back to Manage Crops"
           >
-            ← Back to Manage Crops
+            ← Back 
           </button>
         </div>
 

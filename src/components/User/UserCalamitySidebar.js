@@ -103,7 +103,7 @@ function isSoftDeletedCrop(crop) {
   return false;
 }
 
-const UserSidebar = ({
+const UserCalamitySidebar = ({
   visible,
   zoomToBarangay,
   onBarangaySelect,
@@ -132,7 +132,14 @@ const UserSidebar = ({
   const [showCropDropdown, setShowCropDropdown] = useState(false);
   const navigate = useNavigate();
 
- 
+  // ✅ New: back button handler
+  const handleBackToCrops = () => {
+    if (window.history.length > 1) {
+      navigate(-1); // go back to previous page (e.g., /ManageCrops)
+    } else {
+      navigate("/ManageCrops"); // fallback if opened directly
+    }
+  };
 
   // barangay data
   const barangayCoordinates = {
@@ -497,7 +504,17 @@ const UserSidebar = ({
           </div>
         </div>
 
-       
+        
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={handleBackToCrops}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            title="Back"
+          >
+            ← Back
+          </button>
+        </div>
 
         {/* location */}
         <Section title="Location">
@@ -1246,15 +1263,15 @@ const UserSidebar = ({
 
         {/* home & back buttons */}
         <div className="mt-5 flex gap-2">
-          <Button to="/" variant="outline" size="md">
+          <Button to="/SuperAdminLandingPage" variant="outline" size="md">
             Home
           </Button>
           {/* Optional second back button using your Button component */}
         </div>
+        </div>
       </div>
-    </div>
   );
 };
 
-export default UserSidebar;
+export default UserCalamitySidebar;
 

@@ -504,15 +504,15 @@ const SuperAdminSidebar = ({
           </div>
         </div>
 
-        {/* 🔙 Back to Manage Crops */}
+        
         <div className="mb-4">
           <button
             type="button"
             onClick={handleBackToCrops}
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            title="Go back to Manage Crops"
+            title="Back"
           >
-            ← Back to Manage Crops
+            ← Back
           </button>
         </div>
 
@@ -1263,13 +1263,13 @@ const SuperAdminSidebar = ({
 
         {/* home & back buttons */}
         <div className="mt-5 flex gap-2">
-          <Button to="/AdminLanding" variant="outline" size="md">
+          <Button to="/SuperAdminLandingPage" variant="outline" size="md">
             Home
           </Button>
           {/* Optional second back button using your Button component */}
         </div>
+        </div>
       </div>
-    </div>
   );
 };
 
