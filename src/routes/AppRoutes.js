@@ -22,11 +22,11 @@ import ChooseRoleLogin from "../components/ChooseRole/ChooseRoleLogin";
 import LoginFarmer from "../components/Login/LoginFarmer";
 import ManageCalamity from "../components/AdminCalamity/ManageCalamity";
 import SuperAdminManageCalamity from "../components/SuperAdmin/SuperAdminManageCalamity";
-import AdminGlossary from "../components/AdminCrop/AdminGlossary";
 import SuperAdminCalamityMap from "../components/SuperAdmin/SuperAdminCalamityMap";
 import UserChooseMap from "../components/User/UserChooseMap";
 import UserCalamityMap from "../components/User/UserCalamityMap";
 import SuperAdminGlossary from "../components/SuperAdmin/SuperAdminGlossary";
+import AdminGlossary from "../components/AdminCrop/AdminGlossary";
 
 const AppRoutes = () => {
   return (

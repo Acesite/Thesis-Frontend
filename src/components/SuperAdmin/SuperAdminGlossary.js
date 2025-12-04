@@ -449,7 +449,7 @@ const PageBtn = ({ disabled, onClick, children, aria }) => (
 );
 
 /* ------------------------------- Main Component ----------------------------- */
-const AdminGlossary = () => {
+const SuperAdminGlossary = () => {
   const [activeCategory, setActiveCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
@@ -694,4 +694,4 @@ const AdminGlossary = () => {
   );
 };
 
-export default AdminGlossary;
+export default SuperAdminGlossary;

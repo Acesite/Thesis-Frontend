@@ -131,56 +131,61 @@ const AdminNavBar = () => {
         {/* Navigation */}
         <div className="flex items-center space-x-6 ml-auto">
           <nav className="hidden md:flex space-x-6">
-            <a
-              href="/SuperAdminLandingPage"
-              className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/SuperAdminLandingPage" ? "text-green-700 font-medium" : "text-black-600"
-              }`}
-            >
-              Home
-            </a>
-            <a
-              href="/ManageAccount"
-              className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/ManageAccount" ? "text-green-700 font-medium" : "text-black-600"
-              }`}
-            >
-              Manage Account
-            </a>
-            
-            <a
-              href="/SuperAdminManageCalamity"
-              className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/SuperAdminManageCalamity" ? "text-green-700 font-medium" : "text-black-600"
-              }`}
-            >
-             Calamity
-            </a>
-            <a
-              href="/SuperAdminManageCrop"
-              className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/SuperAdminManageCrop" ? "text-green-700 font-medium" : "text-black-600"
-              }`}
-            >
-              Crops
-            </a>
-             <a
-              href="/SuperAdminGlossary"
-              className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/SuperAdminGlossary" ? "text-green-700 font-medium" : "text-black-600"
-              }`}
-            >
-              Glossary
-            </a>
-            <a
-              href="/Graphs"
-              className={`tracking-wide font-light hover:text-green-700 ${
-                location.pathname === "/Graphs" ? "text-green-700 font-medium" : "text-black-600"
-              }`}
-            >
-              Graphs
-            </a>
-          </nav>
+  <Link
+    to="/SuperAdminLandingPage"
+    className={`tracking-wide font-light hover:text-green-700 ${
+      location.pathname === "/SuperAdminLandingPage" ? "text-green-700 font-medium" : "text-black-600"
+    }`}
+  >
+    Home
+  </Link>
+
+  <Link
+    to="/ManageAccount"
+    className={`tracking-wide font-light hover:text-green-700 ${
+      location.pathname === "/ManageAccount" ? "text-green-700 font-medium" : "text-black-600"
+    }`}
+  >
+    Manage Account
+  </Link>
+
+  <Link
+    to="/SuperAdminManageCalamity"
+    className={`tracking-wide font-light hover:text-green-700 ${
+      location.pathname === "/SuperAdminManageCalamity" ? "text-green-700 font-medium" : "text-black-600"
+    }`}
+  >
+    Calamity
+  </Link>
+
+  <Link
+    to="/SuperAdminManageCrop"
+    className={`tracking-wide font-light hover:text-green-700 ${
+      location.pathname === "/SuperAdminManageCrop" ? "text-green-700 font-medium" : "text-black-600"
+    }`}
+  >
+    Crops
+  </Link>
+
+  <Link
+    to="/SuperAdminGlossary"
+    className={`tracking-wide font-light hover:text-green-700 ${
+      location.pathname === "/SuperAdminGlossary" ? "text-green-700 font-medium" : "text-black-600"
+    }`}
+  >
+    Glossary
+  </Link>
+
+  <Link
+    to="/Graphs"
+    className={`tracking-wide font-light hover:text-green-700 ${
+      location.pathname === "/Graphs" ? "text-green-700 font-medium" : "text-black-600"
+    }`}
+  >
+    Graphs
+  </Link>
+</nav>
+
         </div>
 
         {/* Avatar */}
