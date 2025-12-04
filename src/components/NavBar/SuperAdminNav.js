@@ -164,6 +164,14 @@ const AdminNavBar = () => {
             >
               Crops
             </a>
+             <a
+              href="/SuperAdminGlossary"
+              className={`tracking-wide font-light hover:text-green-700 ${
+                location.pathname === "/SuperAdminGlossary" ? "text-green-700 font-medium" : "text-black-600"
+              }`}
+            >
+              Glossary
+            </a>
             <a
               href="/Graphs"
               className={`tracking-wide font-light hover:text-green-700 ${
