@@ -18,73 +18,85 @@ const Login = () => {
   const handlePasswordChange = (e) => setPassword(e.target.value);
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  e.preventDefault();
+  setError("");
+  setLoading(true);
 
-    try {
-      const response = await axios.post("http://localhost:5000/users/login", {
-        email: email.trim(),
-        password,
-      });
+  try {
+    const response = await axios.post("http://localhost:5000/users/login", {
+      email: email.trim(),
+      password,
+    });
 
-      const data = response.data || {};
-      if (data.token) {
-        const {
-          token,
-          role,
-          id,
-          first_name = "",
-          last_name = "",
-          profile_picture = "",
-          email: emailFromApi,
-          full_name: fullNameFromApi,
-        } = data;
+    const data = response.data || {};
+    if (data.token) {
+      const {
+        token,
+        role,
+        id,
+        first_name = "",
+        last_name = "",
+        profile_picture = "",
+        email: emailFromApi,
+        full_name: fullNameFromApi,
+      } = data;
 
-        // Compute full name safely
-        const computedFullName =
-          (fullNameFromApi && String(fullNameFromApi).trim()) ||
-          [first_name, last_name]
-            .map((s) => (s || "").trim())
-            .filter(Boolean)
-            .join(" ");
+      // Compute full name safely
+      const computedFullName =
+        (fullNameFromApi && String(fullNameFromApi).trim()) ||
+        [first_name, last_name]
+          .map((s) => (s || "").trim())
+          .filter(Boolean)
+          .join(" ");
 
-        // 🔐 Persist for navbar/AdminProfileForm (keys must match what your navbar reads)
-        localStorage.setItem("token", token);
-        localStorage.setItem("role", role || "");
-        localStorage.setItem("first_name", first_name || "");
-        localStorage.setItem("last_name", last_name || "");
-        localStorage.setItem("full_name", computedFullName || "");
-        localStorage.setItem("profile_picture", profile_picture || ""); // ← avatar depends on this
-        localStorage.setItem("user_id", String(id));
-        localStorage.setItem("email", (emailFromApi || "").trim());
+      // 🔐 Persist for navbar/AdminProfileForm (keys must match what your navbar reads)
+      localStorage.setItem("token", token);
+      localStorage.setItem("role", role || "");
+      localStorage.setItem("first_name", first_name || "");
+      localStorage.setItem("last_name", last_name || "");
+      localStorage.setItem("full_name", computedFullName || "");
+      localStorage.setItem("profile_picture", profile_picture || "");
+      localStorage.setItem("user_id", String(id));
+      localStorage.setItem("email", (emailFromApi || "").trim());
 
-        // Admin-specific keys (optional, kept from your logic)
-        if (role === "admin" || role === "super_admin") {
-          localStorage.setItem("admin_id", String(id));
-          localStorage.setItem("admin_full_name", computedFullName || "");
-        } else {
-          localStorage.removeItem("admin_id");
-          localStorage.removeItem("admin_full_name");
-        }
+      // ✅ ADD THIS: Store complete user object for getCurrentUserId()
+      localStorage.setItem("adminUser", JSON.stringify({
+        id: id,
+        user_id: id,
+        first_name: first_name || "",
+        last_name: last_name || "",
+        full_name: computedFullName || "",
+        email: (emailFromApi || email).trim(),
+        role: role || "",
+        profile_picture: profile_picture || ""
+      }));
 
-        // Redirect by role
-        if (role === "super_admin") {
-          navigate("/SuperAdminLandingPage");
-        } else if (role === "admin") {
-          navigate("/AdminLanding");
-        } else {
-          navigate("/UserLandingPage");
-        }
+      // Admin-specific keys (optional, kept from your logic)
+      if (role === "admin" || role === "super_admin") {
+        localStorage.setItem("admin_id", String(id));
+        localStorage.setItem("admin_full_name", computedFullName || "");
       } else {
-        setError("Invalid response from server.");
+        localStorage.removeItem("admin_id");
+        localStorage.removeItem("admin_full_name");
       }
-    } catch (err) {
-      setError(err.response?.data?.message || "An error occurred");
-    } finally {
-      setLoading(false);
+
+      // Redirect by role
+      if (role === "super_admin") {
+        navigate("/SuperAdminLandingPage");
+      } else if (role === "admin") {
+        navigate("/AdminLanding");
+      } else {
+        navigate("/UserLandingPage");
+      }
+    } else {
+      setError("Invalid response from server.");
     }
-  };
+  } catch (err) {
+    setError(err.response?.data?.message || "An error occurred");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="flex h-screen items-center justify-center bg-gray-100 font-poppins">

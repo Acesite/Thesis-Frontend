@@ -527,17 +527,18 @@ const AdminManageCrop = () => {
 const confirmDelete = async () => {
   try {
     const currentAdminId = getCurrentUserId();
-    console.log("[Admin] deleting crop", pendingDelete.id, "as user", currentAdminId);
-
+    console.log("[DELETE] Current admin ID:", currentAdminId); // ✅ Add this
+    console.log("[DELETE] Deleting crop:", pendingDelete.id); // ✅ Add this
+    
     await axios.delete(
       `http://localhost:5000/api/managecrops/${pendingDelete.id}`,
       {
-        data: { deleted_by: currentAdminId },             // body for audit trail
-        headers: { "X-User-Id": currentAdminId || "" }    // header fallback
+        data: { deleted_by: currentAdminId },
+        headers: { "X-User-Id": currentAdminId || "" }
       }
     );
-
-    await fetchCrops();           // keep Admin’s refetch pattern
+    
+    await fetchCrops();
     setPendingDelete(null);
     alert("Crop deleted successfully!");
   } catch (err) {
@@ -1872,7 +1873,7 @@ const Stat = ({ label, value }) => (
 );
 function getCurrentUserId() {
   try {
-    const keys = ["adminUser","user","authUser","sessionUser","loggedInUser"];
+    const keys = ["adminUser", "user", "authUser", "sessionUser", "loggedInUser"];
     for (const k of keys) {
       const raw = localStorage.getItem(k);
       if (!raw) continue;

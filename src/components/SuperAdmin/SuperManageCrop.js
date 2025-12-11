@@ -493,23 +493,28 @@ const SuperAdminManageCrop = () => {
     }
   };
 
-  const confirmDelete = async () => {
-    try {
-      const currentAdminId = getCurrentUserId();
-      await axios.delete(
-        `http://localhost:5000/api/managecrops/${pendingDelete.id}`,
-        {
-          data: { deleted_by: currentAdminId },
-          headers: { "X-User-Id": currentAdminId || "" },
-        }
-      );
-      setCrops((prev) => prev.filter((c) => c.id !== pendingDelete.id));
-      setPendingDelete(null);
-    } catch (err) {
-      console.error("Delete error:", err);
-      alert("Failed to delete crop.");
-    }
-  };
+ const confirmDelete = async () => {
+  try {
+    const currentAdminId = getCurrentUserId();
+    console.log("[DELETE] Current admin ID:", currentAdminId); // ✅ Add this
+    console.log("[DELETE] Deleting crop:", pendingDelete.id); // ✅ Add this
+    
+    await axios.delete(
+      `http://localhost:5000/api/managecrops/${pendingDelete.id}`,
+      {
+        data: { deleted_by: currentAdminId },
+        headers: { "X-User-Id": currentAdminId || "" }
+      }
+    );
+    
+    await fetchCrops();
+    setPendingDelete(null);
+    alert("Crop deleted successfully!");
+  } catch (err) {
+    console.error("Delete error:", err);
+    alert("Failed to delete crop.");
+  }
+};
 
   /* ------- derived for viewing modal ------- */
   const viewingIsHarvested =
