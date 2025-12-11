@@ -142,9 +142,7 @@ const SuperAdminArchive = () => {
     if (!rawId) return;
 
     if (!skipConfirm) {
-      const ok = window.confirm(
-        "Are you sure you want to restore this record?"
-      );
+      const ok = window.confirm("Are you sure you want to restore this record?");
       if (!ok) {
         setOpenMenuId(null);
         return;
@@ -202,6 +200,10 @@ const SuperAdminArchive = () => {
       await deleteForeverOne(displayId);
     }
   }
+
+  // New grid: checkbox | ID+Title | Module | Owner/Barangay | Archived | Status | Actions
+  const gridCols =
+    "grid-cols-[32px_minmax(0,1.6fr)_minmax(0,0.4fr)_minmax(0,0.9fr)_minmax(0,0.6fr)_minmax(0,0.4fr)_56px]";
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-poppins">
@@ -335,8 +337,11 @@ const SuperAdminArchive = () => {
             </div>
           ) : (
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="grid grid-cols-[32px_minmax(0,0.35fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.5fr)_minmax(0,0.55fr)_80px] items-center border-b border-slate-200 bg-slate-50 px-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                <div>
+              {/* Header row */}
+              <div
+                className={`grid ${gridCols} items-center border-b border-slate-200 bg-slate-50 px-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide`}
+              >
+                <div className="flex items-center justify-center">
                   <input
                     type="checkbox"
                     checked={allChecked}
@@ -344,22 +349,23 @@ const SuperAdminArchive = () => {
                     aria-label="Select all"
                   />
                 </div>
-                <div>ID</div>
-                <div>Title</div>
-                <div>Module</div>
-                <div>Owner / Barangay</div>
-                <div>Archived On</div>
-                <div>Status</div>
-                <div className="text-right pr-2">Actions</div>
+                <div className="text-left">ID / Title</div>
+                <div className="text-center">Module</div>
+                <div className="text-left">Owner / Barangay</div>
+                <div className="text-center">Archived On</div>
+                <div className="text-center">Status</div>
+                <div className="text-center">Actions</div>
               </div>
 
+              {/* Body rows */}
               <div className="divide-y divide-slate-200">
                 {paginated.map((item) => (
                   <div
                     key={item.id}
-                    className="grid grid-cols-[32px_minmax(0,0.35fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.5fr)_minmax(0,0.55fr)_80px] items-start px-6 py-3 text-sm hover:bg-slate-50 transition"
+                    className={`grid ${gridCols} items-center px-6 py-3 text-sm hover:bg-slate-50 transition`}
                   >
-                    <div className="pt-0.5">
+                    {/* Checkbox */}
+                    <div className="flex items-center justify-center">
                       <input
                         type="checkbox"
                         checked={checkedIds.has(item.id)}
@@ -368,15 +374,15 @@ const SuperAdminArchive = () => {
                       />
                     </div>
 
+                    {/* ID + Title + tags + archived by */}
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-slate-800">
-                        {item.id}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0">
-                      <div className="font-medium text-emerald-700">
-                        {item.title}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[13px] font-medium text-slate-700">
+                          {item.id}
+                        </span>
+                        <span className="font-semibold text-emerald-700 truncate">
+                          {item.title}
+                        </span>
                       </div>
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {item.tags?.map((t) => (
@@ -388,10 +394,12 @@ const SuperAdminArchive = () => {
                       </div>
                     </div>
 
-                    <div className="min-w-0">
+                    {/* Module */}
+                    <div className="min-w-0 flex justify-center">
                       <Badge tone="blue">{item.module}</Badge>
                     </div>
 
+                    {/* Owner / Barangay */}
                     <div className="min-w-0">
                       <div className="text-slate-700">{item.owner || "—"}</div>
                       <div className="text-[11px] text-slate-500">
@@ -399,7 +407,8 @@ const SuperAdminArchive = () => {
                       </div>
                     </div>
 
-                    <div className="min-w-0">
+                    {/* Archived on */}
+                    <div className="min-w-0 text-center">
                       <div className="text-slate-700">
                         {item.archivedAt
                           ? new Date(item.archivedAt).toLocaleString()
@@ -407,7 +416,8 @@ const SuperAdminArchive = () => {
                       </div>
                     </div>
 
-                    <div className="min-w-0">
+                    {/* Status */}
+                    <div className="min-w-0 flex justify-center">
                       <Badge tone={toneForStatus(item.status)}>
                         {item.status}
                       </Badge>
@@ -415,7 +425,7 @@ const SuperAdminArchive = () => {
 
                     {/* Actions: kebab menu */}
                     <div className="min-w-0">
-                      <div className="relative flex justify-end">
+                      <div className="relative flex justify-center">
                         <button
                           type="button"
                           onClick={() =>
@@ -430,7 +440,7 @@ const SuperAdminArchive = () => {
                         </button>
 
                         {openMenuId === item.id && (
-                          <div className="absolute right-0 top-9 z-10 w-36 rounded-md border border-slate-200 bg-white shadow-lg text-[13px]">
+                          <div className="absolute right-0 top-9 z-10 w-40 rounded-md border border-slate-200 bg-white shadow-lg text-[13px]">
                             <button
                               onClick={() => restoreOne(item.id)}
                               className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-emerald-700"
