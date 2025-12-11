@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 
-const AdminNavBar = () => {
+const SuperAdminNav = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -184,6 +184,14 @@ const AdminNavBar = () => {
   >
     Graphs
   </Link>
+  <Link
+    to="/SuperAdminArchive"
+    className={`tracking-wide font-light hover:text-green-700 ${
+      location.pathname === "/SuperAdminArchive" ? "text-green-700 font-medium" : "text-black-600"
+    }`}
+  >
+    Archives
+  </Link>
 </nav>
 
         </div>
@@ -294,4 +302,4 @@ const AdminNavBar = () => {
   );
 };
 
-export default AdminNavBar;
+export default SuperAdminNav;

@@ -9,8 +9,8 @@ import SuperAdminLandingPage from "../components/SuperAdmin/SuperAdminLanding";
 import ManageAccount from "../components/SuperAdmin/ManageAccount";
 import UserMap from "../components/User/UserMap";
 import AdminLanding from "../components/AdminCrop/AdminLanding";
-import AdminMap from "../components/AdminCrop/AdminMapBox";
-import ManageCrop from "../components/AdminCrop/ManageCrop";
+import AdminCropMap from "../components/AdminCrop/AdminCropMap";
+import AdminManageCrop from "../components/AdminCrop/AdminManageCrop";
 import SuperAdminManageCrop from "../components/SuperAdmin/SuperManageCrop";
 import SuperAdminMap from "../components/SuperAdmin/SuperAdminMap";
 import Graphs from "../components/SuperAdmin/Graphs";
@@ -27,6 +27,8 @@ import UserChooseMap from "../components/User/UserChooseMap";
 import UserCalamityMap from "../components/User/UserCalamityMap";
 import SuperAdminGlossary from "../components/SuperAdmin/SuperAdminGlossary";
 import AdminGlossary from "../components/AdminCrop/AdminGlossary";
+import SuperAdminArchive from "../components/SuperAdmin/SuperAdminArchive";
+
 
 const AppRoutes = () => {
   return (
@@ -51,6 +53,8 @@ const AppRoutes = () => {
       <Route path="/SuperAdminCalamityMap" element={<SuperAdminCalamityMap/>} />
       <Route path="/SuperAdminChooseMap" element={<SuperAdminChooseMap />} />
       <Route path="/SuperAdminGlossary" element={<SuperAdminGlossary />} />
+      <Route path="/SuperAdminArchive" element={<SuperAdminArchive />} />
+
 
 
 
@@ -62,9 +66,9 @@ const AppRoutes = () => {
 
       {/*Admin*/}
       <Route path="/AdminLanding" element={<AdminLanding />} />
-      <Route path="/AdminMap" element={<AdminMap />} />
+      <Route path="/AdminCropMap" element={<AdminCropMap />} />
       <Route path="/AdminLanding" element={<AdminLanding />} />
-      <Route path="/ManageCrops" element={<ManageCrop />} />
+      <Route path="/AdminManageCrop" element={<AdminManageCrop />} />
       <Route path="/ManageCalamity" element={<ManageCalamity />} />
       <Route path="/CalamityFarmerMap" element={<CalamityMap />} />
       <Route path="/AdminGlossary" element={<AdminGlossary />} />

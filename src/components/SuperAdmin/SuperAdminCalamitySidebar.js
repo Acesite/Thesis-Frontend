@@ -102,7 +102,7 @@ const normalizeBarangayName = (v) => {
   return "";
 };
 
-const UserCalamitySidebar = ({
+const SuperAdminCalamitySidebar = ({
   visible,
   setEnlargedImage,
 
@@ -755,4 +755,4 @@ const UserCalamitySidebar = ({
   );
 };
 
-export default UserCalamitySidebar;
+export default SuperAdminCalamitySidebar;

@@ -743,7 +743,7 @@ const SuperAdminManageCalamity = () => {
                             <button
                               className="text-emerald-700 hover:underline"
                               onClick={() =>
-                                navigate("/CalamityFarmerMap", {
+                                navigate("/SuperAdminCalamityMap", {
                                   state: {
                                     incidentId: String(inc.id),
                                     incidentType: type,

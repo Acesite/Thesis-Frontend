@@ -67,19 +67,10 @@ function isSoftDeletedCrop(crop) {
   if (!crop) return false;
 
   const yes = (v) =>
-    v === 1 ||
-    v === "1" ||
-    v === true ||
-    v === "true" ||
-    v === "yes" ||
-    v === "y";
+    v === 1 || v === "1" || v === true || v === "true" || v === "yes" || v === "y";
 
   const no = (v) =>
-    v === 0 ||
-    v === "0" ||
-    v === false ||
-    v === "false" ||
-    v === "no";
+    v === 0 || v === "0" || v === false || v === "false" || v === "no";
 
   if (
     yes(crop.is_deleted) ||
@@ -92,9 +83,7 @@ function isSoftDeletedCrop(crop) {
     return true;
   }
 
-  if (no(crop.is_active) || no(crop.active)) {
-    return true;
-  }
+  if (no(crop.is_active) || no(crop.active)) return true;
 
   const checkStatusStr = (val) => {
     if (typeof val !== "string") return false;
@@ -102,9 +91,7 @@ function isSoftDeletedCrop(crop) {
     return ["deleted", "archived", "inactive", "removed"].includes(s);
   };
 
-  if (checkStatusStr(crop.status) || checkStatusStr(crop.record_status)) {
-    return true;
-  }
+  if (checkStatusStr(crop.status) || checkStatusStr(crop.record_status)) return true;
 
   return false;
 }
@@ -130,11 +117,7 @@ function resolveCropImageURL(crop) {
 
   if (!raw) return null;
 
-  if (
-    /^(https?:)?\/\//i.test(raw) ||
-    raw.startsWith("data:") ||
-    raw.startsWith("blob:")
-  )
+  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:"))
     return raw;
 
   if (raw.startsWith("/")) return `http://localhost:5000${raw}`;
@@ -156,12 +139,8 @@ function buildCropPreviewHTML(c) {
   const name = c.crop_name || "Crop";
   const variety = c.variety_name || "";
   const barangay = c.barangay || c.farmer_barangay || "";
-  const planted = c.planted_date
-    ? new Date(c.planted_date).toLocaleDateString()
-    : "";
-  const harvest = c.estimated_harvest
-    ? new Date(c.estimated_harvest).toLocaleDateString()
-    : "";
+  const planted = c.planted_date ? new Date(c.planted_date).toLocaleDateString() : "";
+  const harvest = c.estimated_harvest ? new Date(c.estimated_harvest).toLocaleDateString() : "";
   const hectares = c.estimated_hectares;
   const volume = c.estimated_volume;
 
@@ -209,32 +188,16 @@ function buildCropPreviewHTML(c) {
               : ""
           }
           <div style="font-size:12px;color:#4b5563;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
-            ${
-              hectares != null
-                ? `<span>Area: <strong>${hectares}</strong> ha</span>`
-                : ""
-            }
-            ${
-              volume != null
-                ? `<span>Est. volume: <strong>${volume}</strong></span>`
-                : ""
-            }
+            ${hectares != null ? `<span>Area: <strong>${hectares}</strong> ha</span>` : ""}
+            ${volume != null ? `<span>Est. volume: <strong>${volume}</strong></span>` : ""}
           </div>
           ${
             planted || harvest
               ? `<div style="font-size:12px;color:#6b7280;margin-top:6px;">
-                   ${
-                     planted
-                       ? `<span>Planted: <strong>${planted}</strong></span>`
-                       : ""
-                   }
-                   ${
-                     planted && harvest ? " · " : ""
-                   }${
-                     harvest
-                       ? `<span>Harvest: <strong>${harvest}</strong></span>`
-                       : ""
-                   }
+                   ${planted ? `<span>Planted: <strong>${planted}</strong></span>` : ""}
+                   ${planted && harvest ? " · " : ""}${
+                   harvest ? `<span>Harvest: <strong>${harvest}</strong></span>` : ""
+                 }
                  </div>`
               : ""
           }
@@ -261,7 +224,6 @@ function passesTimelineFilter(obj, mode, from, to) {
   if (!raw) return false;
 
   const value = String(raw).slice(0, 7); // keep YYYY-MM
-
   if (from && value < from) return false;
   if (to && value > to) return false;
   return true;
@@ -466,7 +428,7 @@ const formatNum = (value) => {
   });
 };
 
-const AdminMapBox = () => {
+const AdminCropMap = () => {
   addPulseStylesOnce();
 
   // deep-link target
@@ -509,7 +471,6 @@ const AdminMapBox = () => {
   const HILITE_ANIM_REF = useRef(null);
   const hasDeepLinkedRef = useRef(false);
   const savedMarkersRef = useRef([]);
-
 
   const [mapStyle, setMapStyle] = useState(
     "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
@@ -738,152 +699,210 @@ const AdminMapBox = () => {
     }
   }, []);
 
-  /* ---------- marker rendering WITH hover preview ---------- */
-  const renderSavedMarkers = useCallback(async () => {
-    if (!map.current) return;
+ const refreshMapData = useCallback(
+  async () => {
     try {
-      const response = await axios.get("http://localhost:5000/api/crops");
+      await loadPolygons();
+      await renderSavedMarkers();
+    } catch (e) {
+      console.error(e);
+    }
+  },
+  [] 
+);
 
-      // 🔹 FILTER HERE — don't show soft-deleted/inactive crops
-      const allRows = response.data || [];
-      const crops = allRows.filter((c) => !isSoftDeletedCrop(c));
-
-      setSidebarCrops(crops);
-
-      // clear previous markers & hover popup
-      savedMarkersRef.current.forEach((marker) => marker.remove());
-      savedMarkersRef.current = [];
-      cropMarkerMapRef.current.clear();
-      if (hoverPopupRef.current) {
-        try {
-          hoverPopupRef.current.remove();
-        } catch {}
-        hoverPopupRef.current = null;
+  const markHarvested = useCallback(
+    async (cropId, harvestedDate = null) => {
+      try {
+        const body = harvestedDate ? { harvested_date: harvestedDate } : {};
+        await axios.patch(`http://localhost:5000/api/crops/${cropId}/harvest`, body);
+        toast.success("Marked as harvested");
+        await refreshMapData();
+        setSelectedCrop((prev) =>
+          prev && String(prev.id) === String(cropId)
+            ? {
+                ...prev,
+                is_harvested: 1,
+                harvested_date: harvestedDate || new Date().toISOString().slice(0, 10),
+              }
+            : prev
+        );
+      } catch (e) {
+        console.error(e);
+        toast.error(e?.response?.data?.message || "Failed to mark harvested");
       }
+    },
+    [refreshMapData]
+  );
 
-      // filter by crop type first
-      const filteredByType =
-        selectedCropType === "All"
-          ? crops
-          : crops.filter((c) => c.crop_name === selectedCropType);
-
-      // then filter by harvest status
-      let filtered = filteredByType;
-      if (harvestFilter === "harvested") {
-        filtered = filtered.filter((c) => isCropHarvested(c));
-      } else if (harvestFilter === "not_harvested") {
-        filtered = filtered.filter((c) => !isCropHarvested(c));
-      }
-
-      // then global timeline (month range)
-      filtered = filtered.filter((c) =>
-        passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
+  const loadPreviousSeasons = useCallback(async (cropId) => {
+    try {
+      const { data } = await axios.get(
+        `http://localhost:5000/api/crops/${cropId}/history`
       );
+      setSelectedCropHistory(Array.isArray(data) ? data : []);
+      toast.success("Previous seasons loaded");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load previous seasons");
+    }
+  }, []);
 
-      for (const crop of filtered) {
-        let coords = crop.coordinates;
-        if (typeof coords === "string") {
-          try {
-            coords = JSON.parse(coords);
-          } catch {
-            continue;
-          }
+  /* ---------- marker rendering WITH hover preview (NO prev/harvest buttons) ---------- */
+const renderSavedMarkers = useCallback(async () => {
+  if (!map.current) return;
+  try {
+    const response = await axios.get("http://localhost:5000/api/crops");
+
+    // 🔹 FILTER: hide soft-deleted/inactive crops
+    const allRows = response.data || [];
+    const crops = allRows.filter((c) => !isSoftDeletedCrop(c));
+
+    setSidebarCrops(crops);
+
+    // clear previous markers & hover popup
+    savedMarkersRef.current.forEach((marker) => marker.remove());
+    savedMarkersRef.current = [];
+    cropMarkerMapRef.current.clear();
+    if (hoverPopupRef.current) {
+      try {
+        hoverPopupRef.current.remove();
+      } catch {}
+      hoverPopupRef.current = null;
+    }
+
+    // filter by crop type
+    const filteredByType =
+      selectedCropType === "All"
+        ? crops
+        : crops.filter((c) => c.crop_name === selectedCropType);
+
+    // filter by harvest status
+    let filtered = filteredByType;
+    if (harvestFilter === "harvested") {
+      filtered = filtered.filter((c) => isCropHarvested(c));
+    } else if (harvestFilter === "not_harvested") {
+      filtered = filtered.filter((c) => !isCropHarvested(c));
+    }
+
+    // global timeline (month range)
+    filtered = filtered.filter((c) =>
+      passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
+    );
+
+    for (const crop of filtered) {
+      let coords = crop.coordinates;
+      if (typeof coords === "string") {
+        try {
+          coords = JSON.parse(coords);
+        } catch {
+          continue;
         }
-        if (Array.isArray(coords) && coords.length > 2) {
-          const first = coords[0];
-          const last = coords[coords.length - 1];
-          if (JSON.stringify(first) !== JSON.stringify(last)) coords.push(first);
+      }
+      if (Array.isArray(coords) && coords.length > 2) {
+        const first = coords[0];
+        const last = coords[coords.length - 1];
+        if (JSON.stringify(first) !== JSON.stringify(last)) coords.push(first);
 
-          const center = turf.centerOfMass(turf.polygon([coords])).geometry
-            .coordinates;
+        const center = turf.centerOfMass(turf.polygon([coords])).geometry
+          .coordinates;
 
-          const isHarvestedFlag = isCropHarvested(crop);
-          const marker = new mapboxgl.Marker({
-            color: isHarvestedFlag ? "#6B7280" : "#10B981",
+        const isHarvestedFlag = isCropHarvested(crop);
+
+        const popupHtml = `
+          <div class="text-sm" style="min-width:220px">
+            <h3 class='font-bold text-green-600'>${crop.crop_name}</h3>
+            <p><strong>Variety:</strong> ${crop.variety_name || "N/A"}</p>
+            <p style="margin-top:6px;">
+              <strong>Status:</strong> ${
+                isHarvestedFlag ? "Harvested" : "Not harvested"
+              }
+            </p>
+          </div>
+        `;
+
+        const popup = new mapboxgl.Popup({ offset: 15 }).setHTML(popupHtml);
+
+        const marker = new mapboxgl.Marker({
+          color: isHarvestedFlag ? "#6B7280" : "#10B981",
+        })
+          .setLngLat(center)
+          .setPopup(popup)
+          .addTo(map.current);
+
+        // click = select crop
+        marker.getElement().addEventListener("click", () => {
+          setSelectedCrop(crop);
+          highlightSelection(crop);
+          setIsSidebarVisible(true);
+        });
+
+        // hover → fancy preview
+        marker.getElement().addEventListener("mouseenter", () => {
+          if (hoverLeaveTimerRef.current) {
+            clearTimeout(hoverLeaveTimerRef.current);
+            hoverLeaveTimerRef.current = null;
+          }
+          try {
+            hoverPopupRef.current?.remove();
+          } catch {}
+          const html = buildCropPreviewHTML(crop);
+          const hoverPopup = new mapboxgl.Popup({
+            closeButton: false,
+            closeOnClick: false,
+            closeOnMove: false,
+            offset: 30,
+            anchor: "top",
+            className: "crop-hover-preview",
+            maxWidth: "none",
           })
             .setLngLat(center)
-            .setPopup(
-              new mapboxgl.Popup({ offset: 15 }).setHTML(`
-              <div class="text-sm">
-                <h3 class='font-bold text-green-600'>${crop.crop_name}</h3>
-                <p><strong>Variety:</strong> ${crop.variety_name || "N/A"}</p>
-              </div>
-            `)
-            )
+            .setHTML(html)
             .addTo(map.current);
 
-          // click = select crop
-          marker.getElement().addEventListener("click", () => {
-            setSelectedCrop(crop);
-            highlightSelection(crop);
-            setIsSidebarVisible(true);
-          });
-
-          // hover → fancy preview
-          marker.getElement().addEventListener("mouseenter", () => {
-            if (hoverLeaveTimerRef.current) {
-              clearTimeout(hoverLeaveTimerRef.current);
-              hoverLeaveTimerRef.current = null;
+          setTimeout(() => {
+            const el = hoverPopup.getElement();
+            const content = el?.querySelector(".mapboxgl-popup-content");
+            const tip = el?.querySelector(".mapboxgl-popup-tip");
+            if (content) {
+              content.style.background = "transparent";
+              content.style.padding = "0";
+              content.style.boxShadow = "none";
             }
-            try {
-              hoverPopupRef.current?.remove();
-            } catch {}
-            const html = buildCropPreviewHTML(crop);
-            const popup = new mapboxgl.Popup({
-              closeButton: false,
-              closeOnClick: false,
-              closeOnMove: false,
-              offset: 30,
-              anchor: "top",
-              className: "crop-hover-preview",
-              maxWidth: "none",
-            })
-              .setLngLat(center)
-              .setHTML(html)
-              .addTo(map.current);
+            if (tip) tip.style.display = "none";
+          }, 0);
 
-            setTimeout(() => {
-              const el = popup.getElement();
-              const content = el?.querySelector(".mapboxgl-popup-content");
-              const tip = el?.querySelector(".mapboxgl-popup-tip");
-              if (content) {
-                content.style.background = "transparent";
-                content.style.padding = "0";
-                content.style.boxShadow = "none";
-              }
-              if (tip) tip.style.display = "none";
-            }, 0);
+          hoverPopupRef.current = hoverPopup;
+        });
 
-            hoverPopupRef.current = popup;
-          });
+        marker.getElement().addEventListener("mouseleave", () => {
+          hoverLeaveTimerRef.current = setTimeout(() => {
+            if (hoverPopupRef.current) {
+              try {
+                hoverPopupRef.current.remove();
+              } catch {}
+              hoverPopupRef.current = null;
+            }
+          }, 140);
+        });
 
-          marker.getElement().addEventListener("mouseleave", () => {
-            hoverLeaveTimerRef.current = setTimeout(() => {
-              if (hoverPopupRef.current) {
-                try {
-                  hoverPopupRef.current.remove();
-                } catch {}
-                hoverPopupRef.current = null;
-              }
-            }, 140);
-          });
-
-          cropMarkerMapRef.current.set(String(crop.id), marker);
-          savedMarkersRef.current.push(marker);
-        }
+        cropMarkerMapRef.current.set(String(crop.id), marker);
+        savedMarkersRef.current.push(marker);
       }
-
-      ensureDeepLinkSelection();
-    } catch (error) {
-      console.error("Failed to load saved markers:", error);
     }
-  }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-  ]);
+
+    ensureDeepLinkSelection();
+  } catch (error) {
+    console.error("Failed to load saved markers:", error);
+  }
+}, [
+  selectedCropType,
+  harvestFilter,
+  timelineMode,
+  timelineFrom,
+  timelineTo,
+]);
+
 
   /* ---------- polygon loader with harvested color ---------- */
   const loadPolygons = useCallback(
@@ -964,12 +983,10 @@ const AdminMapBox = () => {
     const m = map.current;
     if (!BARANGAYS_FC?.features?.length) return;
 
-    // source
     if (!m.getSource("barangays-src")) {
       m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
     }
 
-    // boundary line
     if (!m.getLayer("barangays-line")) {
       m.addLayer({
         id: "barangays-line",
@@ -983,7 +1000,6 @@ const AdminMapBox = () => {
       });
     }
 
-    // 🔹 name labels (works on all styles, incl. Satellite)
     if (!m.getLayer("barangays-labels")) {
       m.addLayer({
         id: "barangays-labels",
@@ -1215,51 +1231,85 @@ const AdminMapBox = () => {
     return null;
   }
 
-  /* ---------- reuse existing polygon for new season ---------- */
   const openTagFormForExistingCrop = useCallback((crop) => {
-    if (!crop) return;
+  if (!crop) return;
 
-    let coords = crop.coordinates;
-    if (!coords) return;
+  let coords = crop.coordinates;
+  if (!coords) return;
 
-    if (typeof coords === "string") {
-      try {
-        coords = JSON.parse(coords);
-      } catch {
-        return;
-      }
+  if (typeof coords === "string") {
+    try {
+      coords = JSON.parse(coords);
+    } catch {
+      return;
     }
+  }
 
-    if (!Array.isArray(coords) || coords.length < 3) return;
+  if (!Array.isArray(coords) || coords.length < 3) return;
 
-    const first = coords[0];
-    const last = coords[coords.length - 1];
-    if (JSON.stringify(first) !== JSON.stringify(last)) {
-      coords = [...coords, first];
-    }
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (JSON.stringify(first) !== JSON.stringify(last)) {
+    coords = [...coords, first];
+  }
 
-    const farmGeometry = {
-      type: "Polygon",
-      coordinates: [coords],
-    };
+  const farmGeometry = {
+    type: "Polygon",
+    coordinates: [coords],
+  };
 
-    const center =
-      getCropCenter({ ...crop, coordinates: coords }) || coords[0];
+  const center =
+    getCropCenter({ ...crop, coordinates: coords }) || coords[0];
 
-    setSelectedBarangay((prev) => ({
-      ...(prev || {}),
-      name: crop.barangay || crop.farmer_barangay || prev?.name || "",
-      coordinates: center,
-    }));
+  // 🔹 Try to reuse saved elevation; if not present, estimate again
+  let avgElevationM =
+    crop.avg_elevation_m ??
+    crop.avgElevationM ??
+    crop.avg_elevation ??
+    crop.elevation ??
+    null;
 
-    setNewTagLocation({
-      coordinates: coords,
-      hectares: crop.estimated_hectares,
-      farmGeometry,
-    });
+  if (avgElevationM == null) {
+    const approx = estimateAverageElevation(farmGeometry);
+    if (approx != null) avgElevationM = approx;
+  }
 
-    setIsTagging(true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 🔹 Figure out barangay defaults (for farmer + location)
+  const barangayName =
+    crop.farmer_barangay ||
+    crop.barangay ||
+    (selectedBarangay?.name ?? "");
+
+  setSelectedBarangay((prev) => ({
+    ...(prev || {}),
+    name: barangayName || prev?.name || "",
+    coordinates: center,
+  }));
+
+  // 🔹 Pack everything to pass into TagCropForm via defaultLocation
+  setNewTagLocation({
+    coordinates: coords,
+    hectares: crop.estimated_hectares,
+    farmGeometry,
+    avgElevationM, // <--- for TagCropForm elevation prefill
+
+    // Farmer defaults (for auto-fill)
+    farmerFirstName: crop.farmer_first_name || "",
+    farmerLastName: crop.farmer_last_name || "",
+    farmerMobile: crop.farmer_mobile || "",
+    farmerBarangay: barangayName || "",
+    farmerAddress:   crop.farmer_address || "",
+     tenureId: crop.tenure_id ?? crop.tenure ?? "",
+
+    isAnonymousFarmer:
+      crop.is_anonymous_farmer === 1 ||
+      crop.is_anonymous_farmer === "1" ||
+      crop.is_anonymous_farmer === true,
+  });
+
+  setIsTagging(true);
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const clearSelection = useCallback(() => {
     if (!map.current) return;
@@ -1457,34 +1507,34 @@ const AdminMapBox = () => {
 
   // fetch backend crop history for selected crop
   useEffect(() => {
-    if (!selectedCrop) {
-      setSelectedCropHistory([]);
-      return;
-    }
+  if (!selectedCrop) {
+    setSelectedCropHistory([]);
+    return;
+  }
 
-    let cancelled = false;
+  let cancelled = false;
 
-    const fetchHistory = async () => {
-      try {
-        const res = await axios.get(
-          `http://localhost:5000/api/crops/${selectedCrop.id}/history`
-        );
-        if (!cancelled) {
-          const rows = Array.isArray(res.data) ? res.data : [];
-          setSelectedCropHistory(rows);
-        }
-      } catch (err) {
-        console.error("Failed to fetch crop history:", err);
-        if (!cancelled) setSelectedCropHistory([]);
+  const fetchHistory = async () => {
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/crops/${selectedCrop.id}/history`
+      );
+      if (!cancelled) {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        // hide soft-deleted / archived / inactive seasons
+        const cleaned = rows.filter((r) => !isSoftDeletedCrop(r));
+        setSelectedCropHistory(cleaned);
       }
-    };
+    } catch (err) {
+      console.error("Failed to fetch crop history:", err);
+      if (!cancelled) setSelectedCropHistory([]);
+    }
+  };
 
-    fetchHistory();
+  fetchHistory();
+  return () => { cancelled = true; };
+}, [selectedCrop]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedCrop]);
 
   // init map
   useEffect(() => {
@@ -1495,9 +1545,7 @@ const AdminMapBox = () => {
         center: [122.9616, 10.5074],
         zoom: 7,
       });
-
       map.current = m;
-
       if (lockToBago) m.setMaxBounds(BAGO_CITY_BOUNDS);
 
       axios
@@ -1741,66 +1789,68 @@ const AdminMapBox = () => {
 
   // lock toggle
   useEffect(() => {
+  if (!map.current) return;
+  if (lockToBago) {
+    map.current.setMaxBounds(BAGO_CITY_BOUNDS);
+  } else {
+    map.current.setMaxBounds(null);
+  }
+}, [lockToBago]);
+
+
+ // filter polygons based on crop type + harvest + timeline
+useEffect(() => {
+  const applyPolygonFilters = async () => {
     if (!map.current) return;
-    if (lockToBago) {
-      map.current.setMaxBounds(BAGO_CITY_BOUNDS);
-      toast.info("Map locked to Bago City boundaries.");
-    } else {
-      map.current.setMaxBounds(null);
-      toast.info("Map unlocked. You can pan anywhere.");
-    }
-  }, [lockToBago]);
 
-  // filter polygons based on crop type + harvest + timeline
-  useEffect(() => {
-    const applyPolygonFilters = async () => {
-      if (!map.current) return;
+    try {
+      let crops = sidebarCrops;
 
-      try {
-        let crops = sidebarCrops;
-
-        if (!crops || !crops.length) {
-          const res = await axios.get("http://localhost:5000/api/crops");
-          const rows = res.data || [];
-          crops = rows.filter((c) => !isSoftDeletedCrop(c));
-        } else {
-          crops = crops.filter((c) => !isSoftDeletedCrop(c));
-        }
-
-        let filtered = [...crops];
-
-        if (selectedCropType !== "All") {
-          filtered = filtered.filter(
-            (c) => c.crop_name === selectedCropType
-          );
-        }
-
-        if (harvestFilter === "harvested") {
-          filtered = filtered.filter((c) => isCropHarvested(c));
-        } else if (harvestFilter === "not_harvested") {
-          filtered = filtered.filter((c) => !isCropHarvested(c));
-        }
-
-        filtered = filtered.filter((c) =>
-          passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
-        );
-
-        await loadPolygons(filtered);
-      } catch (err) {
-        console.error("Failed to filter polygons:", err);
+      if (!crops || !crops.length) {
+        const res = await axios.get("http://localhost:5000/api/crops");
+        const rows = res.data || [];
+        crops = rows.filter((c) => !isSoftDeletedCrop(c));
+      } else {
+        crops = crops.filter((c) => !isSoftDeletedCrop(c));
       }
-    };
 
-    applyPolygonFilters();
-  }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-    sidebarCrops,
-    loadPolygons,
-  ]);
+      let filtered = [...crops];
+
+      if (selectedCropType !== "All") {
+        filtered = filtered.filter((c) => c.crop_name === selectedCropType);
+      }
+
+      if (harvestFilter === "harvested") {
+        filtered = filtered.filter((c) => isCropHarvested(c));
+      } else if (harvestFilter === "not_harvested") {
+        filtered = filtered.filter((c) => !isCropHarvested(c));
+      }
+
+      filtered = filtered.filter((c) =>
+        passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
+      );
+
+      await loadPolygons(filtered);
+
+      // 🔹 make sure barangay lines + labels are present & on top
+      ensureBarangayLayers();
+    } catch (err) {
+      console.error("Failed to filter polygons:", err);
+    }
+  };
+
+  applyPolygonFilters();
+}, [
+  selectedCropType,
+  harvestFilter,
+  timelineMode,
+  timelineFrom,
+  timelineTo,
+  sidebarCrops,
+  loadPolygons,
+  ensureBarangayLayers,   // 🔹 add this
+]);
+
 
   // cleanup
   useEffect(() => {
@@ -1988,9 +2038,19 @@ const AdminMapBox = () => {
 
         <IconButton
           title={lockToBago ? "Unlock map" : "Lock to Bago"}
-          active={lockToBago}
-          onClick={() => setLockToBago((v) => !v)}
-        >
+  active={lockToBago}
+  onClick={() => {
+    setLockToBago((prev) => {
+      const next = !prev;
+      if (next) {
+        toast.info("Map locked to Bago City boundaries.");
+      } else {
+        toast.info("Map unlocked. You can pan anywhere.");
+      }
+      return next;
+    });
+  }}
+>
           {lockToBago ? (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <path d="M17 8h-1V6a4 4 0 1 0-8 0v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Zm-7-2a2 2 0 1 1 4 0v2h-4V6Z" />
@@ -2381,4 +2441,4 @@ const AdminMapBox = () => {
   );
 };
 
-export default AdminMapBox;
+export default AdminCropMap;

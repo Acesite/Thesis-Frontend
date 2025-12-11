@@ -136,7 +136,7 @@ const CalamitySidebar = ({
     if (window.history.length > 1) {
       navigate(-1); // go back to previous page (e.g., /ManageCrops)
     } else {
-      navigate("/ManageCalamity"); // fallback if opened directly
+      navigate("/AdminManageCalamity"); // fallback if opened directly
     }
   };
 

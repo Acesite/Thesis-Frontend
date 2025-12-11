@@ -1,10 +1,5 @@
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
+// components/User/CalamityFarmerMap.jsx
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import MapboxDirections from "@mapbox/mapbox-gl-directions/dist/mapbox-gl-directions";
@@ -24,16 +19,19 @@ import SidebarToggleButton from "./MapControls/SidebarToggleButton";
 import { useLocation, useSearchParams } from "react-router-dom";
 import BARANGAYS_FC from "../Barangays/barangays.json";
 
-
 mapboxgl.accessToken =
   "pk.eyJ1Ijoid29tcHdvbXAtNjkiLCJhIjoiY204emxrOHkwMGJsZjJrcjZtZmN4YXdtNSJ9.LIMPvoBNtGuj4O36r3F72w";
 
+/** --------- constants --------- **/
+const API_BASE = "http://localhost:5000";
+const INIT_CENTER = [122.9616, 10.5074];
+const INIT_ZOOM = 13;
 const BAGO_CITY_BOUNDS = [
   [122.7333, 10.4958],
   [123.5, 10.6333],
 ];
 
-/* ---------- tiny CSS for pulsing halo + chip + hover popup ---------- */
+/** --------- tiny CSS for pulsing halo + chip + custom hover popup --------- **/
 const addPulseStylesOnce = () => {
   if (document.getElementById("pulse-style")) return;
   const style = document.createElement("style");
@@ -45,202 +43,102 @@ const addPulseStylesOnce = () => {
     100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
   }
   .pulse-wrapper { position: relative; width: 0; height: 0; pointer-events: none; }
-  .pulse-ring { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 9999px; background: rgba(16,185,129,0.35); box-shadow: 0 0 0 2px rgba(16,185,129,0.55) inset; animation: pulseRing 1.8s ease-out infinite; }
-  .chip { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; font-size: 12px; font-weight: 600; padding: 4px 8px; background: #111827; color: #fff; border-radius: 9999px; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transform: translate(-50%, -8px); white-space: nowrap; }
-
-  /* transparent shell for hover preview popup */
-  .mapboxgl-popup.crop-hover-preview { pointer-events: none !important; }
-  .mapboxgl-popup.crop-hover-preview .mapboxgl-popup-content {
-    background: transparent !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
+  .pulse-ring { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px;
+    border-radius: 9999px; background: rgba(239,68,68,0.35);
+    box-shadow: 0 0 0 2px rgba(239,68,68,0.55) inset; animation: pulseRing 1.8s ease-out infinite; }
+  .chip { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    font-size: 12px; font-weight: 600; padding: 4px 8px; background: #111827; color: #fff;
+    border-radius: 9999px; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transform: translate(-50%, -8px); white-space: nowrap; }
+  .mapboxgl-popup.calamity-hover-preview { pointer-events: none !important; }
+  .mapboxgl-popup.calamity-hover-preview .mapboxgl-popup-content {
+    background: transparent !important; padding: 0 !important; box-shadow: none !important; border: none !important; border-radius: 0 !important;
   }
-  .mapboxgl-popup.crop-hover-preview .mapboxgl-popup-tip { display: none !important; }
-
-  /* 🔹 hide Mapbox Draw polygon + trash buttons (but keep functionality) */
-  .mapbox-gl-draw_ctrl-draw-btn.mapbox-gl-draw_polygon,
-  .mapbox-gl-draw_ctrl-draw-btn.mapbox-gl-draw_trash {
-    display: none !important;
-  }
+  .mapboxgl-popup.calamity-hover-preview .mapboxgl-popup-tip { display: none !important; }
   `;
   document.head.appendChild(style);
 };
 
-/* ---------- helper: detect soft-deleted / inactive crops ---------- */
-function isSoftDeletedCrop(crop) {
-  if (!crop) return false;
-
-  const yes = (v) =>
-    v === 1 ||
-    v === "1" ||
-    v === true ||
-    v === "true" ||
-    v === "yes" ||
-    v === "y";
-
-  const no = (v) =>
-    v === 0 ||
-    v === "0" ||
-    v === false ||
-    v === "false" ||
-    v === "no";
-
-  if (
-    yes(crop.is_deleted) ||
-    yes(crop.deleted) ||
-    yes(crop.is_archived) ||
-    yes(crop.archived) ||
-    yes(crop.is_hidden) ||
-    yes(crop.hidden)
-  ) {
-    return true;
-  }
-
-  if (no(crop.is_active) || no(crop.active)) {
-    return true;
-  }
-
-  const checkStatusStr = (val) => {
-    if (typeof val !== "string") return false;
-    const s = val.toLowerCase();
-    return ["deleted", "archived", "inactive", "removed"].includes(s);
-  };
-
-  if (checkStatusStr(crop.status) || checkStatusStr(crop.record_status)) {
-    return true;
-  }
-
-  return false;
-}
-
-/* ---------- hover preview helpers (image + card HTML) ---------- */
-function resolveCropImageURL(crop) {
+/** --------- image + hover card builder --------- **/
+function resolveImageURL(calamity) {
   let raw =
-    crop?.thumbnail_url ||
-    crop?.image_url ||
-    crop?.photo_url ||
-    crop?.image ||
-    crop?.photo ||
-    crop?.image_path ||
+    calamity?.thumbnail_url ||
+    calamity?.image_url ||
+    calamity?.photo_url ||
+    calamity?.image ||
+    calamity?.photo ||
+    calamity?.image_path ||
     null;
 
-  if (!raw && crop?.photos) {
+  if (!raw && calamity?.photos) {
     try {
       const arr =
-        typeof crop.photos === "string" ? JSON.parse(crop.photos) : crop.photos;
+        typeof calamity.photos === "string"
+          ? JSON.parse(calamity.photos)
+          : calamity.photos;
       if (Array.isArray(arr) && arr[0]) raw = arr[0];
     } catch {}
   }
 
   if (!raw) return null;
-
-  if (
-    /^(https?:)?\/\//i.test(raw) ||
-    raw.startsWith("data:") ||
-    raw.startsWith("blob:")
-  )
-    return raw;
-
-  if (raw.startsWith("/")) return `http://localhost:5000${raw}`;
-  return `http://localhost:5000/${raw}`;
+  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) return raw;
+  if (raw.startsWith("/")) return `${API_BASE}${raw}`;
+  return `${API_BASE}/${raw}`;
 }
 
-function isCropHarvested(crop) {
-  if (!crop) return false;
-  const props = crop.properties || crop;
-  return (
-    Number(props.is_harvested) === 1 ||
-    props.is_harvested === true ||
-    !!props.harvested_date
-  );
-}
+function buildPreviewHTML(c) {
+  const img = resolveImageURL(c);
+  const type = c.calamity_type || c.type || "Incident";
+  const sev = c.severity_level || c.severity || "N/A";
+  const barangay = c.barangay || c.location_name || "";
+  const notes = c.notes || c.description || "";
 
-function buildCropPreviewHTML(c) {
-  const img = resolveCropImageURL(c);
-  const name = c.crop_name || "Crop";
-  const variety = c.variety_name || "";
-  const barangay = c.barangay || c.farmer_barangay || "";
-  const planted = c.planted_date
-    ? new Date(c.planted_date).toLocaleDateString()
-    : "";
-  const harvest = c.estimated_harvest
-    ? new Date(c.estimated_harvest).toLocaleDateString()
-    : "";
-  const hectares = c.estimated_hectares;
-  const volume = c.estimated_volume;
+  const sevColors = {
+    Severe: { bg: "#fecaca", text: "#7f1d1d" },
+    High: { bg: "#fee2e2", text: "#991b1b" },
+    Moderate: { bg: "#fef3c7", text: "#92400e" },
+    Medium: { bg: "#fef3c7", text: "#92400e" },
+    Low: { bg: "#dbeafe", text: "#1e40af" },
+  };
+  const sevColor = sevColors[sev] || { bg: "#f3f4f6", text: "#374151" };
 
   return `
-    <div style="width:280px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
-      <div style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 10px 25px rgba(0,0,0,.15);">
+    <div style="width: 280px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;">
+      <div style="background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 10px 25px rgba(0,0,0,.15);">
         ${
           img
-            ? `<div style="width:100%;height:160px;overflow:hidden;position:relative;">
-                 <img src="${img}" alt="${name}" referrerpolicy="no-referrer"
-                      style="width:100%;height:100%;object-fit:cover;" />
+            ? `<div style="width:100%; height:160px; overflow:hidden; position:relative;">
+                 <img src="${img}" alt="${type}" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover;" />
+                 <div style="position:absolute; top:8px; right:8px; font-size:11px; font-weight:600; background:${sevColor.bg}; color:${sevColor.text}; padding:4px 10px; border-radius:12px;">${sev}</div>
                </div>`
-            : `<div style="width:100%;height:160px;display:grid;place-items:center;
-                           background:linear-gradient(135deg,#f3f4f6 0%,#e5e7eb 100%);
-                           color:#9ca3af;">
-                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="2">
+            : `<div style="width:100%; height:160px; display:grid; place-items:center; background:linear-gradient(135deg,#f3f4f6 0%,#e5e7eb 100%); color:#9ca3af; position:relative;">
+                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
                    <polyline points="21 15 16 10 5 21"></polyline>
                  </svg>
+                 <div style="position:absolute; top:8px; right:8px; font-size:11px; font-weight:600; background:${sevColor.bg}; color:${sevColor.text}; padding:4px 10px; border-radius:12px;">${sev}</div>
                </div>`
         }
         <div style="padding:12px;">
-          <div style="font-weight:700;font-size:16px;color:#047857;margin-bottom:4px;">
-            ${name}
+          <div style="font-weight:700; font-size:16px; color:#b91c1c; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#b91c1c"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+            ${type}
           </div>
-          ${
-            variety
-              ? `<div style="font-size:13px;color:#6b7280;margin-bottom:4px;">
-                   Variety: <strong>${variety}</strong>
-                 </div>`
-              : ""
-          }
           ${
             barangay
-              ? `<div style="font-size:13px;color:#6b7280;margin-bottom:6px;display:flex;align-items:center;gap:4px;">
-                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="#6b7280" stroke-width="2">
-                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                     <circle cx="12" cy="10" r="3"></circle>
-                   </svg>
-                   <span><strong>Barangay:</strong> ${barangay}</span>
-                 </div>`
+              ? `<div style="font-size:13px; color:#6b7280; margin-bottom:8px; display:flex; align-items:center; gap:4px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <strong>Barangay:</strong>&nbsp;${barangay}
+                </div>`
               : ""
           }
-          <div style="font-size:12px;color:#4b5563;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
-            ${
-              hectares != null
-                ? `<span>Area: <strong>${hectares}</strong> ha</span>`
-                : ""
-            }
-            ${
-              volume != null
-                ? `<span>Est. volume: <strong>${volume}</strong></span>`
-                : ""
-            }
-          </div>
           ${
-            planted || harvest
-              ? `<div style="font-size:12px;color:#6b7280;margin-top:6px;">
-                   ${
-                     planted
-                       ? `<span>Planted: <strong>${planted}</strong></span>`
-                       : ""
-                   }
-                   ${
-                     planted && harvest ? " · " : ""
-                   }${
-                     harvest
-                       ? `<span>Harvest: <strong>${harvest}</strong></span>`
-                       : ""
-                   }
+            notes
+              ? `<div style="font-size:12px; color:#4b5563; line-height:1.4; max-height:2.8em; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; border-left:3px solid #e5e7eb; padding-left:8px; margin-top:8px;">
+                  ${String(notes).slice(0, 160)}${String(notes).length > 160 ? "…" : ""}
                  </div>`
               : ""
           }
@@ -250,102 +148,11 @@ function buildCropPreviewHTML(c) {
   `;
 }
 
-/* ---------- timeline helper (global month range filter) ---------- */
-function passesTimelineFilter(obj, mode, from, to) {
-  const hasFilter = !!from || !!to;
-  if (!hasFilter) return true;
-
-  const props = obj.properties || obj;
-
-  let raw;
-  if (mode === "harvest") {
-    raw = props.harvested_date || props.estimated_harvest;
-  } else {
-    raw = props.planted_date;
-  }
-
-  if (!raw) return false;
-
-  const value = String(raw).slice(0, 7); // keep YYYY-MM
-
-  if (from && value < from) return false;
-  if (to && value > to) return false;
-  return true;
-}
-
-/* ---------- build polygons from crops ---------- */
-function buildPolygonsFromCrops(crops = []) {
-  const features = [];
-
-  for (const crop of crops) {
-    let coords = crop.coordinates;
-    if (!coords) continue;
-
-    if (typeof coords === "string") {
-      try {
-        coords = JSON.parse(coords);
-      } catch {
-        continue;
-      }
-    }
-
-    if (!Array.isArray(coords) || coords.length < 3) continue;
-
-    const first = coords[0];
-    const last = coords[coords.length - 1];
-    if (JSON.stringify(first) !== JSON.stringify(last)) {
-      coords = [...coords, first]; // close ring
-    }
-
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "Polygon",
-        coordinates: [coords],
-      },
-      properties: {
-        id: crop.id,
-        crop_name: crop.crop_name,
-        variety_name: crop.variety_name,
-        barangay: crop.barangay || crop.farmer_barangay,
-        is_harvested: crop.is_harvested,
-        harvested_date: crop.harvested_date,
-        planted_date: crop.planted_date,
-        estimated_harvest: crop.estimated_harvest,
-        estimated_hectares: crop.estimated_hectares,
-        estimated_volume: crop.estimated_volume,
-      },
-    });
-  }
-
-  return {
-    type: "FeatureCollection",
-    features,
-  };
-}
-
-/* ---------- accuracy circle ---------- */
+/** --------- GPS helpers --------- **/
 function makeAccuracyCircle([lng, lat], accuracy) {
-  const accNum = Number(accuracy);
-  const safeAcc = Number.isFinite(accNum) ? accNum : 10;
-  const radiusKm = Math.max(safeAcc, 10) / 1000;
+  const radiusKm = Math.max(accuracy, 10) / 1000;
   return turf.circle([lng, lat], radiusKm, { steps: 64, units: "kilometers" });
 }
-
-/* ---------- bounds helpers ---------- */
-function isInsideBounds([lng, lat], bounds) {
-  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
-  return lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat;
-}
-function expandBoundsToIncludePoint(bounds, [lng, lat], pad = 0.05) {
-  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
-  return [
-    [Math.min(minLng, lng) - pad, Math.min(minLat, lat) - pad],
-    [Math.max(maxLng, lng) + pad, Math.max(maxLat, lat) + pad],
-  ];
-}
-
-/* ---------- geolocation helpers ---------- */
 function explainGeoError(err) {
   if (!err) return "Unknown geolocation error.";
   switch (err.code) {
@@ -360,25 +167,15 @@ function explainGeoError(err) {
   }
 }
 function startGeoWatch(onPos, onErr, opts) {
-  if (
-    !("geolocation" in navigator) ||
-    typeof navigator.geolocation.watchPosition !== "function"
-  ) {
-    onErr?.({
-      code: 2,
-      message: "Geolocation watch not supported in this browser.",
-    });
+  if (!("geolocation" in navigator) || typeof navigator.geolocation.watchPosition !== "function") {
+    onErr?.({ code: 2, message: "Geolocation watch not supported in this browser." });
     return () => {};
   }
   const id = navigator.geolocation.watchPosition(onPos, onErr, opts);
   return () => {
-    try {
-      navigator.geolocation?.clearWatch?.(id);
-    } catch {}
+    try { navigator.geolocation?.clearWatch?.(id); } catch {}
   };
 }
-
-/* ---------- device orientation ---------- */
 function extractHeadingFromEvent(e) {
   if (typeof e.webkitCompassHeading === "number") return e.webkitCompassHeading;
   if (typeof e.alpha === "number") return (360 - e.alpha + 360) % 360;
@@ -386,10 +183,8 @@ function extractHeadingFromEvent(e) {
 }
 async function startCompass(onHeading) {
   try {
-    if (
-      typeof DeviceOrientationEvent !== "undefined" &&
-      typeof DeviceOrientationEvent.requestPermission === "function"
-    ) {
+    if (typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function") {
       const p = await DeviceOrientationEvent.requestPermission();
       if (p !== "granted") throw new Error("Compass permission denied.");
     }
@@ -399,14 +194,10 @@ async function startCompass(onHeading) {
     if (h != null && !Number.isNaN(h)) onHeading(h);
   };
   const type =
-    "ondeviceorientationabsolute" in window
-      ? "deviceorientationabsolute"
-      : "deviceorientation";
+    "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
   window.addEventListener(type, handler, { passive: true });
   return () => window.removeEventListener(type, handler);
 }
-
-/* ---------- icon button ---------- */
 function IconButton({ title, active, onClick, children }) {
   return (
     <button
@@ -414,9 +205,7 @@ function IconButton({ title, active, onClick, children }) {
       title={title}
       onClick={onClick}
       className={`w-9 h-9 grid place-items-center rounded-lg border transition shadow-sm ${
-        active
-          ? "bg-emerald-600 text-white border-emerald-600"
-          : "bg-white text-gray-800 border-gray-300"
+        active ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-800 border-gray-300"
       } hover:shadow-md`}
     >
       {children}
@@ -424,7 +213,20 @@ function IconButton({ title, active, onClick, children }) {
   );
 }
 
-/* ---------- barangay helpers ---------- */
+/** --------- bounds helpers ---------- **/
+function isInsideBounds([lng, lat], bounds) {
+  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
+  return lng >= minLng && lng <= maxLng && lat >= minLat && lat <= maxLat;
+}
+function expandBoundsToIncludePoint(bounds, [lng, lat], pad = 0.05) {
+  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
+  return [
+    [Math.min(minLng, lng) - pad, Math.min(minLat, lat) - pad],
+    [Math.max(maxLng, lng) + pad, Math.max(maxLat, lat) + pad],
+  ];
+}
+
+/* ---------- Barangay helpers (strict) ---------- */
 function getBarangayName(props) {
   return props?.Barangay ?? props?.barangay ?? props?.NAME ?? props?.name ?? "";
 }
@@ -432,67 +234,30 @@ function strictDetectBarangayForGeometry(geom, barangaysFC) {
   if (!geom || !barangaysFC?.features?.length) return null;
   if (!(geom.type === "Polygon" || geom.type === "MultiPolygon")) return null;
 
-  const farmFeat = { type: "Feature", properties: {}, geometry: geom };
-  const center = turf.centroid(farmFeat);
-  const centerPt = center.geometry;
+  const feat = { type: "Feature", properties: {}, geometry: geom };
+  const center = turf.centroid(feat).geometry;
 
   for (const f of barangaysFC.features) {
     const g = f.geometry;
     if (!g) continue;
-    if (!turf.booleanPointInPolygon(centerPt, g)) continue;
-
+    if (!turf.booleanPointInPolygon(center, g)) continue;
     const ring =
-      geom.type === "Polygon"
-        ? geom.coordinates?.[0] || []
-        : geom.coordinates?.[0]?.[0] || [];
+      geom.type === "Polygon" ? (geom.coordinates?.[0] || []) : (geom.coordinates?.[0]?.[0] || []);
     const allInside = ring.every((coord) => {
-      try {
-        return turf.booleanPointInPolygon(turf.point(coord), g);
-      } catch {
-        return false;
-      }
+      try { return turf.booleanPointInPolygon(turf.point(coord), g); } catch { return false; }
     });
     if (!allInside) continue;
-
     return {
       name: getBarangayName(f.properties || {}),
+      centroid: turf.centroid(f).geometry.coordinates,
       feature: f,
-      centroid: center.geometry.coordinates,
     };
   }
   return null;
 }
 
-const formatNum = (value) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "—";
-  return num.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  });
-};
-
 const UserCalamityMap = () => {
   addPulseStylesOnce();
-
-  // deep-link target
-  const locationState = useLocation().state || {};
-  const [searchParams] = useSearchParams();
-  const coerceNum = (val) => {
-    if (val === null || val === undefined) return NaN;
-    if (typeof val === "string" && val.trim() === "") return NaN;
-    const n = Number(val);
-    return Number.isFinite(n) ? n : NaN;
-  };
-  const target = {
-    lat: coerceNum(locationState.lat ?? searchParams.get("lat")),
-    lng: coerceNum(locationState.lng ?? searchParams.get("lng")),
-    cropId: String(locationState.cropId ?? searchParams.get("cropId") ?? ""),
-    cropName: locationState.cropName ?? searchParams.get("cropName") ?? "",
-    barangay: locationState.barangay ?? searchParams.get("barangay") ?? "",
-    zoom: coerceNum(locationState.zoom ?? searchParams.get("zoom")),
-  };
-  if (!Number.isFinite(target.zoom)) target.zoom = 16;
 
   const mapContainer = useRef(null);
   const map = useRef(null);
@@ -500,196 +265,75 @@ const UserCalamityMap = () => {
   const directionsRef = useRef(null);
   const drawRef = useRef(null);
 
-  const cropMarkerMapRef = useRef(new Map());
-  const selectedLabelRef = useRef(null);
-  const selectedHaloRef = useRef(null);
-
-  // hover popup refs
-  const hoverPopupRef = useRef(null);
-  const hoverLeaveTimerRef = useRef(null);
-
-  const HILITE_SRC = "selected-crop-highlight-src";
-  const HILITE_FILL = "selected-crop-highlight-fill";
-  const HILITE_LINE = "selected-crop-highlight-line";
-
-  const HILITE_ANIM_REF = useRef(null);
-  const hasDeepLinkedRef = useRef(false);
-  const savedMarkersRef = useRef([]);
-
-
   const [mapStyle, setMapStyle] = useState(
     "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
   );
   const [showLayers, setShowLayers] = useState(false);
   const [isSwitcherVisible, setIsSwitcherVisible] = useState(false);
-
   const [selectedBarangay, setSelectedBarangay] = useState(null);
-
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
-  const [isDirectionsVisible] = useState(true); // reserved if you want to toggle
+  const [isDirectionsVisible, setIsDirectionsVisible] = useState(false);
   const [newTagLocation, setNewTagLocation] = useState(null);
   const [isTagging, setIsTagging] = useState(false);
-  const [taggedData] = useState([]);
-
-  const [sidebarCrops, setSidebarCrops] = useState([]);
-  const [selectedCrop, setSelectedCrop] = useState(null);
-  const [selectedCropType, setSelectedCropType] = useState("All");
-  const [cropTypes, setCropTypes] = useState([]);
+  const [sidebarCalamities, setSidebarCalamities] = useState([]);
+  const [selectedCalamity, setSelectedCalamity] = useState(null);
+  const [selectedCalamityType, setSelectedCalamityType] = useState("All");
+  const [calamityTypes, setCalamityTypes] = useState([]);
   const [areMarkersVisible, setAreMarkersVisible] = useState(true);
+  const savedMarkersRef = useRef([]);
   const [enlargedImage, setEnlargedImage] = useState(null);
 
-  const [harvestFilter, setHarvestFilter] = useState("not_harvested");
+  // hover card state
+  const hoverPopupRef = useRef(null);
+  const hoverLeaveTimerRef = useRef(null);
 
-  // timeline filter (global)
-  const [timelineMode, setTimelineMode] = useState("planted"); // "planted" | "harvest"
-  const [timelineFrom, setTimelineFrom] = useState(""); // "YYYY-MM"
-  const [timelineTo, setTimelineTo] = useState(""); // "YYYY-MM"
-  const [hideCompareCard, setHideCompareCard] = useState(false);
-
-  // per-field past season history from backend
-  const [selectedCropHistory, setSelectedCropHistory] = useState([]);
-
-  // GPS / heading
-  const userMarkerRef = useRef(null);
-  const userMarkerElRef = useRef(null);
-  const [userLoc, setUserLoc] = useState(null);
-  const [tracking, setTracking] = useState(false);
-  const watchStopRef = useRef(null);
-
-  const [headingDeg, setHeadingDeg] = useState(null);
-  const [compassOn, setCompassOn] = useState(false);
-  const compassStopRef = useRef(null);
-  const [rotateMapWithHeading, setRotateMapWithHeading] = useState(false);
+  // Deep-link target
+  const locationState = useLocation().state || {};
+  const [searchParams] = useSearchParams();
+  const coerceNum = (v) => {
+    if (v === null || v === undefined) return NaN;
+    if (typeof v === "string" && v.trim() === "") return NaN;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const target = {
+    lat: coerceNum(locationState.lat ?? searchParams.get("lat")),
+    lng: coerceNum(locationState.lng ?? searchParams.get("lng")),
+    incidentId: String(locationState.incidentId ?? searchParams.get("incidentId") ?? ""),
+    incidentType: locationState.incidentType ?? searchParams.get("incidentType") ?? "",
+    barangay: locationState.barangay ?? searchParams.get("barangay") ?? "",
+    zoom: coerceNum(locationState.zoom ?? searchParams.get("zoom")),
+  };
+  if (!Number.isFinite(target.zoom)) target.zoom = 16;
 
   const [lockToBago, setLockToBago] = useState(true);
 
   const SIDEBAR_WIDTH = 500;
   const PEEK = 1;
 
-  // --- helper: normalize coordinates to match same field across seasons ---
-  const normalizeCoordsKey = useCallback((crop) => {
-    if (!crop || !crop.coordinates) return null;
-
-    let coords = crop.coordinates;
-
-    if (typeof coords === "string") {
-      try {
-        coords = JSON.parse(coords);
-      } catch {
-        return null;
-      }
-    }
-
-    if (!Array.isArray(coords) || coords.length < 3) return null;
-
-    let ring = coords.map((pt) => {
-      const [lng, lat] = pt;
-      const nLng = Number.isFinite(Number(lng)) ? Number(lng) : 0;
-      const nLat = Number.isFinite(Number(lat)) ? Number(lat) : 0;
-      return [Number(nLng.toFixed(6)), Number(nLat.toFixed(6))];
-    });
-
-    if (ring.length >= 2) {
-      const first = ring[0];
-      const last = ring[ring.length - 1];
-      if (first[0] === last[0] && first[1] === last[1]) {
-        ring = ring.slice(0, ring.length - 1);
-      }
-    }
-
-    return JSON.stringify(ring);
-  }, []);
-
-  // history: all older seasons for this field from backend
-  const fieldHistory = useMemo(() => {
-    if (!Array.isArray(selectedCropHistory)) return [];
-    return selectedCropHistory
-      .slice()
-      .sort((a, b) => {
-        const da = new Date(
-          a.date_planted || a.planted_date || a.created_at || 0
-        );
-        const db = new Date(
-          b.date_planted || b.planted_date || b.created_at || 0
-        );
-        return da - db;
-      });
-  }, [selectedCropHistory]);
-
-  const lastSeason = fieldHistory.length
-    ? fieldHistory[fieldHistory.length - 1]
-    : null;
-
-  const hasPastSeason = !!lastSeason;
-
-  // current season
-  const croppingSystemLabel =
-    selectedCrop?.cropping_system_label || selectedCrop?.cropping_system || null;
-
-  const primaryCropName = selectedCrop?.crop_name || "";
-  const primaryVarietyName = selectedCrop?.variety_name || null;
-  const primaryVolume = selectedCrop?.estimated_volume ?? null;
-  const primaryUnit = selectedCrop?.yield_unit || "units";
-  const primaryHectares =
-    selectedCrop?.estimated_hectares ?? selectedCrop?.hectares ?? null;
-  const primaryPlantedDate = selectedCrop?.planted_date || null;
-  const primaryHarvestOrEst =
-    selectedCrop?.harvested_date || selectedCrop?.estimated_harvest || null;
-
-  // past season (most recent)
-  const pastCropName = lastSeason?.crop_name || null;
-  const pastVarietyName = lastSeason?.variety_name || null;
-  const pastVolume =
-    lastSeason?.estimated_volume != null ? lastSeason.estimated_volume : null;
-  const pastUnit = lastSeason?.yield_unit || "units";
-  const pastHectares =
-    lastSeason?.hectares ?? lastSeason?.estimated_hectares ?? null;
-  const pastPlantedDate =
-    lastSeason?.date_planted || lastSeason?.planted_date || null;
-  const pastHarvestDate =
-    lastSeason?.date_harvested ||
-    lastSeason?.harvested_date ||
-    lastSeason?.estimated_harvest ||
-    null;
-
-  const hasBothVolumes = primaryVolume != null && pastVolume != null;
-  const volumeDelta = hasBothVolumes ? primaryVolume - pastVolume : null;
-  const volumeDeltaPct =
-    hasBothVolumes && pastVolume !== 0
-      ? ((primaryVolume - pastVolume) / Math.abs(pastVolume)) * 100
-      : null;
-  const volumeDeltaPctLabel =
-    volumeDeltaPct != null
-      ? `${volumeDeltaPct > 0 ? "+" : ""}${volumeDeltaPct.toFixed(0)}%`
-      : null;
+  const calamityColorMap = {
+    Flood: "#3b82f6",
+    Earthquake: "#ef4444",
+    Typhoon: "#8b5cf6",
+    Landslide: "#f59e0b",
+    Drought: "#f97316",
+    Wildfire: "#dc2626",
+  };
 
   const mapStyles = {
-    Default: {
-      url: "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d",
-      thumbnail: DefaultThumbnail,
-    },
-    Satellite: {
-      url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n",
-      thumbnail: SatelliteThumbnail,
-    },
-    Dark: {
-      url: "mapbox://styles/wompwomp-69/cm96veqvt009101szf7g42jps",
-      thumbnail: DarkThumbnail,
-    },
-    Light: {
-      url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0",
-      thumbnail: LightThumbnail,
-    },
+    Default: { url: "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d", thumbnail: DefaultThumbnail },
+    Satellite: { url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n", thumbnail: SatelliteThumbnail },
+    Dark: { url: "mapbox://styles/wompwomp-69/cm96veqvt009101szf7g42jps", thumbnail: DarkThumbnail },
+    Light: { url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0", thumbnail: LightThumbnail },
   };
 
   const zoomToBarangay = (coordinates) => {
-    if (map.current)
-      map.current.flyTo({ center: coordinates, zoom: 14, essential: true });
+    map.current?.flyTo({ center: coordinates, zoom: 14, essential: true });
   };
 
   const handleBarangaySelect = (barangayData) => {
     setSelectedBarangay(barangayData);
-    if (markerRef.current) markerRef.current.remove();
+    markerRef.current?.remove();
 
     if (map.current && barangayData) {
       const el = document.createElement("div");
@@ -697,23 +341,15 @@ const UserCalamityMap = () => {
       el.style.width = "18px";
       el.style.height = "18px";
       el.style.borderRadius = "50%";
-      el.style.backgroundColor = "#10B981";
+      el.style.backgroundColor = "#ef4444";
       el.style.border = "3px solid white";
-      el.style.boxShadow = "0 0 10px rgba(0,0,0,0.3)";
+      el.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
 
       const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
         <div class="text-sm">
-          <h3 class="font-bold text-green-600 text-base">${barangayData.name}</h3>
-          ${
-            barangayData.population
-              ? `<p><strong>Population:</strong> ${barangayData.population}</p>`
-              : ""
-          }
-          ${
-            barangayData.crops
-              ? `<p><strong>Crops:</strong> ${barangayData.crops.join(", ")}</p>`
-              : ""
-          }
+          <h3 class="font-bold text-red-600 text-base">${barangayData.name}</h3>
+          ${barangayData.population ? `<p><strong>Population:</strong> ${barangayData.population}</p>` : ""}
+          ${barangayData.hazards ? `<p><strong>Hazards:</strong> ${barangayData.hazards.join(", ")}</p>` : ""}
         </div>
       `);
 
@@ -725,41 +361,322 @@ const UserCalamityMap = () => {
     }
   };
 
-  /* ---------- TERRAIN helper (DEM + terrain) ---------- */
-  const ensureTerrain = useCallback(() => {
-    if (!map.current) return;
+  // id -> marker for anchoring chip/halo
+  const calamityMarkerMapRef = useRef(new Map());
+  const selectedLabelRef = useRef(null);
+  const selectedHaloRef = useRef(null);
+  const hasDeepLinkedRef = useRef(false);
+
+  const HILITE_SRC = "selected-calamity-highlight-src";
+  const HILITE_FILL = "selected-calamity-highlight-fill";
+  const HILITE_LINE = "selected-calamity-highlight-line";
+  const HILITE_ANIM_REF = useRef(null);
+
+  /** -------- highlight helpers -------- **/
+  const runWhenStyleReady = useCallback((cb) => {
     const m = map.current;
-    try {
-      if (!m.getSource("mapbox-dem")) {
-        m.addSource("mapbox-dem", {
-          type: "raster-dem",
-          url: "mapbox://mapbox.terrain-rgb",
-          tileSize: 512,
-          maxzoom: 14,
-        });
-      }
-      m.setTerrain({ source: "mapbox-dem", exaggeration: 1 });
-    } catch (err) {
-      console.warn("DEM / terrain setup failed:", err);
+    if (!m) return;
+    if (m.isStyleLoaded && m.isStyleLoaded()) {
+      cb();
+      return;
     }
+    const onStyle = () => {
+      if (m.isStyleLoaded && m.isStyleLoaded()) {
+        m.off("styledata", onStyle);
+        cb();
+      }
+    };
+    m.on("styledata", onStyle);
   }, []);
 
-  /* ---------- marker rendering WITH hover preview ---------- */
-  const renderSavedMarkers = useCallback(async () => {
+  function waitForPolygonsReady(m) {
+    return new Promise((resolve) => {
+      if (!m) return resolve();
+      const ready = () =>
+        m.isStyleLoaded() &&
+        !!m.getSource("calamity-polygons") &&
+        !!m.getLayer("calamity-polygons-layer");
+      if (ready()) return resolve();
+      const onIdle = () => {
+        if (ready()) {
+          m.off("idle", onIdle);
+          resolve();
+        }
+      };
+      m.on("idle", onIdle);
+    });
+  }
+
+  const clearSelection = useCallback(() => {
     if (!map.current) return;
+    if (HILITE_ANIM_REF.current) {
+      clearInterval(HILITE_ANIM_REF.current);
+      HILITE_ANIM_REF.current = null;
+    }
+    selectedLabelRef.current?.remove();
+    selectedLabelRef.current = null;
+    selectedHaloRef.current?.remove();
+    selectedHaloRef.current = null;
+    if (map.current.getLayer(HILITE_FILL)) map.current.removeLayer(HILITE_FILL);
+    if (map.current.getLayer(HILITE_LINE)) map.current.removeLayer(HILITE_LINE);
+    if (map.current.getSource(HILITE_SRC)) map.current.removeSource(HILITE_SRC);
+  }, []);
+
+  const showMarkerChipAndHalo = useCallback((id, text = "Selected incident") => {
+    if (!map.current) return;
+    selectedLabelRef.current?.remove();
+    selectedLabelRef.current = null;
+    selectedHaloRef.current?.remove();
+    selectedHaloRef.current = null;
+
+    const marker = calamityMarkerMapRef.current.get(String(id));
+    if (!marker) return;
+    const at = marker.getLngLat();
+
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    chip.textContent = text;
+    const chipMarker = new mapboxgl.Marker({ element: chip, anchor: "bottom", offset: [0, -42] })
+      .setLngLat(at)
+      .addTo(map.current);
+    selectedLabelRef.current = chipMarker;
+
+    const haloWrap = document.createElement("div");
+    haloWrap.className = "pulse-wrapper";
+    const ring = document.createElement("div");
+    ring.className = "pulse-ring";
+    haloWrap.appendChild(ring);
+    const haloMarker = new mapboxgl.Marker({ element: haloWrap, anchor: "center" })
+      .setLngLat(at)
+      .addTo(map.current);
+    selectedHaloRef.current = haloMarker;
+
     try {
-      const response = await axios.get("http://localhost:5000/api/crops");
+      marker.togglePopup();
+    } catch {}
+  }, []);
 
-      // 🔹 FILTER HERE — don't show soft-deleted/inactive crops
-      const allRows = response.data || [];
-      const crops = allRows.filter((c) => !isSoftDeletedCrop(c));
+  const getCalamityCenter = useCallback((item) => {
+    let coords = item?.coordinates;
+    if (!coords) return null;
+    if (typeof coords === "string") {
+      try {
+        coords = JSON.parse(coords);
+      } catch {
+        return null;
+      }
+    }
+    if (!Array.isArray(coords) || coords.length < 3) return null;
+    const first = coords[0],
+      last = coords[coords.length - 1];
+    if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
+    const poly = turf.polygon([coords]);
+    let pt = turf.centerOfMass(poly);
+    if (!pt?.geometry?.coordinates) pt = turf.pointOnFeature(poly);
+    return pt.geometry.coordinates; // [lng, lat]
+  }, []);
 
-      setSidebarCrops(crops);
+  const highlightPolygon = useCallback(
+    (item) => {
+      if (!map.current || !item) return;
+      runWhenStyleReady(() => {
+        let coords = item.coordinates;
+        if (typeof coords === "string") {
+          try {
+            coords = JSON.parse(coords);
+          } catch {
+            return;
+          }
+        }
+        if (!Array.isArray(coords) || coords.length < 3) return;
+        const first = coords[0],
+          last = coords[coords.length - 1];
+        if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
+        const feature = turf.polygon([coords], {
+          id: item.calamity_id ?? item.id,
+          calamity_type: item.calamity_type,
+        });
 
-      // clear previous markers & hover popup
+        const m = map.current;
+
+        if (!m.getSource(HILITE_SRC)) {
+          m.addSource(HILITE_SRC, {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [feature] },
+          });
+          m.addLayer({
+            id: HILITE_FILL,
+            type: "fill",
+            source: HILITE_SRC,
+            paint: { "fill-color": "#ef4444", "fill-opacity": 0.15 },
+          });
+          m.addLayer({
+            id: HILITE_LINE,
+            type: "line",
+            source: HILITE_SRC,
+            paint: { "line-color": "#ef4444", "line-width": 4, "line-opacity": 1 },
+          });
+        } else {
+          m.getSource(HILITE_SRC).setData({
+            type: "FeatureCollection",
+            features: [feature],
+          });
+        }
+
+        if (HILITE_ANIM_REF.current) {
+          clearInterval(HILITE_ANIM_REF.current);
+          HILITE_ANIM_REF.current = null;
+        }
+        let w = 4,
+          dir = +0.4;
+        HILITE_ANIM_REF.current = setInterval(() => {
+          if (!m.getLayer(HILITE_LINE)) return;
+          w += dir;
+          if (w >= 8) dir = -0.4;
+          if (w <= 3) dir = +0.4;
+          try {
+            m.setPaintProperty(HILITE_LINE, "line-width", w);
+          } catch {}
+        }, 80);
+      });
+    },
+    [runWhenStyleReady]
+  );
+
+  const highlightSelection = useCallback(
+    (item) => {
+      if (!map.current || !item) return;
+      clearSelection();
+      const label = `${item.calamity_type || "Incident"}${
+        item.severity_level ? ` – ${item.severity_level}` : ""
+      }`;
+      const id = item.calamity_id ?? item.id;
+      showMarkerChipAndHalo(id, label);
+      highlightPolygon(item);
+      const center = getCalamityCenter(item);
+      if (center)
+        map.current.flyTo({
+          center,
+          zoom: Math.max(map.current.getZoom(), 16),
+          essential: true,
+        });
+    },
+    [clearSelection, showMarkerChipAndHalo, highlightPolygon, getCalamityCenter]
+  );
+
+  /** -------- calamity polygons -------- **/
+  const handlePolyClick = useCallback(
+    (e) => {
+      if (!e.features?.length) return;
+      const feature = e.features[0];
+      const polyId = String(feature.properties?.id ?? "");
+      const calam = sidebarCalamities.find(
+        (c) => String(c.calamity_id ?? c.id) === polyId
+      );
+      if (calam) {
+        setSelectedCalamity(calam);
+        highlightSelection(calam);
+        setIsSidebarVisible(true);
+      }
+      try {
+        const coords = feature.geometry?.coordinates?.[0];
+        if (Array.isArray(coords) && coords.length > 2) {
+          const center = turf
+            .centerOfMass(turf.polygon([coords]))
+            .geometry.coordinates;
+          map.current.easeTo({ center, zoom: Math.max(map.current.getZoom(), 13) });
+        }
+      } catch {}
+    },
+    [highlightSelection, sidebarCalamities]
+  );
+
+  const handlePolyEnter = useCallback(() => {
+    map.current && (map.current.getCanvas().style.cursor = "pointer");
+  }, []);
+  const handlePolyLeave = useCallback(() => {
+    map.current && (map.current.getCanvas().style.cursor = "");
+  }, []);
+
+  const attachPolygonInteractivity = useCallback(() => {
+    if (!map.current?.getLayer("calamity-polygons-layer")) return;
+    map.current.off("click", "calamity-polygons-layer", handlePolyClick);
+    map.current.off("mouseenter", "calamity-polygons-layer", handlePolyEnter);
+    map.current.off("mouseleave", "calamity-polygons-layer", handlePolyLeave);
+    map.current.on("click", "calamity-polygons-layer", handlePolyClick);
+    map.current.on("mouseenter", "calamity-polygons-layer", handlePolyEnter);
+    map.current.on("mouseleave", "calamity-polygons-layer", handlePolyLeave);
+  }, [handlePolyClick, handlePolyEnter, handlePolyLeave]);
+
+  const loadPolygons = useCallback(
+    async (geojsonData = null, isFiltered = false) => {
+      const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
+      const fullData = geojsonData || res.data;
+
+      const paintStyle = isFiltered
+        ? {
+            "fill-color": [
+              "match",
+              ["get", "calamity_type"],
+              "Flood",
+              "#3b82f6",
+              "Earthquake",
+              "#ef4444",
+              "Typhoon",
+              "#8b5cf6",
+              "Landslide",
+              "#f59e0b",
+              "Drought",
+              "#f97316",
+              "Wildfire",
+              "#dc2626",
+              "#ef4444",
+            ],
+            "fill-opacity": 0.4,
+          }
+        : { "fill-color": "#ef4444", "fill-opacity": 0.4 };
+
+      if (map.current.getSource("calamity-polygons")) {
+        map.current.getSource("calamity-polygons").setData(fullData);
+        map.current.setPaintProperty(
+          "calamity-polygons-layer",
+          "fill-color",
+          paintStyle["fill-color"]
+        );
+      } else {
+        map.current.addSource("calamity-polygons", {
+          type: "geojson",
+          data: fullData,
+        });
+        map.current.addLayer({
+          id: "calamity-polygons-layer",
+          type: "fill",
+          source: "calamity-polygons",
+          paint: paintStyle,
+        });
+        map.current.addLayer({
+          id: "calamity-polygons-outline",
+          type: "line",
+          source: "calamity-polygons",
+          paint: { "line-color": "#7f1d1d", "line-width": 2 },
+        });
+      }
+      attachPolygonInteractivity();
+    },
+    [attachPolygonInteractivity]
+  );
+
+  /** -------- markers with HOVER CARD -------- **/
+  const renderSavedMarkers = useCallback(async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/calamities`);
+      const calamities = response.data;
+      setSidebarCalamities(calamities);
+
+      // clear previous
       savedMarkersRef.current.forEach((marker) => marker.remove());
       savedMarkersRef.current = [];
-      cropMarkerMapRef.current.clear();
+      calamityMarkerMapRef.current.clear();
       if (hoverPopupRef.current) {
         try {
           hoverPopupRef.current.remove();
@@ -767,32 +684,30 @@ const UserCalamityMap = () => {
         hoverPopupRef.current = null;
       }
 
-      // filter by crop type first
-      const filteredByType =
-        selectedCropType === "All"
-          ? crops
-          : crops.filter((c) => c.crop_name === selectedCropType);
+      const filtered =
+        selectedCalamityType === "All"
+          ? calamities
+          : calamities.filter(
+              (calamity) => calamity.calamity_type === selectedCalamityType
+            );
 
-      // then filter by harvest status
-      let filtered = filteredByType;
-      if (harvestFilter === "harvested") {
-        filtered = filtered.filter((c) => isCropHarvested(c));
-      } else if (harvestFilter === "not_harvested") {
-        filtered = filtered.filter((c) => !isCropHarvested(c));
+      if (filtered.length === 0) {
+        toast.info("No Calamities Found .", {
+          position: "top-center",
+          autoClose: 3000,
+          hideProgressBar: true,
+          theme: "light",
+        });
+        return;
       }
 
-      // then global timeline (month range)
-      filtered = filtered.filter((c) =>
-        passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
-      );
-
-      for (const crop of filtered) {
-        let coords = crop.coordinates;
+      filtered.forEach((calamity) => {
+        let coords = calamity.coordinates;
         if (typeof coords === "string") {
           try {
             coords = JSON.parse(coords);
           } catch {
-            continue;
+            return;
           }
         }
         if (Array.isArray(coords) && coords.length > 2) {
@@ -800,32 +715,31 @@ const UserCalamityMap = () => {
           const last = coords[coords.length - 1];
           if (JSON.stringify(first) !== JSON.stringify(last)) coords.push(first);
 
-          const center = turf.centerOfMass(turf.polygon([coords])).geometry
-            .coordinates;
+          const center = turf.centerOfMass(turf.polygon([coords])).geometry.coordinates;
 
-          const isHarvestedFlag = isCropHarvested(crop);
           const marker = new mapboxgl.Marker({
-            color: isHarvestedFlag ? "#6B7280" : "#10B981",
+            color: calamityColorMap[calamity.calamity_type] || "#ef4444",
           })
             .setLngLat(center)
             .setPopup(
-              new mapboxgl.Popup({ offset: 15 }).setHTML(`
-              <div class="text-sm">
-                <h3 class='font-bold text-green-600'>${crop.crop_name}</h3>
-                <p><strong>Variety:</strong> ${crop.variety_name || "N/A"}</p>
-              </div>
-            `)
+              new mapboxgl.Popup({ offset: 15 }).setHTML(
+                `
+                <div class="text-sm">
+                  <h3 class='font-bold text-red-600'>${calamity.calamity_type}</h3>
+                  <p><strong>Severity:</strong> ${calamity.severity_level || "N/A"}</p>
+                </div>
+              `
+              )
             )
             .addTo(map.current);
 
-          // click = select crop
           marker.getElement().addEventListener("click", () => {
-            setSelectedCrop(crop);
-            highlightSelection(crop);
+            setSelectedCalamity(calamity);
+            highlightSelection(calamity);
             setIsSidebarVisible(true);
           });
 
-          // hover → fancy preview
+          // hover card
           marker.getElement().addEventListener("mouseenter", () => {
             if (hoverLeaveTimerRef.current) {
               clearTimeout(hoverLeaveTimerRef.current);
@@ -834,14 +748,14 @@ const UserCalamityMap = () => {
             try {
               hoverPopupRef.current?.remove();
             } catch {}
-            const html = buildCropPreviewHTML(crop);
+            const html = buildPreviewHTML(calamity);
             const popup = new mapboxgl.Popup({
               closeButton: false,
               closeOnClick: false,
               closeOnMove: false,
               offset: 30,
               anchor: "top",
-              className: "crop-hover-preview",
+              className: "calamity-hover-preview",
               maxWidth: "none",
             })
               .setLngLat(center)
@@ -874,170 +788,28 @@ const UserCalamityMap = () => {
             }, 140);
           });
 
-          cropMarkerMapRef.current.set(String(crop.id), marker);
+          const calId = String(calamity.calamity_id ?? calamity.id);
+          calamityMarkerMapRef.current.set(calId, marker);
           savedMarkersRef.current.push(marker);
         }
-      }
-
-      ensureDeepLinkSelection();
+      });
     } catch (error) {
       console.error("Failed to load saved markers:", error);
     }
-  }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-  ]);
+  }, [selectedCalamityType, highlightSelection]);
 
-  /* ---------- polygon loader with harvested color ---------- */
-  const loadPolygons = useCallback(
-    async (cropsOverride = null) => {
-      if (!map.current) return;
+  /** -------- GPS + heading -------- **/
+  const userMarkerRef = useRef(null);
+  const userMarkerElRef = useRef(null);
+  const [userLoc, setUserLoc] = useState(null);
+  const [tracking, setTracking] = useState(false);
+  const watchStopRef = useRef(null);
 
-      let crops = cropsOverride;
+  const [headingDeg, setHeadingDeg] = useState(null);
+  const [compassOn, setCompassOn] = useState(false);
+  const compassStopRef = useRef(null);
+  const [rotateMapWithHeading, setRotateMapWithHeading] = useState(false);
 
-      if (!crops) {
-        const res = await axios.get("http://localhost:5000/api/crops");
-        const rows = res.data || [];
-        crops = rows.filter((c) => !isSoftDeletedCrop(c));
-      } else {
-        crops = (crops || []).filter((c) => !isSoftDeletedCrop(c));
-      }
-
-      const fullData = buildPolygonsFromCrops(crops);
-
-      const baseColorByCrop = [
-        "match",
-        ["get", "crop_name"],
-        "Rice",
-        "#facc15",
-        "Corn",
-        "#fb923c",
-        "Banana",
-        "#a3e635",
-        "Sugarcane",
-        "#34d399",
-        "Cassava",
-        "#60a5fa",
-        "Vegetables",
-        "#f472b6",
-        /* other */ "#10B981",
-      ];
-
-      const paintStyle = {
-        "fill-color": [
-          "case",
-          ["==", ["get", "is_harvested"], 1],
-          "#9CA3AF", // gray for harvested
-          baseColorByCrop,
-        ],
-        "fill-opacity": 0.4,
-      };
-
-      if (map.current.getSource("crop-polygons")) {
-        map.current.getSource("crop-polygons").setData(fullData);
-        map.current.setPaintProperty(
-          "crop-polygons-layer",
-          "fill-color",
-          paintStyle["fill-color"]
-        );
-      } else {
-        map.current.addSource("crop-polygons", {
-          type: "geojson",
-          data: fullData,
-        });
-        map.current.addLayer({
-          id: "crop-polygons-layer",
-          type: "fill",
-          source: "crop-polygons",
-          paint: paintStyle,
-        });
-        map.current.addLayer({
-          id: "crop-polygons-outline",
-          type: "line",
-          source: "crop-polygons",
-          paint: { "line-color": "#065F46", "line-width": 1 },
-        });
-      }
-    },
-    [] // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  const ensureBarangayLayers = useCallback(() => {
-    if (!map.current) return;
-    const m = map.current;
-    if (!BARANGAYS_FC?.features?.length) return;
-
-    // source
-    if (!m.getSource("barangays-src")) {
-      m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
-    }
-
-    // boundary line
-    if (!m.getLayer("barangays-line")) {
-      m.addLayer({
-        id: "barangays-line",
-        type: "line",
-        source: "barangays-src",
-        paint: {
-          "line-color": "#1f2937",
-          "line-width": 1,
-          "line-opacity": 0.7,
-        },
-      });
-    }
-
-    // 🔹 name labels (works on all styles, incl. Satellite)
-    if (!m.getLayer("barangays-labels")) {
-      m.addLayer({
-        id: "barangays-labels",
-        type: "symbol",
-        source: "barangays-src",
-        layout: {
-          "text-field": [
-            "coalesce",
-            ["get", "Barangay"],
-            ["get", "barangay"],
-            ["get", "NAME"],
-            ["get", "name"],
-            "",
-          ],
-          "symbol-placement": "point",
-          "text-size": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            10,
-            10,
-            12,
-            12,
-            14,
-            14,
-            16,
-            18,
-          ],
-          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
-          "text-allow-overlap": false,
-        },
-        paint: {
-          "text-color": "#111827",
-          "text-halo-color": "rgba(255,255,255,0.9)",
-          "text-halo-width": 1.5,
-          "text-halo-blur": 0.2,
-        },
-      });
-    }
-
-    try {
-      if (m.getLayer("crop-polygons-outline")) {
-        m.moveLayer("barangays-labels");
-      }
-    } catch {}
-  }, []);
-
-  // GPS accuracy ring
   const USER_ACC_SOURCE = "user-accuracy-source";
   const USER_ACC_LAYER = "user-accuracy-layer";
   const USER_ACC_OUTLINE = "user-accuracy-outline";
@@ -1054,17 +826,17 @@ const UserCalamityMap = () => {
     }
     if (!m.getLayer(USER_ACC_LAYER)) {
       m.addLayer({
-        id: USER_ACC_LAYER,
+        id: "user-accuracy-layer",
         type: "fill",
-        source: USER_ACC_SOURCE,
+        source: "user-accuracy-source",
         paint: { "fill-color": "#3b82f6", "fill-opacity": 0.15 },
       });
     }
     if (!m.getLayer(USER_ACC_OUTLINE)) {
       m.addLayer({
-        id: USER_ACC_OUTLINE,
+        id: "user-accuracy-outline",
         type: "line",
-        source: USER_ACC_SOURCE,
+        source: "user-accuracy-source",
         paint: { "line-color": "#2563eb", "line-width": 2 },
       });
     }
@@ -1083,87 +855,71 @@ const UserCalamityMap = () => {
   const setUserMarker = useCallback(
     (lng, lat, acc) => {
       if (!map.current) return;
-
-      const nLng = Number(lng);
-      const nLat = Number(lat);
-      if (!Number.isFinite(nLng) || !Number.isFinite(nLat)) {
-        console.error("Invalid coords in setUserMarker:", { lng, lat });
-        toast.error("Invalid GPS coordinates.");
-        return;
-      }
-
       const m = map.current;
 
       if (!userMarkerElRef.current) {
         const el = document.createElement("div");
-        el.style.position = "relative";
-        el.style.width = "26px";
-        el.style.height = "26px";
+        el.style.width = "36px";
+        el.style.height = "36px";
         el.style.borderRadius = "50%";
-        el.style.border = "2px solid rgba(37,99,235,0.55)";
-        el.style.background = "rgba(37,99,235,0.10)";
-        el.style.boxShadow = "0 0 4px rgba(37,99,235,0.35)";
+        el.style.position = "relative";
+        el.style.boxShadow = "0 0 0 3px rgba(59,130,246,0.25)";
+        el.style.background = "rgba(59,130,246,0.10)";
 
-        const triangle = document.createElement("div");
-        triangle.style.position = "absolute";
-        triangle.style.left = "50%";
-        triangle.style.top = "50%";
-        triangle.style.transform = "translate(-50%, -55%)";
-        triangle.style.width = "0";
-        triangle.style.height = "0";
-        triangle.style.borderLeft = "7px solid transparent";
-        triangle.style.borderRight = "7px solid transparent";
-        triangle.style.borderBottom = "12px solid #2563eb";
-
-        el.appendChild(triangle);
+        const arrow = document.createElement("div");
+        arrow.style.position = "absolute";
+        arrow.style.left = "50%";
+        arrow.style.top = "50%";
+        arrow.style.transform = "translate(-50%, -65%)";
+        arrow.style.width = "0";
+        arrow.style.height = "0";
+        arrow.style.borderLeft = "8px solid transparent";
+        arrow.style.borderRight = "8px solid transparent";
+        arrow.style.borderBottom = "16px solid #2563eb";
+        arrow.style.filter = "drop-shadow(0 1px 2px rgba(0,0,0,0.3))";
+        el.appendChild(arrow);
 
         userMarkerElRef.current = el;
 
-        userMarkerRef.current = new mapboxgl.Marker({
-          element: el,
-          anchor: "center",
-        })
-          .setLngLat([nLng, nLat])
-          .setPopup(new mapboxgl.Popup({ offset: 12 }).setText("You are here"))
-          .addTo(m);
-      } else {
-        userMarkerRef.current.setLngLat([nLng, nLat]);
+        if (!userMarkerRef.current) {
+          userMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "center" })
+            .setLngLat([lng, lat])
+            .setPopup(new mapboxgl.Popup({ offset: 12 }).setText("You are here"))
+            .addTo(m);
+        } else {
+          userMarkerRef.current.setElement(el);
+        }
       }
 
-      const accNum = Number(acc);
-      const safeAcc = Number.isFinite(accNum) ? accNum : 10;
-      updateUserAccuracyCircle(nLng, nLat, safeAcc);
+      userMarkerRef.current.setLngLat([lng, lat]);
+      updateUserAccuracyCircle(lng, lat, acc);
+
+      if (typeof headingDeg === "number" && userMarkerElRef.current) {
+        userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
+      }
 
       m.easeTo({
-        center: [nLng, nLat],
+        center: [lng, lat],
         zoom: Math.max(m.getZoom(), 15),
         duration: 0,
         essential: true,
       });
+
+      if (rotateMapWithHeading && typeof headingDeg === "number") {
+        m.setBearing(headingDeg);
+      }
     },
-    [updateUserAccuracyCircle]
+    [headingDeg, rotateMapWithHeading, updateUserAccuracyCircle]
   );
 
   const handleFix = useCallback(
     (glng, glat, accuracy) => {
       if (!map.current) return;
 
-      const lng = Number(glng);
-      const lat = Number(glat);
-
-      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
-        console.error("Invalid coords in handleFix:", { glng, glat });
-        toast.error("Invalid GPS coordinates from browser.");
-        return;
-      }
-
-      const accNum = Number(accuracy);
-      const safeAcc = Number.isFinite(accNum) ? accNum : 10;
-
-      if (lockToBago && !isInsideBounds([lng, lat], BAGO_CITY_BOUNDS)) {
+      if (lockToBago && !isInsideBounds([glng, glat], BAGO_CITY_BOUNDS)) {
         const expanded = expandBoundsToIncludePoint(
           BAGO_CITY_BOUNDS,
-          [lng, lat],
+          [glng, glat],
           0.05
         );
         map.current.setMaxBounds(expanded);
@@ -1172,437 +928,217 @@ const UserCalamityMap = () => {
         );
       }
 
-      setUserLoc({ lng, lat, acc: safeAcc });
-      setUserMarker(lng, lat, safeAcc);
+      setUserLoc({ lng: glng, lat: glat, acc: accuracy });
+      setUserMarker(glng, glat, accuracy);
     },
     [lockToBago, setUserMarker]
   );
 
-  function getCropCenter(crop) {
-    let coords = crop?.coordinates;
-    if (!coords) return null;
-    if (typeof coords === "string") {
-      try {
-        coords = JSON.parse(coords);
-      } catch {
-        return null;
-      }
-    }
-    if (!Array.isArray(coords) || coords.length < 3) return null;
-    const first = coords[0];
-    const last = coords[coords.length - 1];
-    if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
-    const poly = turf.polygon([coords]);
-    let pt = turf.centerOfMass(poly);
-    if (!pt?.geometry?.coordinates) pt = turf.pointOnFeature(poly);
-    return pt.geometry.coordinates;
-  }
-
-  // ---------- estimate average elevation (center-based) ----------
-  function estimateAverageElevation(geom) {
+  /** -------- barangay layers (borders + labels) -------- **/
+  const ensureBarangayLayers = useCallback(() => {
+    if (!map.current) return;
+    if (!BARANGAYS_FC?.features?.length) return;
     const m = map.current;
-    if (!m || !geom) return null;
-    if (typeof m.queryTerrainElevation !== "function") return null;
 
+    // source
+    if (!m.getSource("barangays-src")) {
+      m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
+    } else {
+      try { m.getSource("barangays-src").setData(BARANGAYS_FC); } catch {}
+    }
+
+    // 1) glow/casing
+    if (!m.getLayer("barangays-casing")) {
+      m.addLayer({
+        id: "barangays-casing",
+        type: "line",
+        source: "barangays-src",
+        paint: {
+          "line-color": "#9CA3AF",
+          "line-opacity": 0.9,
+          "line-blur": 1.2,
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            10, 2.0,
+            12, 3.0,
+            14, 4.0,
+            16, 6.0,
+            18, 9.0
+          ]
+        }
+      });
+    }
+
+    // 2) main stroke
+    if (!m.getLayer("barangays-line")) {
+      m.addLayer({
+        id: "barangays-line",
+        type: "line",
+        source: "barangays-src",
+        paint: {
+          "line-color": "#065f46",
+          "line-opacity": 0.95,
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            10, 1.2,
+            12, 1.8,
+            14, 2.6,
+            16, 3.6,
+            18, 5.5
+          ]
+        }
+      });
+    }
+
+    // 3) labels
+    if (!m.getLayer("barangays-labels")) {
+      m.addLayer({
+        id: "barangays-labels",
+        type: "symbol",
+        source: "barangays-src",
+        layout: {
+          "text-field": [
+            "coalesce", ["get","Barangay"], ["get","barangay"], ["get","NAME"], ["get","name"], ""
+          ],
+          "symbol-placement": "point",
+          "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 12, 12, 14, 14, 16, 18],
+          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+          "symbol-sort-key": 999999,
+          "visibility": "visible"
+        },
+        paint: {
+          "text-color": "#0b3b2e",
+          "text-halo-color": "rgba(255,255,255,0.98)",
+          "text-halo-width": 2.2,
+          "text-halo-blur": 0.4
+        }
+      });
+    }
+
+    // order
     try {
-      const feat = { type: "Feature", geometry: geom, properties: {} };
-      const center = turf.centroid(feat);
-      const [lng, lat] = center.geometry.coordinates;
-      const raw = m.queryTerrainElevation(
-        { lng, lat },
-        { exaggerated: false }
-      );
-      if (typeof raw === "number" && Number.isFinite(raw)) {
-        return Number(raw.toFixed(1)); // meters
-      }
-    } catch (err) {
-      console.warn("estimateAverageElevation failed:", err);
-    }
-    return null;
-  }
-
-  /* ---------- reuse existing polygon for new season ---------- */
-  const openTagFormForExistingCrop = useCallback((crop) => {
-    if (!crop) return;
-
-    let coords = crop.coordinates;
-    if (!coords) return;
-
-    if (typeof coords === "string") {
-      try {
-        coords = JSON.parse(coords);
-      } catch {
-        return;
-      }
-    }
-
-    if (!Array.isArray(coords) || coords.length < 3) return;
-
-    const first = coords[0];
-    const last = coords[coords.length - 1];
-    if (JSON.stringify(first) !== JSON.stringify(last)) {
-      coords = [...coords, first];
-    }
-
-    const farmGeometry = {
-      type: "Polygon",
-      coordinates: [coords],
-    };
-
-    const center =
-      getCropCenter({ ...crop, coordinates: coords }) || coords[0];
-
-    setSelectedBarangay((prev) => ({
-      ...(prev || {}),
-      name: crop.barangay || crop.farmer_barangay || prev?.name || "",
-      coordinates: center,
-    }));
-
-    setNewTagLocation({
-      coordinates: coords,
-      hectares: crop.estimated_hectares,
-      farmGeometry,
-    });
-
-    setIsTagging(true);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const clearSelection = useCallback(() => {
-    if (!map.current) return;
-
-    if (HILITE_ANIM_REF.current) {
-      clearInterval(HILITE_ANIM_REF.current);
-      HILITE_ANIM_REF.current = null;
-    }
-
-    selectedLabelRef.current?.remove();
-    selectedLabelRef.current = null;
-    selectedHaloRef.current?.remove();
-    selectedHaloRef.current = null;
-
-    if (map.current.getLayer(HILITE_FILL)) map.current.removeLayer(HILITE_FILL);
-    if (map.current.getLayer(HILITE_LINE)) map.current.removeLayer(HILITE_LINE);
-    if (map.current.getSource(HILITE_SRC)) map.current.removeSource(HILITE_SRC);
-  }, []);
-
-  const showMarkerChipAndHalo = useCallback((cropId, chipText = "Selected crop") => {
-    if (!map.current) return;
-
-    selectedLabelRef.current?.remove();
-    selectedLabelRef.current = null;
-    selectedHaloRef.current?.remove();
-    selectedHaloRef.current = null;
-
-    const marker = cropMarkerMapRef.current.get(String(cropId));
-    if (!marker) return;
-    const at = marker.getLngLat();
-
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.textContent = chipText;
-
-    const chipMarker = new mapboxgl.Marker({
-      element: chip,
-      anchor: "bottom",
-      offset: [0, -42],
-    })
-      .setLngLat(at)
-      .addTo(map.current);
-    selectedLabelRef.current = chipMarker;
-
-    const haloWrap = document.createElement("div");
-    haloWrap.className = "pulse-wrapper";
-    const ring = document.createElement("div");
-    ring.className = "pulse-ring";
-    haloWrap.appendChild(ring);
-
-    const haloMarker = new mapboxgl.Marker({
-      element: haloWrap,
-      anchor: "center",
-    })
-      .setLngLat(at)
-      .addTo(map.current);
-    selectedHaloRef.current = haloMarker;
-
-    try {
-      marker.togglePopup();
+      m.moveLayer("barangays-casing");
+      m.moveLayer("barangays-line");
+      const layers = m.getStyle()?.layers || [];
+      const topId = layers[layers.length - 1]?.id;
+      if (topId) m.moveLayer("barangays-labels", topId); else m.moveLayer("barangays-labels");
     } catch {}
   }, []);
 
-  const runWhenStyleReady = (cb) => {
+  /** ---- keep barangay labels/borders alive across style changes ---- **/
+  const armBarangayKeepAlive = useCallback(() => {
     const m = map.current;
-    if (!m) return;
-    if (m.isStyleLoaded && m.isStyleLoaded()) {
-      cb();
-      return;
-    }
-    const onStyle = () => {
-      if (m.isStyleLoaded && m.isStyleLoaded()) {
-        m.off("styledata", onStyle);
-        cb();
-      }
-    };
-    m.on("styledata", onStyle);
-  };
+    if (!m) return () => {};
 
-  const highlightPolygon = useCallback((crop) => {
-    if (!map.current || !crop) return;
-
-    runWhenStyleReady(() => {
-      let coords = crop.coordinates;
-      if (typeof coords === "string") {
-        try {
-          coords = JSON.parse(coords);
-        } catch {
-          return;
-        }
-      }
-      if (!Array.isArray(coords) || coords.length < 3) return;
-
-      const first = coords[0];
-      const last = coords[coords.length - 1];
-      if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
-      const feature = turf.polygon([coords], {
-        id: crop.id,
-        crop_name: crop.crop_name,
-      });
-
-      const m = map.current;
-
-      if (!m.getSource(HILITE_SRC)) {
-        m.addSource(HILITE_SRC, {
-          type: "geojson",
-          data: { type: "FeatureCollection", features: [feature] },
-        });
-        m.addLayer({
-          id: HILITE_FILL,
-          type: "fill",
-          source: HILITE_SRC,
-          paint: { "fill-color": "#10B981", "fill-opacity": 0.18 },
-        });
-        m.addLayer({
-          id: HILITE_LINE,
-          type: "line",
-          source: HILITE_SRC,
-          paint: { "line-color": "#10B981", "line-width": 1, "line-opacity": 1 },
-        });
-      } else {
-        m.getSource(HILITE_SRC).setData({
-          type: "FeatureCollection",
-          features: [feature],
-        });
-      }
-
-      if (HILITE_ANIM_REF.current) {
-        clearInterval(HILITE_ANIM_REF.current);
-        HILITE_ANIM_REF.current = null;
-      }
-      let w = 2;
-      let dir = +0.4;
-      HILITE_ANIM_REF.current = setInterval(() => {
-        if (!m.getLayer(HILITE_LINE)) return;
-        w += dir;
-        if (w >= 4) dir = -0.3;
-        if (w <= 1) dir = +0.3;
-        try {
-          m.setPaintProperty(HILITE_LINE, "line-width", w);
-        } catch {}
-      }, 80);
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const highlightSelection = useCallback(
-    (crop) => {
-      if (!map.current || !crop) return;
-      clearSelection();
-      showMarkerChipAndHalo(
-        crop.id,
-        `${crop.crop_name}${crop.variety_name ? ` – ${crop.variety_name}` : ""}`
-      );
-      highlightPolygon(crop);
-      const center = getCropCenter(crop);
-      if (center) {
-        map.current.flyTo({
-          center,
-          zoom: Math.max(map.current.getZoom(), 16),
-          essential: true,
-        });
-      }
-    },
-    [clearSelection, showMarkerChipAndHalo, highlightPolygon]
-  );
-
-  const ensureDeepLinkSelection = useCallback(() => {
-    if (!map.current) return;
-    if (!target.cropId) return;
-    if (!sidebarCrops.length) return;
-
-    const hit = sidebarCrops.find(
-      (c) => String(c.id) === String(target.cropId)
-    );
-    if (!hit) return;
-
-    setSelectedCrop(hit);
-    setIsSidebarVisible(true);
-    highlightSelection(hit);
-
-    const center = getCropCenter(hit);
-    if (center) {
-      map.current.flyTo({
-        center,
-        zoom: target.zoom ?? 17,
-        essential: true,
-      });
-    }
-    hasDeepLinkedRef.current = true;
-  }, [sidebarCrops, target.cropId, target.zoom, highlightSelection]);
-
-  useEffect(() => {
-    if (!hasDeepLinkedRef.current) ensureDeepLinkSelection();
-  }, [ensureDeepLinkSelection]);
-
-  // fetch backend crop history for selected crop
-  useEffect(() => {
-    if (!selectedCrop) {
-      setSelectedCropHistory([]);
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchHistory = async () => {
-      try {
-        const res = await axios.get(
-          `http://localhost:5000/api/crops/${selectedCrop.id}/history`
-        );
-        if (!cancelled) {
-          const rows = Array.isArray(res.data) ? res.data : [];
-          setSelectedCropHistory(rows);
-        }
-      } catch (err) {
-        console.error("Failed to fetch crop history:", err);
-        if (!cancelled) setSelectedCropHistory([]);
-      }
+    const reapply = () => {
+      if (!m.isStyleLoaded || !m.isStyleLoaded()) return;
+      ensureBarangayLayers();
     };
 
-    fetchHistory();
+    reapply();
+    m.on("styledata", reapply);
+    m.on("idle", reapply);
 
     return () => {
-      cancelled = true;
+      try {
+        m.off("styledata", reapply);
+        m.off("idle", reapply);
+      } catch {}
     };
-  }, [selectedCrop]);
+  }, [ensureBarangayLayers]);
 
-  // init map
+  /** -------- map init: RUNS ONCE -------- **/
   useEffect(() => {
-    if (!map.current) {
-      const m = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: mapStyle,
-        center: [122.9616, 10.5074],
-        zoom: 7,
-      });
+    if (map.current) return;
 
-      map.current = m;
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: mapStyle,
+      center: INIT_CENTER,
+      zoom: INIT_ZOOM,
+      maxBounds: BAGO_CITY_BOUNDS,
+    });
 
-      if (lockToBago) m.setMaxBounds(BAGO_CITY_BOUNDS);
+    axios.get(`${API_BASE}/api/calamities/types`).then((res) => setCalamityTypes(res.data));
+    map.current.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-      axios
-        .get("http://localhost:5000/api/crops/types")
-        .then((res) => setCropTypes(res.data));
+    drawRef.current = new MapboxDraw({
+      displayControlsDefault: false,
+      controls: { polygon: true, trash: true },
+    });
+    map.current.addControl(drawRef.current, "bottom-right");
 
-      // Draw + nav controls
-      drawRef.current = new MapboxDraw({
-        displayControlsDefault: false,
-        controls: { polygon: true, trash: true },
-      });
-      m.addControl(drawRef.current, "bottom-right");
-      m.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+    map.current.on("load", async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
+        const geojson = res.data;
 
-      // directions control
-      m.on("load", async () => {
-        // 🔹 enable terrain / DEM
-        ensureTerrain();
-
-        if (!directionsRef.current && isDirectionsVisible) {
-          const directions = new MapboxDirections({
-            accessToken: mapboxgl.accessToken,
-            unit: "metric",
-            profile: "mapbox/driving",
-            controls: {
-              instructions: true,
-              profileSwitcher: true,
-            },
+        if (map.current.getSource("calamity-polygons")) {
+          map.current.getSource("calamity-polygons").setData(geojson);
+        } else {
+          map.current.addSource("calamity-polygons", {
+            type: "geojson",
+            data: geojson,
           });
-
-          directionsRef.current = directions;
-          m.addControl(directions, "top-left");
+          map.current.addLayer({
+            id: "calamity-polygons-layer",
+            type: "fill",
+            source: "calamity-polygons",
+            paint: { "fill-color": "#ef4444", "fill-opacity": 0.4 },
+          });
+          map.current.addLayer({
+            id: "calamity-polygons-outline",
+            type: "line",
+            source: "calamity-polygons",
+            paint: { "line-color": "#7f1d1d", "line-width": 2 },
+          });
         }
+      } catch (err) {
+        console.error(" Failed to load polygons:", err);
+      }
 
-        try {
-          await loadPolygons();
-        } catch (err) {
-          console.error("Failed to load polygons:", err);
-        }
+      ensureUserAccuracyLayers();
+      ensureBarangayLayers();
+      // keep-alive for barangay labels/borders
+      const __disarm = armBarangayKeepAlive();
+      map.current.__barangayDisarm = __disarm;
 
-        ensureUserAccuracyLayers();
-        ensureBarangayLayers();
-        await renderSavedMarkers();
+      attachPolygonInteractivity();
+      await renderSavedMarkers();
 
-        if (!hasDeepLinkedRef.current) {
-          let focus = null;
+      // deep-link after layers ready
+      if (!hasDeepLinkedRef.current) {
+        await waitForPolygonsReady(map.current);
 
-          if (target.cropId && sidebarCrops.length) {
-            const hit = sidebarCrops.find(
-              (c) => String(c.id) === String(target.cropId)
-            );
-            if (hit) {
-              setSelectedCrop(hit);
-              highlightSelection(hit);
-              setIsSidebarVisible(true);
-              focus = getCropCenter(hit);
-            }
-          }
+        let didHighlight = false;
 
-          if (
-            !focus &&
-            Number.isFinite(target.lat) &&
-            Number.isFinite(target.lng)
-          ) {
-            focus = [target.lng, target.lat];
-          }
-
-          if (focus) {
-            hasDeepLinkedRef.current = true;
-            m.flyTo({
-              center: focus,
-              zoom: target.zoom,
-              essential: true,
-            });
+        if (target.incidentId && sidebarCalamities.length) {
+          const hit = sidebarCalamities.find(
+            (c) => String(c.calamity_id ?? c.id) === String(target.incidentId)
+          );
+          if (hit) {
+            setSelectedCalamity(hit);
+            highlightSelection(hit);
+            setIsSidebarVisible(true);
+            const center = getCalamityCenter(hit);
+            if (center) map.current.flyTo({ center, zoom: target.zoom, essential: true });
+            didHighlight = true;
           }
         }
-      });
 
-      m.on("click", "crop-polygons-layer", (e) => {
-        const feature = e.features[0];
-        const cropId = feature.properties?.id;
-        if (!cropId) return;
-        const cropData = sidebarCrops.find(
-          (c) => String(c.id) === String(cropId)
-        );
-        if (cropData && !isSoftDeletedCrop(cropData)) {
-          setSelectedCrop(cropData);
-          highlightSelection(cropData);
-          setIsSidebarVisible(true);
+        if (!didHighlight && Number.isFinite(target.lat) && Number.isFinite(target.lng)) {
+          map.current.flyTo({ center: [target.lng, target.lat], zoom: target.zoom, essential: true });
         }
-      });
 
+        if (didHighlight) hasDeepLinkedRef.current = true;
+      }
+
+      // draw constraint
       const handleDrawAttempt = (feature) => {
-        if (!feature || !feature.geometry) return;
-
-        if (
-          feature.geometry.type !== "Polygon" &&
-          feature.geometry.type !== "MultiPolygon"
-        )
+        if (!feature?.geometry) return;
+        if (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon")
           return;
 
         const poly = feature.geometry;
@@ -1615,134 +1151,140 @@ const UserCalamityMap = () => {
           setIsTagging(false);
           setNewTagLocation(null);
           toast.error(
-            "The tagged area is outside of a single barangay boundary. Please draw entirely within one barangay."
+            "The tagged area must be entirely inside a single barangay. Please redraw within one barangay."
           );
           return false;
         }
 
         const ring =
-          poly.type === "Polygon"
-            ? poly.coordinates?.[0]
-            : poly.coordinates?.[0]?.[0];
-
-        const area = turf.area({
-          type: "Feature",
-          geometry: poly,
-          properties: {},
-        });
+          poly.type === "Polygon" ? poly.coordinates?.[0] : poly.coordinates?.[0]?.[0];
+        const area = turf.area({ type: "Feature", geometry: poly, properties: {} });
         const hectares = +(area / 10000).toFixed(2);
 
-        // 🔹 compute average elevation (meters) for this polygon
-        const avgElevationM = estimateAverageElevation(poly);
-
-        setSelectedBarangay({
-          name: detection.name,
-          coordinates: detection.centroid,
-        });
-        setNewTagLocation({
-          coordinates: ring,
-          hectares,
-          farmGeometry: poly,
-          avgElevationM, // <--- pass elevation into Tag form state
-        });
+        setSelectedBarangay({ name: detection.name, coordinates: detection.centroid });
+        setNewTagLocation({ coordinates: ring, hectares });
         setIsTagging(true);
         return true;
       };
 
-      m.on("draw.create", (e) => {
-        const feature = e.features?.[0];
-        handleDrawAttempt(feature);
-      });
-
-      m.on("draw.update", (e) => {
-        const feature = e.features?.[0];
-        const ok = handleDrawAttempt(feature);
+      map.current.on("draw.create", (e) => handleDrawAttempt(e.features?.[0]));
+      map.current.on("draw.update", (e) => {
+        const ok = handleDrawAttempt(e.features?.[0]);
         if (!ok) {
           try {
-            drawRef.current?.delete(feature.id);
+            drawRef.current?.delete(e.features?.[0]?.id);
           } catch {}
         }
       });
-    } else {
-      // style change branch
-      map.current.setStyle(mapStyle);
-      map.current.once("style.load", async () => {
-        // 🔹 re-enable terrain each time style changes
-        ensureTerrain();
-
-        ensureUserAccuracyLayers();
-        ensureBarangayLayers();
-        if (userLoc) {
-          updateUserAccuracyCircle(userLoc.lng, userLoc.lat, userLoc.acc);
-          if (userMarkerRef.current)
-            userMarkerRef.current
-              .setLngLat([userLoc.lng, userLoc.lat])
-              .addTo(map.current);
-          if (typeof headingDeg === "number" && userMarkerElRef.current) {
-            userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
-          }
-        }
-        await loadPolygons();
-        await renderSavedMarkers();
-        if (selectedCrop) {
-          highlightSelection(selectedCrop);
-        } else if (!hasDeepLinkedRef.current) {
-          let focus = null;
-          if (target.cropId && sidebarCrops.length) {
-            const hit = sidebarCrops.find(
-              (c) => String(c.id) === String(target.cropId)
-            );
-            if (hit) {
-              setSelectedCrop(hit);
-              highlightSelection(hit);
-              setIsSidebarVisible(true);
-              focus = getCropCenter(hit);
-            }
-          }
-          if (
-            !focus &&
-            Number.isFinite(target.lat) &&
-            Number.isFinite(target.lng)
-          ) {
-            focus = [target.lng, target.lat];
-          }
-          if (focus) {
-            hasDeepLinkedRef.current = true;
-            map.current.flyTo({
-              center: focus,
-              zoom: target.zoom,
-              essential: true,
-            });
-          }
-        }
-        ensureDeepLinkSelection();
-      });
-    }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    mapStyle,
-    lockToBago,
-    ensureUserAccuracyLayers,
-    ensureBarangayLayers,
-    ensureTerrain,
-    renderSavedMarkers,
-    loadPolygons,
-    highlightSelection,
-  ]);
+  }, []); // RUNS ONCE
 
-  // markers should follow crop + harvest + timeline filters
+  /** -------- style change: ONLY when mapStyle URL changes -------- **/
+  const lastStyleRef = useRef(mapStyle);
   useEffect(() => {
     if (!map.current) return;
-    if (!areMarkersVisible) return;
-    renderSavedMarkers();
+    if (lastStyleRef.current === mapStyle) return;
+    lastStyleRef.current = mapStyle;
+
+    map.current.setStyle(mapStyle);
+    map.current.once("style.load", async () => {
+      ensureUserAccuracyLayers();
+      await loadPolygons();            // add fills/lines first
+      ensureBarangayLayers();          // then add + hoist labels to top
+
+      // re-arm keep-alive after style swap
+      map.current.__barangayDisarm?.();
+      const __disarm2 = armBarangayKeepAlive();
+      map.current.__barangayDisarm = __disarm2;
+
+      await renderSavedMarkers();
+      attachPolygonInteractivity();
+
+      // restore user marker/accuracy if we had a fix already
+      if (userLoc) {
+        updateUserAccuracyCircle(userLoc.lng, userLoc.lat, userLoc.acc);
+        userMarkerRef.current?.setLngLat([userLoc.lng, userLoc.lat]).addTo(map.current);
+        if (typeof headingDeg === "number" && userMarkerElRef.current) {
+          userMarkerElRef.current.style.transform = `rotate(${headingDeg}deg)`;
+        }
+      }
+
+      if (selectedCalamity) {
+        highlightSelection(selectedCalamity);
+      } else if (!hasDeepLinkedRef.current && target.incidentId && sidebarCalamities.length) {
+        const hit = sidebarCalamities.find(
+          (c) => String(c.calamity_id ?? c.id) === String(target.incidentId)
+        );
+        if (hit) {
+          setSelectedCalamity(hit);
+          highlightSelection(hit);
+          setIsSidebarVisible(true);
+          const center =
+            getCalamityCenter(hit) ||
+            (Number.isFinite(target.lng) && Number.isFinite(target.lat)
+              ? [target.lng, target.lat]
+              : null);
+          if (center) {
+            hasDeepLinkedRef.current = true;
+            map.current.flyTo({ center, zoom: target.zoom, essential: true });
+          }
+        }
+      }
+    });
   }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-    areMarkersVisible,
+    mapStyle,
+    ensureUserAccuracyLayers,
+    loadPolygons,
+    ensureBarangayLayers,
+    armBarangayKeepAlive,
     renderSavedMarkers,
+    attachPolygonInteractivity,
+    selectedCalamity,
+    sidebarCalamities,
+    target.incidentId,
+    target.lng,
+    target.lat,
+    target.zoom,
+    getCalamityCenter,
+    highlightSelection,
+    updateUserAccuracyCircle,
+    headingDeg,
+    userLoc,
+  ]);
+
+  // deep-link after list arrives (no setStyle here)
+  useEffect(() => {
+    if (!map.current || hasDeepLinkedRef.current || !target.incidentId || !sidebarCalamities.length)
+      return;
+    runWhenStyleReady(async () => {
+      await waitForPolygonsReady(map.current);
+      const hit = sidebarCalamities.find(
+        (c) => String(c.calamity_id ?? c.id) === String(target.incidentId)
+      );
+      if (!hit) return;
+
+      setSelectedCalamity(hit);
+      highlightSelection(hit);
+      setIsSidebarVisible(true);
+
+      const center =
+        getCalamityCenter(hit) ||
+        (Number.isFinite(target.lng) && Number.isFinite(target.lat)
+          ? [target.lng, target.lat]
+          : null);
+      if (center) map.current.flyTo({ center, zoom: target.zoom ?? 16, essential: true });
+      hasDeepLinkedRef.current = true;
+    });
+  }, [
+    sidebarCalamities,
+    target.incidentId,
+    target.lat,
+    target.lng,
+    target.zoom,
+    highlightSelection,
+    runWhenStyleReady,
+    getCalamityCenter,
   ]);
 
   // lock toggle
@@ -1757,100 +1299,60 @@ const UserCalamityMap = () => {
     }
   }, [lockToBago]);
 
-  // filter polygons based on crop type + harvest + timeline
   useEffect(() => {
-    const applyPolygonFilters = async () => {
-      if (!map.current) return;
+    if (map.current) renderSavedMarkers();
+  }, [selectedCalamityType, renderSavedMarkers]);
 
-      try {
-        let crops = sidebarCrops;
-
-        if (!crops || !crops.length) {
-          const res = await axios.get("http://localhost:5000/api/crops");
-          const rows = res.data || [];
-          crops = rows.filter((c) => !isSoftDeletedCrop(c));
-        } else {
-          crops = crops.filter((c) => !isSoftDeletedCrop(c));
-        }
-
-        let filtered = [...crops];
-
-        if (selectedCropType !== "All") {
-          filtered = filtered.filter(
-            (c) => c.crop_name === selectedCropType
-          );
-        }
-
-        if (harvestFilter === "harvested") {
-          filtered = filtered.filter((c) => isCropHarvested(c));
-        } else if (harvestFilter === "not_harvested") {
-          filtered = filtered.filter((c) => !isCropHarvested(c));
-        }
-
-        filtered = filtered.filter((c) =>
-          passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
-        );
-
-        await loadPolygons(filtered);
-      } catch (err) {
-        console.error("Failed to filter polygons:", err);
+  useEffect(() => {
+    const filterPolygonsByCalamity = async () => {
+      const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
+      const geojson = res.data;
+      if (selectedCalamityType === "All") {
+        await loadPolygons(geojson, true);
+      } else {
+        const filtered = {
+          ...geojson,
+          features: geojson.features.filter(
+            (f) => f.properties.calamity_type === selectedCalamityType
+          ),
+        };
+        await loadPolygons(filtered, true);
       }
     };
+    if (map.current?.getSource("calamity-polygons")) filterPolygonsByCalamity();
+  }, [selectedCalamityType, loadPolygons]);
 
-    applyPolygonFilters();
-  }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-    sidebarCrops,
-    loadPolygons,
-  ]);
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === "Escape") setEnlargedImage(null);
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, []);
 
-  // cleanup
+  // Cleanup GPS + selection + animation + hover popup
   useEffect(() => {
     return () => {
-      watchStopRef.current?.();
-      userMarkerRef.current?.remove();
-      compassStopRef.current?.();
-      clearSelection();
-
-      if (HILITE_ANIM_REF.current) {
-        clearInterval(HILITE_ANIM_REF.current);
-        HILITE_ANIM_REF.current = null;
-      }
-
-      if (hoverLeaveTimerRef.current) {
-        clearTimeout(hoverLeaveTimerRef.current);
-        hoverLeaveTimerRef.current = null;
-      }
-
-      if (hoverPopupRef.current) {
-        try {
-          hoverPopupRef.current.remove();
-        } catch {}
-        hoverPopupRef.current = null;
-      }
-
-      if (map.current) {
-        try {
-          map.current.remove();
-        } catch (e) {
-          console.warn("Error removing map:", e);
+      try {
+        map.current?.__barangayDisarm?.(); // remove keep-alive listeners
+        watchStopRef.current?.();
+        userMarkerRef.current?.remove();
+        compassStopRef.current?.();
+        if (HILITE_ANIM_REF.current) {
+          clearInterval(HILITE_ANIM_REF.current);
+          HILITE_ANIM_REF.current = null;
         }
-        map.current = null;
-      }
-
-      directionsRef.current = null;
+        hoverPopupRef.current?.remove();
+        clearSelection();
+      } catch {}
     };
   }, [clearSelection]);
 
-  // ------------- UI -------------
   return (
     <div className="relative h-screen w-screen">
-      {/* GPS / toolbar */}
+      {/* GPS toolbar */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white/70 backdrop-blur rounded-xl p-2 shadow-md">
+        {/* Locate me */}
         <IconButton
           title="Locate me"
           active={false}
@@ -1867,23 +1369,9 @@ const UserCalamityMap = () => {
                   maximumAge: 0,
                 })
               );
-              const { longitude, latitude, accuracy } = pos.coords;
-
-              const glng = Number(longitude);
-              const glat = Number(latitude);
-
-              if (!Number.isFinite(glng) || !Number.isFinite(glat)) {
-                console.error(
-                  "Invalid GPS coords from browser (once):",
-                  pos.coords
-                );
-                toast.error("Browser returned invalid GPS coordinates.");
-                return;
-              }
-
+              const { longitude: glng, latitude: glat, accuracy } = pos.coords;
               handleFix(glng, glat, accuracy);
             } catch (e) {
-              console.error(e);
               toast.error(explainGeoError(e));
             }
           }}
@@ -1893,6 +1381,7 @@ const UserCalamityMap = () => {
           </svg>
         </IconButton>
 
+        {/* Live tracking */}
         <IconButton
           title={tracking ? "Stop tracking" : "Start tracking"}
           active={tracking}
@@ -1904,26 +1393,13 @@ const UserCalamityMap = () => {
             if (!tracking) {
               const stop = startGeoWatch(
                 (pos) => {
-                  const { longitude, latitude, accuracy, heading } = pos.coords;
-
-                  const glng = Number(longitude);
-                  const glat = Number(latitude);
-
-                  if (!Number.isFinite(glng) || !Number.isFinite(glat)) {
-                    console.error(
-                      "Invalid GPS coords from browser (watch):",
-                      pos.coords
-                    );
-                    return;
-                  }
-
+                  const { longitude: glng, latitude: glat, accuracy, heading } = pos.coords;
                   handleFix(glng, glat, accuracy);
                   if (typeof heading === "number" && !Number.isNaN(heading)) {
                     setHeadingDeg(heading);
                     if (userMarkerElRef.current)
                       userMarkerElRef.current.style.transform = `rotate(${heading}deg)`;
-                    if (rotateMapWithHeading && map.current)
-                      map.current.setBearing(heading);
+                    if (rotateMapWithHeading && map.current) map.current.setBearing(heading);
                   }
                 },
                 (err) => toast.error(explainGeoError(err)),
@@ -1951,19 +1427,20 @@ const UserCalamityMap = () => {
           )}
         </IconButton>
 
+        {/* Compass toggle */}
         <IconButton
           title={compassOn ? "Stop compass" : "Start compass"}
           active={compassOn}
           onClick={async () => {
             if (!compassOn) {
               try {
-                compassStopRef.current = await startCompass((deg) => {
+                const stop = await startCompass((deg) => {
                   setHeadingDeg(deg);
                   if (userMarkerElRef.current)
                     userMarkerElRef.current.style.transform = `rotate(${deg}deg)`;
-                  if (rotateMapWithHeading && map.current)
-                    map.current.setBearing(deg);
+                  if (rotateMapWithHeading && map.current) map.current.setBearing(deg);
                 });
+                compassStopRef.current = stop;
                 setCompassOn(true);
                 toast.success("Compass ON");
               } catch (e) {
@@ -1978,10 +1455,11 @@ const UserCalamityMap = () => {
           }}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2Zm3.7 6.3-2.6 6.5a1 1 0 0 1-.6.6l-6.5 2.6 2.6-6.5Z" />
+            <path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2Zm3.7 6.3-2.6 6.5a1 1 0 0 1-.6.6l-6.5 2.6 2.6-6.5a1 1 0 0 1 .6-.6l6.5-2.6Z" />
           </svg>
         </IconButton>
 
+        {/* Follow heading */}
         <IconButton
           title="Follow heading (rotate map)"
           active={rotateMapWithHeading}
@@ -1992,6 +1470,7 @@ const UserCalamityMap = () => {
           </svg>
         </IconButton>
 
+        {/* Lock to Bago */}
         <IconButton
           title={lockToBago ? "Unlock map" : "Lock to Bago"}
           active={lockToBago}
@@ -2003,7 +1482,7 @@ const UserCalamityMap = () => {
             </svg>
           ) : (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17 8h-1V6a4 4 0 0 0-7.33-2.4l1.5 1.32A2 2 0 0 1 13 6v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2Z" />
+              <path d="M17 8h-1V6a4 4 0 0 0-7.33-2.4l1.5 1.32A2 2 0 0 1 13 6v2H7a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2Z" />
             </svg>
           )}
         </IconButton>
@@ -2012,219 +1491,107 @@ const UserCalamityMap = () => {
       {/* Map */}
       <div ref={mapContainer} className="h-full w-full" />
 
-      {selectedCrop && !hideCompareCard && (
-        <div className="absolute right-4 top-24 z-40 w-[290px] md:w-[320px]">
-          <div className="relative rounded-xl border border-emerald-100 bg-white/95 backdrop-blur px-4 py-3 shadow-md">
-            <button
-              type="button"
-              onClick={() => setHideCompareCard(true)}
-              className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 text-[11px] font-bold text-gray-700 hover:bg-gray-300"
-              title="Hide comparison"
-            >
-              ×
-            </button>
+     
 
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
-                  Crop overview
-                </p>
-                {croppingSystemLabel && (
-                  <p className="text-[11px] text-gray-500">
-                    {croppingSystemLabel}
-                  </p>
-                )}
-              </div>
+      <div
+        style={{
+          position: "absolute",
+          left: isSidebarVisible ? "480px" : "0px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          zIndex: 10,
+        }}
+      ></div>
 
-              {hasPastSeason && hasBothVolumes && (
-                <div className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-800">
-                  {volumeDeltaPctLabel ?? ""}
-                </div>
-              )}
-            </div>
+      <SidebarToggleButton
+        onClick={() => setIsSidebarVisible(!isSidebarVisible)}
+        isSidebarVisible={isSidebarVisible}
+        sidebarWidth={SIDEBAR_WIDTH}
+        peek={PEEK}
+      />
 
-            {/* current season */}
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 mb-3">
-              <p className="text-[11px] font-semibold text-emerald-900">
-                Current season
-              </p>
-              <p className="text-sm font-semibold text-gray-900">
-                {primaryCropName || "—"}
-              </p>
-              {primaryVarietyName && (
-                <p className="text-[11px] text-gray-500">
-                  Variety: {primaryVarietyName}
-                </p>
-              )}
-
-              <div className="mt-2 space-y-1 text-[11px] text-gray-700">
-                <div className="flex justify-between">
-                  <span>Area</span>
-                  <span className="font-semibold">
-                    {primaryHectares != null
-                      ? `${formatNum(primaryHectares)} ha`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Volume</span>
-                  <span className="font-semibold">
-                    {primaryVolume != null
-                      ? `${formatNum(primaryVolume)} ${primaryUnit}`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Planted</span>
-                  <span className="font-semibold">
-                    {primaryPlantedDate
-                      ? new Date(primaryPlantedDate).toLocaleDateString()
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Harvest</span>
-                  <span className="font-semibold">
-                    {primaryHarvestOrEst
-                      ? new Date(primaryHarvestOrEst).toLocaleDateString()
-                      : "—"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* past season */}
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-[11px] font-semibold text-gray-800">
-                Previous season
-              </p>
-
-              {hasPastSeason ? (
-                <>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {pastCropName}
-                  </p>
-                  {pastVarietyName && (
-                    <p className="text-[11px] text-gray-500">
-                      Variety: {pastVarietyName}
-                    </p>
-                  )}
-
-                  <div className="mt-2 space-y-1 text-[11px] text-gray-700">
-                    <div className="flex justify-between">
-                      <span>Area</span>
-                      <span className="font-semibold">
-                        {pastHectares != null
-                          ? `${formatNum(pastHectares)} ha`
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Volume</span>
-                      <span className="font-semibold">
-                        {pastVolume != null
-                          ? `${formatNum(pastVolume)} ${pastUnit}`
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Planted</span>
-                      <span className="font-semibold">
-                        {pastPlantedDate
-                          ? new Date(pastPlantedDate).toLocaleDateString()
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Harvest</span>
-                      <span className="font-semibold">
-                        {pastHarvestDate
-                          ? new Date(pastHarvestDate).toLocaleDateString()
-                          : "—"}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <p className="mt-1 text-[11px] text-gray-500">
-                  No past season recorded for this field.
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Layers (when sidebar hidden) */}
       {!isSidebarVisible && (
         <button
-          onClick={() => setIsSwitcherVisible(!isSwitcherVisible)}
-          className="absolute bottom-6 left-4 w-20 h-20 rounded-xl shadow-md overflow-hidden z-30 bg-white border border-gray-300 hover:shadow-lg transition"
-          title="Map layers"
+          onClick={() => {
+            if (directionsRef.current) {
+              map.current.removeControl(directionsRef.current);
+              directionsRef.current = null;
+            } else {
+              const directions = new MapboxDirections({
+                accessToken: mapboxgl.accessToken,
+                unit: "metric",
+                profile: "mapbox/driving",
+                controls: { inputs: true, instructions: true },
+              });
+              map.current.addControl(directions, "top-right");
+              directionsRef.current = directions;
+            }
+            setIsDirectionsVisible(!isDirectionsVisible);
+          }}
+          className="absolute top-4 left-16 bg-white border border-gray-300 rounded-full w-10 h-10 flex items-center justify-center shadow-md hover:shadow-lg z-50"
         >
-          <div className="w-full h-full relative">
-            <img
-              src={DefaultThumbnail}
-              alt="Layers"
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute bottom-0 left-0 right-0 text-white text-xs font-semibold px-2 py-1 bg-black/60 text-center">
-              Layers
-            </div>
-          </div>
+          <svg
+            className="w-5 h-5 text-gray-800"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
         </button>
       )}
 
-      {!isSidebarVisible && isSwitcherVisible && (
-        <div className="absolute bottom-28 left-4 bg-white p-2 rounded-xl shadow-xl flex space-x-2 z-30 transition-all duration-300">
-          {Object.entries(mapStyles).map(([label, { url, thumbnail }]) => (
-            <button
-              key={label}
-              onClick={() => {
-                setMapStyle(url);
-                setIsSwitcherVisible(false);
-              }}
-              className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
-              title={label}
-            >
-              <img
-                src={thumbnail}
-                alt={label}
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute bottom-0 w-full text-[10px] text-white text-center bg-black/60 py-[2px]">
-                {label}
+      {!isSidebarVisible && (
+        <>
+          <button
+            onClick={() => setIsSwitcherVisible(!isSwitcherVisible)}
+            className="absolute bottom-6 left-4 w-20 h-20 rounded-xl shadow-md overflow-hidden z-30 bg-white border border-gray-300 hover:shadow-lg transition"
+          >
+            <div className="w-full h-full relative">
+              <img src={DefaultThumbnail} alt="Layers" className="w-full h-full object-cover" />
+              <div className="absolute bottom-0 left-0 right-0 text-white text-xs font-semibold px-2 py-1 bg-black/60 text-center">
+                Layers
               </div>
-            </button>
-          ))}
-        </div>
+            </div>
+          </button>
+
+          {isSwitcherVisible && (
+            <div className="absolute bottom-28 left-4 bg-white p-2 rounded-xl shadow-xl flex space-x-2 z-30 transition-all duration-300">
+              {Object.entries(mapStyles).map(([label, { url, thumbnail }]) => (
+                <button
+                  key={label}
+                  onClick={() => {
+                    setMapStyle(url);
+                    setIsSwitcherVisible(false);
+                  }}
+                  className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
+                >
+                  <img src={thumbnail} alt={label} className="w-full h-full object-cover" />
+                  <div className="absolute bottom-0 w-full text-[10px] text-white text-center bg-black bg-opacity-60 py-[2px]">
+                    {label}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Marker toggle */}
       {!isTagging && (
         <button
           onClick={() => {
             if (areMarkersVisible) {
-              cropMarkerMapRef.current.forEach((m) => m.remove?.());
-              if (hoverLeaveTimerRef.current) {
-                clearTimeout(hoverLeaveTimerRef.current);
-                hoverLeaveTimerRef.current = null;
-              }
-              if (hoverPopupRef.current) {
-                try {
-                  hoverPopupRef.current.remove();
-                } catch {}
-                hoverPopupRef.current = null;
-              }
+              savedMarkersRef.current.forEach((marker) => marker.remove());
+              hoverPopupRef.current?.remove();
+              hoverPopupRef.current = null;
             } else {
               renderSavedMarkers();
             }
             setAreMarkersVisible(!areMarkersVisible);
-            if (!areMarkersVisible) {
-              clearSelection();
-            }
+            if (!areMarkersVisible) clearSelection();
           }}
-          className="absolute bottom-[140px] right-[9px] z-50 bg:white bg-white border border-gray-300 rounded-[5px] w-8 h-8 flex items-center justify-center shadow-[0_0_8px_2px_rgba(0,0,0,0.15)] "
+          className="absolute bottom-[128px] right-[9px] z-50 bg:white bg-white border border-gray-300 rounded-[5px] w-8 h-8 flex items-center justify-center shadow-[0_0_8px_2px_rgba(0,0,0,0.15)] "
           title={areMarkersVisible ? "Hide Markers" : "Show Markers"}
         >
           <svg
@@ -2244,15 +1611,6 @@ const UserCalamityMap = () => {
         </button>
       )}
 
-      {/* Sidebar toggle */}
-      <SidebarToggleButton
-        onClick={() => setIsSidebarVisible(!isSidebarVisible)}
-        isSidebarVisible={isSidebarVisible}
-        sidebarWidth={SIDEBAR_WIDTH}
-        peek={PEEK}
-      />
-
-      {/* Sidebar */}
       <div
         className={`absolute top-0 left-0 h-full z-40 bg-white border-r border-gray-200 transition-all duration-200 ease-in-out overflow-hidden ${
           isSidebarVisible ? "w-[500px] px-6 py-8" : "w-0 px-0 py-0"
@@ -2267,33 +1625,13 @@ const UserCalamityMap = () => {
             zoomToBarangay={zoomToBarangay}
             onBarangaySelect={handleBarangaySelect}
             selectedBarangay={selectedBarangay}
-            cropTypes={cropTypes}
-            selectedCropType={selectedCropType}
-            setSelectedCropType={setSelectedCropType}
-            crops={sidebarCrops}
-            selectedCrop={selectedCrop}
+            calamityTypes={calamityTypes}
+            selectedCalamityType={selectedCalamityType}
+            setSelectedCalamityType={setSelectedCalamityType}
+            calamities={sidebarCalamities}
+            selectedCalamity={selectedCalamity}
             setEnlargedImage={setEnlargedImage}
             visible={isSidebarVisible}
-            harvestFilter={harvestFilter}
-            setHarvestFilter={setHarvestFilter}
-            timelineMode={timelineMode}
-            setTimelineMode={setTimelineMode}
-            timelineFrom={timelineFrom}
-            setTimelineFrom={setTimelineFrom}
-            timelineTo={timelineTo}
-            setTimelineTo={setTimelineTo}
-            onStartNewSeason={openTagFormForExistingCrop}
-            onCropUpdated={(updated) => {
-              setSelectedCrop(updated);
-              setSidebarCrops((prev) =>
-                prev.map((c) => (c.id === updated.id ? updated : c))
-              );
-              if (isCropHarvested(updated)) {
-                setHarvestFilter("harvested");
-              }
-              renderSavedMarkers();
-            }}
-            cropHistory={selectedCropHistory}
           />
         )}
       </div>
@@ -2309,7 +1647,7 @@ const UserCalamityMap = () => {
 
       {enlargedImage && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-90 z-[9999] flex justify-center items-center"
+          className="fixed inset-0 bg-black bg-opacity-90 z-[9999] flex justify-center items-center animate-fadeIn"
           onClick={() => setEnlargedImage(null)}
         >
           <button
@@ -2324,7 +1662,7 @@ const UserCalamityMap = () => {
           </button>
           <img
             src={enlargedImage}
-            alt="Fullscreen Crop"
+            alt="Fullscreen Calamity"
             className="max-w-full max-h-full object-contain"
           />
         </div>

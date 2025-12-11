@@ -132,7 +132,13 @@ const UserSidebar = ({
   const [showCropDropdown, setShowCropDropdown] = useState(false);
   const navigate = useNavigate();
 
- 
+ const handleBackToCrops = () => {
+    if (window.history.length > 1) {
+      navigate(-1); // go back to previous page (e.g., /ManageCrops)
+    } else {
+      navigate("/AdminManageCalamity"); // fallback if opened directly
+    }
+  };
 
   // barangay data
   const barangayCoordinates = {
@@ -497,7 +503,17 @@ const UserSidebar = ({
           </div>
         </div>
 
-       
+        {/* 🔙 Back to Manage Crops */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={handleBackToCrops}
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            title="Go back to Manage Crops"
+          >
+            ← Back 
+          </button>
+        </div>
 
         {/* location */}
         <Section title="Location">

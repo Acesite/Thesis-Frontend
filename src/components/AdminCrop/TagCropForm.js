@@ -365,6 +365,77 @@ const TagCropForm = ({
     return inferredTop && !uniq.has(inferredTop) ? [inferredTop, ...base] : base;
   }, [availableBarangays, availableFromFC, detectedBarangayName, selectedBarangay]);
 
+    // 🔹 Prefill farmer details when reusing previous season
+useEffect(() => {
+  if (!defaultLocation) return;
+
+  // Name
+  setFarmerFirstName((cur) =>
+    cur ||
+    defaultLocation.farmerFirstName ||
+    defaultLocation.farmer_first_name ||
+    ""
+  );
+  setFarmerLastName((cur) =>
+    cur ||
+    defaultLocation.farmerLastName ||
+    defaultLocation.farmer_last_name ||
+    ""
+  );
+
+  // Mobile
+  setFarmerMobile((cur) =>
+    cur ||
+    defaultLocation.farmerMobile ||
+    defaultLocation.farmer_mobile ||
+    ""
+  );
+
+  // Barangay
+  setFarmerBarangay((cur) =>
+    cur ||
+    defaultLocation.farmerBarangay ||
+    defaultLocation.farmer_barangay ||
+    defaultLocation.barangay ||
+    ""
+  );
+
+  // ✅ Complete address
+  setFarmerAddress((cur) =>
+    cur ||
+    defaultLocation.farmerAddress ||  
+    defaultLocation.farmer_address ||
+    defaultLocation.completeAddress ||
+    defaultLocation.complete_address ||
+    ""
+  );
+
+  // Tenure
+  const tenureRaw =
+    defaultLocation.tenureId ??
+    defaultLocation.tenure_id ??
+    defaultLocation.tenure;
+
+  if (tenureRaw != null && tenureRaw !== "") {
+    setSelectedTenureId((cur) => cur || String(tenureRaw));
+  }
+
+  // Anonymous flag
+  const anon =
+    defaultLocation.isAnonymousFarmer ??
+    defaultLocation.is_anonymous_farmer;
+  if (
+    anon === 1 ||
+    anon === "1" ||
+    anon === true ||
+    anon === "true"
+  ) {
+    setIsAnonymousFarmer(true);
+  }
+}, [defaultLocation]);
+
+
+
   // Try to detect barangay from farm polygon
   useEffect(() => {
     const res = detectBarangayFeature(farmGeometry, barangaysFC);

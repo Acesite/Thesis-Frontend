@@ -206,9 +206,9 @@ const AdminNavBar = () => {
           </a>
 
           <a
-            href="/ManageCrops"
+            href="/AdminManageCrop"
             className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/ManageCrops"
+              location.pathname === "/AdminManageCrop"
                 ? "text-emerald-700 font-medium"
                 : "text-gray-800"
             }`}
@@ -217,9 +217,9 @@ const AdminNavBar = () => {
           </a>
 
           <a
-            href="/ManageCalamity"
+            href="/AdminManageCalamity"
             className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/ManageCalamity"
+              location.pathname === "/AdminManageCalamity"
                 ? "text-emerald-700 font-medium"
                 : "text-gray-800"
             }`}

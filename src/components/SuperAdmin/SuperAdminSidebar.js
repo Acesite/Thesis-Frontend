@@ -137,7 +137,7 @@ const SuperAdminSidebar = ({
     if (window.history.length > 1) {
       navigate(-1); // go back to previous page (e.g., /ManageCrops)
     } else {
-      navigate("/ManageCrops"); // fallback if opened directly
+      navigate("/AdminManageCrop"); // fallback if opened directly
     }
   };
 
@@ -600,7 +600,7 @@ const SuperAdminSidebar = ({
                     </button>
                   )} */}
 
-                  {isHarvested && onStartNewSeason && (
+                  {/* {isHarvested && onStartNewSeason && (
                     <button
                       type="button"
                       onClick={() => onStartNewSeason(selectedCrop)}
@@ -608,7 +608,7 @@ const SuperAdminSidebar = ({
                     >
                       Reuse field (new season)
                     </button>
-                  )}
+                  )} */}
                 </div>
               </div>
 

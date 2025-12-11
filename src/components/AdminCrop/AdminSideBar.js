@@ -137,7 +137,7 @@ const AdminSideBar = ({
     if (window.history.length > 1) {
       navigate(-1); // go back to previous page (e.g., /ManageCrops)
     } else {
-      navigate("/ManageCrops"); // fallback if opened directly
+      navigate("/AdminManageCrop"); // fallback if opened directly
     }
   };
 
@@ -600,15 +600,15 @@ const AdminSideBar = ({
                     </button>
                   )}
 
-                  {isHarvested && onStartNewSeason && (
-                    <button
-                      type="button"
-                      onClick={() => onStartNewSeason(selectedCrop)}
-                      className="mt-1 inline-flex items-center rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-                    >
-                      Reuse field (new season)
-                    </button>
-                  )}
+               {isHarvested && onStartNewSeason && (
+  <button
+    type="button"
+    onClick={() => onStartNewSeason(selectedCrop)} // ✅ Passes full crop object
+    className="mt-1 inline-flex items-center rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+  >
+    Reuse field (new season)
+  </button>
+)}
                 </div>
               </div>
 

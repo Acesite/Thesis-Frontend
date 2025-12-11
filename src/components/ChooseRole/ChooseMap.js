@@ -8,7 +8,7 @@ const ChooseMap = () => {
     if (map === "calamity") {
       navigate("/CalamityFarmerMap");
     } else if (map === "crop") {
-      navigate("/AdminMap");
+      navigate("/AdminCropMap");
     }
   };
 
