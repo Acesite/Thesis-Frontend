@@ -59,6 +59,9 @@ const SuperAdminArchive = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
 
+  // kebab menu (per row)
+  const [openMenuId, setOpenMenuId] = useState(null);
+
   // fetch archived crops
   async function fetchArchive() {
     setLoading(true);
@@ -128,69 +131,99 @@ const SuperAdminArchive = () => {
 
   // helpers to convert display id "C-000123" -> numeric rawId
   const displayIdToRaw = (displayId) => {
-    // your items keep rawId; prefer that
     const item = items.find((x) => x.id === displayId);
     return item?.rawId ?? null;
   };
 
-  async function restoreOne(displayId) {
+  // Single restore with confirmation (UI-only)
+  async function restoreOne(displayId, options = {}) {
+    const { skipConfirm = false } = options;
     const rawId = displayIdToRaw(displayId);
     if (!rawId) return;
+
+    if (!skipConfirm) {
+      const ok = window.confirm(
+        "Are you sure you want to restore this record?"
+      );
+      if (!ok) {
+        setOpenMenuId(null);
+        return;
+      }
+    }
+
     await axios.post(`http://localhost:5000/api/archive/crops/${rawId}/restore`);
     await fetchArchive();
     const next = new Set(checkedIds);
     next.delete(displayId);
     setCheckedIds(next);
+    setOpenMenuId(null);
   }
 
   async function deleteForeverOne(displayId) {
     const rawId = displayIdToRaw(displayId);
     if (!rawId) return;
-    const ok = window.confirm("Permanently delete this record? This cannot be undone.");
+    const ok = window.confirm(
+      "Permanently delete this record? This cannot be undone."
+    );
     if (!ok) return;
     await axios.delete(`http://localhost:5000/api/archive/crops/${rawId}`);
     await fetchArchive();
     const next = new Set(checkedIds);
     next.delete(displayId);
     setCheckedIds(next);
+    setOpenMenuId(null);
   }
 
+  // Bulk restore with single confirmation for the group
   async function handleRestoreBulk() {
     const ids = Array.from(checkedIds);
+    if (ids.length === 0) return;
+
+    const ok = window.confirm(
+      `Are you sure you want to restore ${ids.length} record(s)?`
+    );
+    if (!ok) return;
+
     for (const displayId of ids) {
-      await restoreOne(displayId);
+      await restoreOne(displayId, { skipConfirm: true });
     }
   }
 
   async function handleDeleteForeverBulk() {
     const ids = Array.from(checkedIds);
-    const ok = window.confirm(`Permanently delete ${ids.length} record(s)? This cannot be undone.`);
+    if (ids.length === 0) return;
+
+    const ok = window.confirm(
+      `Permanently delete ${ids.length} record(s)? This cannot be undone.`
+    );
     if (!ok) return;
+
     for (const displayId of ids) {
       await deleteForeverOne(displayId);
     }
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-white font-poppins">
+    <div className="flex flex-col min-h-screen bg-slate-50 font-poppins">
       <SuperAdminNav />
 
       <main className="ml-[115px] pt-[92px] pr-8 flex-grow">
-        <div className="max-w-7xl mx-auto px-6">
+        <div className="max-w-7xl mx-auto px-6 pb-10">
           {/* Header */}
           <div className="mb-6 space-y-4">
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div>
                 <h1 className="text-[32px] leading-tight font-bold text-slate-900">
                   Archive
                 </h1>
                 <p className="text-[15px] text-slate-600">
-                  Review, filter, restore, or permanently delete archived items. Currently showing Crops.
+                  Review, filter, restore, or permanently delete archived items.
+                  Currently showing Crops.
                 </p>
               </div>
               <button
                 onClick={fetchArchive}
-                className="h-9 px-3 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
+                className="h-9 px-3 rounded-md border border-slate-300 text-sm bg-white hover:bg-slate-50 shadow-sm"
               >
                 Refresh
               </button>
@@ -207,15 +240,20 @@ const SuperAdminArchive = () => {
                   <select
                     className="h-10 rounded-full border border-slate-300 bg-white px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
                     value={moduleFilter}
-                    onChange={(e) => { setModuleFilter(e.target.value); setPage(1); }}
+                    onChange={(e) => {
+                      setModuleFilter(e.target.value);
+                      setPage(1);
+                    }}
                   >
                     {MODULES.map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
                     ))}
                   </select>
                 </div>
 
-                {/* Status filter (static for now) */}
+                {/* Status filter */}
                 <div className="flex flex-col gap-1">
                   <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
                     Status
@@ -223,10 +261,15 @@ const SuperAdminArchive = () => {
                   <select
                     className="h-10 rounded-full border border-slate-300 bg-white px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
                     value={statusFilter}
-                    onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setPage(1);
+                    }}
                   >
                     {STATUSES.map((s) => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -245,7 +288,10 @@ const SuperAdminArchive = () => {
                     <input
                       type="text"
                       value={search}
-                      onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPage(1);
+                      }}
                       placeholder="Search by ID, title, owner, barangay, tag…"
                       className="h-10 w-80 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
                     />
@@ -280,16 +326,16 @@ const SuperAdminArchive = () => {
 
           {/* Table */}
           {loading ? (
-            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500 shadow-sm">
               Loading…
             </div>
           ) : paginated.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500 shadow-sm">
               No archived items found.
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <div className="grid grid-cols-[32px_minmax(0,0.35fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.5fr)_minmax(0,0.55fr)_140px] items-center border-b border-slate-200 bg-slate-50 px-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="grid grid-cols-[32px_minmax(0,0.35fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.5fr)_minmax(0,0.55fr)_80px] items-center border-b border-slate-200 bg-slate-50 px-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                 <div>
                   <input
                     type="checkbox"
@@ -311,7 +357,7 @@ const SuperAdminArchive = () => {
                 {paginated.map((item) => (
                   <div
                     key={item.id}
-                    className="grid grid-cols-[32px_minmax(0,0.35fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.5fr)_minmax(0,0.55fr)_140px] items-start px-6 py-3 text-sm hover:bg-slate-50 transition"
+                    className="grid grid-cols-[32px_minmax(0,0.35fr)_minmax(0,1fr)_minmax(0,0.6fr)_minmax(0,0.6fr)_minmax(0,0.5fr)_minmax(0,0.55fr)_80px] items-start px-6 py-3 text-sm hover:bg-slate-50 transition"
                   >
                     <div className="pt-0.5">
                       <input
@@ -362,25 +408,43 @@ const SuperAdminArchive = () => {
                     </div>
 
                     <div className="min-w-0">
-                      <Badge tone={toneForStatus(item.status)}>{item.status}</Badge>
+                      <Badge tone={toneForStatus(item.status)}>
+                        {item.status}
+                      </Badge>
                     </div>
 
+                    {/* Actions: kebab menu */}
                     <div className="min-w-0">
-                      <div className="flex justify-end gap-2">
+                      <div className="relative flex justify-end">
                         <button
-                          onClick={() => restoreOne(item.id)}
-                          className="inline-flex items-center rounded-md border border-emerald-200 bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
-                          title="Restore"
+                          type="button"
+                          onClick={() =>
+                            setOpenMenuId((prev) =>
+                              prev === item.id ? null : item.id
+                            )
+                          }
+                          className="inline-flex items-center justify-center rounded-full h-8 w-8 text-slate-500 hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/60"
+                          title="More actions"
                         >
-                          Restore
+                          <span className="text-lg leading-none">⋮</span>
                         </button>
-                        <button
-                          onClick={() => deleteForeverOne(item.id)}
-                          className="inline-flex items-center rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50"
-                          title="Delete forever"
-                        >
-                          Delete
-                        </button>
+
+                        {openMenuId === item.id && (
+                          <div className="absolute right-0 top-9 z-10 w-36 rounded-md border border-slate-200 bg-white shadow-lg text-[13px]">
+                            <button
+                              onClick={() => restoreOne(item.id)}
+                              className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-emerald-700"
+                            >
+                              Restore
+                            </button>
+                            <button
+                              onClick={() => deleteForeverOne(item.id)}
+                              className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-700 border-t border-slate-100"
+                            >
+                              Delete forever
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -394,17 +458,24 @@ const SuperAdminArchive = () => {
             <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="text-sm text-slate-600">
                 Showing{" "}
-                <span className="font-medium">{total === 0 ? 0 : start + 1}</span>
+                <span className="font-medium">
+                  {total === 0 ? 0 : start + 1}
+                </span>
                 {"–"}
-                <span className="font-medium">{Math.min(start + pageSize, total)}</span>{" "}
+                <span className="font-medium">
+                  {Math.min(start + pageSize, total)}
+                </span>{" "}
                 of <span className="font-medium">{total}</span>
               </div>
 
               <div className="flex items-center gap-3">
                 <select
-                  className="border border-slate-300 px-2 py-1 rounded-md"
+                  className="border border-slate-300 px-2 py-1 rounded-md bg-white text-sm"
                   value={pageSize}
-                  onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
                 >
                   {[8, 12, 16, 24].map((n) => (
                     <option key={n} value={n}>
@@ -414,7 +485,11 @@ const SuperAdminArchive = () => {
                 </select>
 
                 <div className="inline-flex items-center gap-1">
-                  <PageBtn disabled={page === 1} onClick={() => setPage(1)} aria="First">
+                  <PageBtn
+                    disabled={page === 1}
+                    onClick={() => setPage(1)}
+                    aria="First"
+                  >
                     «
                   </PageBtn>
                   <PageBtn
@@ -429,7 +504,9 @@ const SuperAdminArchive = () => {
                   </span>
                   <PageBtn
                     disabled={page === totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    onClick={() =>
+                      setPage((p) => Math.min(totalPages, p + 1))
+                    }
                     aria="Next"
                   >
                     ›
