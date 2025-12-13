@@ -20,7 +20,7 @@ import ChooseMap from "../components/ChooseRole/ChooseMap";
 import SuperAdminChooseMap from "../components/SuperAdmin/SuperAdminChooseMap";
 import ChooseRoleLogin from "../components/ChooseRole/ChooseRoleLogin";
 import LoginFarmer from "../components/Login/LoginFarmer";
-import ManageCalamity from "../components/AdminCalamity/ManageCalamity";
+import AdminManageCalamity from "../components/AdminCalamity/ManageCalamity";
 import SuperAdminManageCalamity from "../components/SuperAdmin/SuperAdminManageCalamity";
 import SuperAdminCalamityMap from "../components/SuperAdmin/SuperAdminCalamityMap";
 import UserChooseMap from "../components/User/UserChooseMap";
@@ -69,7 +69,7 @@ const AppRoutes = () => {
       <Route path="/AdminCropMap" element={<AdminCropMap />} />
       <Route path="/AdminLanding" element={<AdminLanding />} />
       <Route path="/AdminManageCrop" element={<AdminManageCrop />} />
-      <Route path="/ManageCalamity" element={<ManageCalamity />} />
+      <Route path="/AdminManageCalamity" element={<AdminManageCalamity />} />
       <Route path="/CalamityFarmerMap" element={<CalamityMap />} />
       <Route path="/AdminGlossary" element={<AdminGlossary />} />
     </Routes>

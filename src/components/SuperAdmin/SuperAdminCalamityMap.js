@@ -1066,7 +1066,7 @@ const SuperAdminCalamityMap = () => {
 
     drawRef.current = new MapboxDraw({
       displayControlsDefault: false,
-      controls: { polygon: true, trash: true },
+      controls: { polygon: false, trash: false },
     });
     map.current.addControl(drawRef.current, "bottom-right");
 

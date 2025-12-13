@@ -336,8 +336,7 @@ const SuperAdminArchive = () => {
               No archived items found.
             </div>
           ) : (
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              {/* Header row */}
+<div className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">              {/* Header row */}
               <div
                 className={`grid ${gridCols} items-center border-b border-slate-200 bg-slate-50 px-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide`}
               >
@@ -451,7 +450,7 @@ const SuperAdminArchive = () => {
                               onClick={() => deleteForeverOne(item.id)}
                               className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-700 border-t border-slate-100"
                             >
-                              Delete forever
+                              Hard Delete
                             </button>
                           </div>
                         )}
