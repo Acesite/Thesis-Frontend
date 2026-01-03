@@ -1028,25 +1028,35 @@ const confirmDelete = async () => {
                       />
                       {/* Tenure */}
                       <Stat label="Tenure" value={crop.tenure_name || "N/A"} />
-                      <Stat
-                        label="Map"
-                        value={
-                          <button
-                            className="text-emerald-700 hover:underline"
-                            onClick={() =>
-                              navigate("/AdminCropMap", {
-                                state: {
-                                  cropId: String(crop.id),
-                                  zoom: 17,
-                                },
-                              })
-                            }
-                            title="Open in Admin Map"
-                          >
-                            View location ↗
-                          </button>
-                        }
-                      />
+                     <Stat
+  label="Map"
+  value={
+    <button
+      className="text-emerald-700 hover:underline"
+      onClick={() => {
+        const isHarvested =
+          crop.is_harvested === 1 ||
+          crop.is_harvested === "1" ||
+          crop.is_harvested === true;
+
+        navigate("/AdminCropMap", {
+          state: {
+            cropId: String(crop.id),
+            zoom: 17,
+            // ✅ ensure map shows the correct set immediately
+            harvestFilter: isHarvested ? "harvested" : "not_harvested",
+            // ✅ optional, but useful for styling/labeling
+            isHarvested: isHarvested ? 1 : 0,
+          },
+        });
+      }}
+      title="Open in Admin Map"
+    >
+      View location ↗
+    </button>
+  }
+/>
+
                     </div>
 
                     {/* Secondary crop (if any) */}

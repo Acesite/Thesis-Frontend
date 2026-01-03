@@ -229,7 +229,6 @@ function passesTimelineFilter(obj, mode, from, to) {
   return true;
 }
 
-/* ---------- build polygons from crops ---------- */
 function buildPolygonsFromCrops(crops = []) {
   const features = [];
 
@@ -238,33 +237,29 @@ function buildPolygonsFromCrops(crops = []) {
     if (!coords) continue;
 
     if (typeof coords === "string") {
-      try {
-        coords = JSON.parse(coords);
-      } catch {
-        continue;
-      }
+      try { coords = JSON.parse(coords); } catch { continue; }
     }
-
     if (!Array.isArray(coords) || coords.length < 3) continue;
 
     const first = coords[0];
     const last = coords[coords.length - 1];
-    if (JSON.stringify(first) !== JSON.stringify(last)) {
-      coords = [...coords, first]; // close ring
-    }
+    if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
+
+    const harvested =
+      crop.is_harvested === 1 ||
+      crop.is_harvested === "1" ||
+      crop.is_harvested === true;
 
     features.push({
       type: "Feature",
-      geometry: {
-        type: "Polygon",
-        coordinates: [coords],
-      },
+      geometry: { type: "Polygon", coordinates: [coords] },
       properties: {
         id: crop.id,
         crop_name: crop.crop_name,
         variety_name: crop.variety_name,
         barangay: crop.barangay || crop.farmer_barangay,
-        is_harvested: crop.is_harvested,
+        // ✅ normalized
+        is_harvested: harvested ? 1 : 0,
         harvested_date: crop.harvested_date,
         planted_date: crop.planted_date,
         estimated_harvest: crop.estimated_harvest,
@@ -274,11 +269,9 @@ function buildPolygonsFromCrops(crops = []) {
     });
   }
 
-  return {
-    type: "FeatureCollection",
-    features,
-  };
+  return { type: "FeatureCollection", features };
 }
+
 
 /* ---------- accuracy circle ---------- */
 function makeAccuracyCircle([lng, lat], accuracy) {
@@ -493,7 +486,12 @@ const AdminCropMap = () => {
   const [areMarkersVisible, setAreMarkersVisible] = useState(true);
   const [enlargedImage, setEnlargedImage] = useState(null);
 
-  const [harvestFilter, setHarvestFilter] = useState("not_harvested");
+ const initialHarvestFilter =
+  locationState.harvestFilter ??
+  searchParams.get("harvestFilter") ??
+  "not_harvested";
+
+const [harvestFilter, setHarvestFilter] = useState(initialHarvestFilter);
 
   // timeline filter (global)
   const [timelineMode, setTimelineMode] = useState("planted"); // "planted" | "harvest"
@@ -1329,49 +1327,53 @@ const renderSavedMarkers = useCallback(async () => {
     if (map.current.getSource(HILITE_SRC)) map.current.removeSource(HILITE_SRC);
   }, []);
 
-  const showMarkerChipAndHalo = useCallback((cropId, chipText = "Selected crop") => {
-    if (!map.current) return;
+  const showMarkerChipAndHalo = useCallback((cropId, chipText = "Selected crop", color = "#10B981") => {
+  if (!map.current) return;
 
-    selectedLabelRef.current?.remove();
-    selectedLabelRef.current = null;
-    selectedHaloRef.current?.remove();
-    selectedHaloRef.current = null;
+  selectedLabelRef.current?.remove();
+  selectedLabelRef.current = null;
+  selectedHaloRef.current?.remove();
+  selectedHaloRef.current = null;
 
-    const marker = cropMarkerMapRef.current.get(String(cropId));
-    if (!marker) return;
-    const at = marker.getLngLat();
+  const marker = cropMarkerMapRef.current.get(String(cropId));
+  if (!marker) return;
+  const at = marker.getLngLat();
 
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.textContent = chipText;
+  const chip = document.createElement("div");
+  chip.className = "chip";
+  chip.textContent = chipText;
+  chip.style.background = color; // ✅ harvested becomes grey
 
-    const chipMarker = new mapboxgl.Marker({
-      element: chip,
-      anchor: "bottom",
-      offset: [0, -42],
-    })
-      .setLngLat(at)
-      .addTo(map.current);
-    selectedLabelRef.current = chipMarker;
+  selectedLabelRef.current = new mapboxgl.Marker({
+    element: chip,
+    anchor: "bottom",
+    offset: [0, -42],
+  })
+    .setLngLat(at)
+    .addTo(map.current);
 
-    const haloWrap = document.createElement("div");
-    haloWrap.className = "pulse-wrapper";
-    const ring = document.createElement("div");
-    ring.className = "pulse-ring";
-    haloWrap.appendChild(ring);
+  const haloWrap = document.createElement("div");
+  haloWrap.className = "pulse-wrapper";
+  const ring = document.createElement("div");
+  ring.className = "pulse-ring";
+  ring.style.background = color === "#9CA3AF" ? "rgba(156,163,175,0.35)" : "rgba(16,185,129,0.35)";
+  ring.style.boxShadow =
+    color === "#9CA3AF"
+      ? "0 0 0 2px rgba(156,163,175,0.55) inset"
+      : "0 0 0 2px rgba(16,185,129,0.55) inset";
 
-    const haloMarker = new mapboxgl.Marker({
-      element: haloWrap,
-      anchor: "center",
-    })
-      .setLngLat(at)
-      .addTo(map.current);
-    selectedHaloRef.current = haloMarker;
+  haloWrap.appendChild(ring);
 
-    try {
-      marker.togglePopup();
-    } catch {}
-  }, []);
+  selectedHaloRef.current = new mapboxgl.Marker({
+    element: haloWrap,
+    anchor: "center",
+  })
+    .setLngLat(at)
+    .addTo(map.current);
+
+  try { marker.togglePopup(); } catch {}
+}, []);
+
 
   const runWhenStyleReady = (cb) => {
     const m = map.current;
@@ -1390,91 +1392,102 @@ const renderSavedMarkers = useCallback(async () => {
   };
 
   const highlightPolygon = useCallback((crop) => {
-    if (!map.current || !crop) return;
+  if (!map.current || !crop) return;
 
-    runWhenStyleReady(() => {
-      let coords = crop.coordinates;
-      if (typeof coords === "string") {
-        try {
-          coords = JSON.parse(coords);
-        } catch {
-          return;
-        }
-      }
-      if (!Array.isArray(coords) || coords.length < 3) return;
+  const harvested = isCropHarvested(crop);
+  const color = harvested ? "#9CA3AF" : "#10B981"; // ✅ grey if harvested
 
-      const first = coords[0];
-      const last = coords[coords.length - 1];
-      if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
-      const feature = turf.polygon([coords], {
-        id: crop.id,
-        crop_name: crop.crop_name,
+  runWhenStyleReady(() => {
+    let coords = crop.coordinates;
+    if (typeof coords === "string") {
+      try { coords = JSON.parse(coords); } catch { return; }
+    }
+    if (!Array.isArray(coords) || coords.length < 3) return;
+
+    const first = coords[0];
+    const last = coords[coords.length - 1];
+    if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
+
+    const feature = turf.polygon([coords], { id: crop.id, crop_name: crop.crop_name });
+    const m = map.current;
+
+    if (!m.getSource(HILITE_SRC)) {
+      m.addSource(HILITE_SRC, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [feature] },
       });
 
-      const m = map.current;
+      m.addLayer({
+        id: HILITE_FILL,
+        type: "fill",
+        source: HILITE_SRC,
+        paint: { "fill-color": color, "fill-opacity": 0.18 },
+      });
 
-      if (!m.getSource(HILITE_SRC)) {
-        m.addSource(HILITE_SRC, {
-          type: "geojson",
-          data: { type: "FeatureCollection", features: [feature] },
-        });
-        m.addLayer({
-          id: HILITE_FILL,
-          type: "fill",
-          source: HILITE_SRC,
-          paint: { "fill-color": "#10B981", "fill-opacity": 0.18 },
-        });
-        m.addLayer({
-          id: HILITE_LINE,
-          type: "line",
-          source: HILITE_SRC,
-          paint: { "line-color": "#10B981", "line-width": 1, "line-opacity": 1 },
-        });
-      } else {
-        m.getSource(HILITE_SRC).setData({
-          type: "FeatureCollection",
-          features: [feature],
-        });
-      }
+      m.addLayer({
+        id: HILITE_LINE,
+        type: "line",
+        source: HILITE_SRC,
+        paint: { "line-color": color, "line-width": 1.5, "line-opacity": 1 },
+      });
+    } else {
+      m.getSource(HILITE_SRC).setData({
+        type: "FeatureCollection",
+        features: [feature],
+      });
 
-      if (HILITE_ANIM_REF.current) {
-        clearInterval(HILITE_ANIM_REF.current);
-        HILITE_ANIM_REF.current = null;
-      }
-      let w = 2;
-      let dir = +0.4;
-      HILITE_ANIM_REF.current = setInterval(() => {
-        if (!m.getLayer(HILITE_LINE)) return;
-        w += dir;
-        if (w >= 4) dir = -0.3;
-        if (w <= 1) dir = +0.3;
-        try {
-          m.setPaintProperty(HILITE_LINE, "line-width", w);
-        } catch {}
-      }, 80);
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+      // ✅ update colors when switching between harvested/not harvested
+      try {
+        m.setPaintProperty(HILITE_FILL, "fill-color", color);
+        m.setPaintProperty(HILITE_LINE, "line-color", color);
+      } catch {}
+    }
+
+    // keep your animated line logic as-is
+    if (HILITE_ANIM_REF.current) {
+      clearInterval(HILITE_ANIM_REF.current);
+      HILITE_ANIM_REF.current = null;
+    }
+    let w = 2;
+    let dir = +0.4;
+    HILITE_ANIM_REF.current = setInterval(() => {
+      if (!m.getLayer(HILITE_LINE)) return;
+      w += dir;
+      if (w >= 4) dir = -0.3;
+      if (w <= 1) dir = +0.3;
+      try { m.setPaintProperty(HILITE_LINE, "line-width", w); } catch {}
+    }, 80);
+  });
+}, []);
+
 
   const highlightSelection = useCallback(
-    (crop) => {
-      if (!map.current || !crop) return;
-      clearSelection();
-      showMarkerChipAndHalo(
-        crop.id,
-        `${crop.crop_name}${crop.variety_name ? ` – ${crop.variety_name}` : ""}`
-      );
-      highlightPolygon(crop);
-      const center = getCropCenter(crop);
-      if (center) {
-        map.current.flyTo({
-          center,
-          zoom: Math.max(map.current.getZoom(), 16),
-          essential: true,
-        });
-      }
-    },
-    [clearSelection, showMarkerChipAndHalo, highlightPolygon]
-  );
+  (crop) => {
+    if (!map.current || !crop) return;
+
+    const harvested = isCropHarvested(crop);
+    const color = harvested ? "#9CA3AF" : "#10B981";
+
+    clearSelection();
+    showMarkerChipAndHalo(
+      crop.id,
+      `${crop.crop_name}${crop.variety_name ? ` – ${crop.variety_name}` : ""}`,
+      color
+    );
+    highlightPolygon(crop);
+
+    const center = getCropCenter(crop);
+    if (center) {
+      map.current.flyTo({
+        center,
+        zoom: Math.max(map.current.getZoom(), 16),
+        essential: true,
+      });
+    }
+  },
+  [clearSelection, showMarkerChipAndHalo, highlightPolygon]
+);
+
 
   const ensureDeepLinkSelection = useCallback(() => {
     if (!map.current) return;
