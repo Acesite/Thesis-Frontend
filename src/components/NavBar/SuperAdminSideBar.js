@@ -37,13 +37,8 @@ const SuperAdminSideBar = ({ onCollapsedChange }) => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // collapsible state
   const [collapsed, setCollapsed] = useState(false);
-  // popover for collapsed avatar
-  const [collapsedProfileMenuOpen, setCollapsedProfileMenuOpen] =
-    useState(false);
 
-  // helper to update collapsed + notify parent
   const setCollapsedAndNotify = (value) => {
     setCollapsed(value);
     if (typeof onCollapsedChange === "function") {
@@ -82,17 +77,11 @@ const SuperAdminSideBar = ({ onCollapsedChange }) => {
       });
   }, []);
 
-  // keep modal fields in sync
   useEffect(() => {
     if (showProfileModal) {
       setAdminProfile({ first_name: firstName, last_name: lastName, email });
     }
   }, [showProfileModal, firstName, lastName, email]);
-
-  // close collapsed menu when expanding sidebar
-  useEffect(() => {
-    if (!collapsed) setCollapsedProfileMenuOpen(false);
-  }, [collapsed]);
 
   // initial notify
   useEffect(() => {
@@ -182,34 +171,30 @@ const SuperAdminSideBar = ({ onCollapsedChange }) => {
             </div>
           </div>
         ) : (
-          <div className="px-3 pt-4 pb-3">
-            <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 shadow-sm">
-              <div className="flex items-center gap-2">
+          <>
+            <div className="px-3 pt-4 pb-3">
+              <div className="relative flex items-center justify-center">
                 <img
                   src="/images/AgriGIS.png"
                   alt="AgriGIS"
-                  className="h-8 w-auto"
+                  className="h-12 w-auto"
                 />
-                <div className="flex flex-col leading-tight">
-                  <span className="text-[13px] font-semibold text-slate-900">
-                    AgriGIS
-                  </span>
-                  <span className="text-[11px] text-slate-500">
-                    Bago City · Super Admin
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setCollapsedAndNotify(true)}
+                  className="absolute right-0 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50"
+                  title="Collapse sidebar"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
               </div>
-
-              <button
-                type="button"
-                onClick={() => setCollapsedAndNotify(true)}
-                className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-                title="Collapse sidebar"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
             </div>
-          </div>
+
+            {/* thin divider under the logo */}
+            <div className="px-3">
+              <div className="h-px bg-slate-100" />
+            </div>
+          </>
         )}
 
         {/* Navigation */}
@@ -297,46 +282,17 @@ const SuperAdminSideBar = ({ onCollapsedChange }) => {
         {/* Bottom: profile area */}
         <div className="px-3 pb-4">
           {collapsed ? (
-            // Collapsed: plain avatar with popover menu, no grey card
-            <div className="relative flex flex-col items-center">
+            <div className="flex justify-center">
               <button
                 type="button"
-                onClick={() =>
-                  setCollapsedProfileMenuOpen((open) => !open)
-                }
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-semibold shadow-sm"
-                title="Profile & Logout"
+                onClick={() => setCollapsedAndNotify(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-semibold shadow-sm hover:bg-emerald-700"
+                title="Expand sidebar"
               >
                 {initials}
               </button>
-
-              {collapsedProfileMenuOpen && (
-                <div className="absolute bottom-12 w-40 rounded-md border border-slate-200 bg-white shadow-lg text-xs overflow-hidden">
-                  <button
-                    onClick={() => {
-                      setCollapsedProfileMenuOpen(false);
-                      setShowProfileModal(true);
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 hover:bg-slate-50 text-slate-700"
-                  >
-                    <UserIcon className="w-3.5 h-3.5" />
-                    <span>Profile</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCollapsedProfileMenuOpen(false);
-                      onLogout();
-                    }}
-                    className="flex w-full items-center gap-2 px-3 py-2 border-t border-slate-100 hover:bg-rose-50 text-rose-700"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Logout</span>
-                  </button>
-                </div>
-              )}
             </div>
           ) : (
-            // Expanded: full profile block with card
             <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-3 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-semibold">

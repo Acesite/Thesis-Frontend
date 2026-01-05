@@ -328,7 +328,7 @@ export default function Graphs() {
               <Section title="Key Metrics">
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <Kpi title="Total Crops"       value={fmt(totalCrops, { maximumFractionDigits: 0 })} subtitle={selectedBarangay === "all" ? "All barangays" : selectedBarangay} />
-                  <Kpi title="Most Planted"      value={mostPlanted} subtitle="by count" />
+                  <Kpi title="Most Planted Crops"      value={mostPlanted} subtitle="by count" />
                   <Kpi title="Top Barangay"      value={topBarangay} subtitle="by count" />
                   <Kpi title="Mapped Area"       value={`${fmt(totalHectares)} ha`} subtitle={`Avg / crop: ${fmt(avgArea)} ha`} />
                 </div>
