@@ -5,7 +5,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
   PieChart, Pie, Cell, Legend, LineChart, Line
 } from "recharts";
-import SuperAdminNav from "../NavBar/SuperAdminNav";
+import SuperAdminNav from "../NavBar/SuperAdminSideBar";
 import Footer from "../LandingPage/Footer";
 
 /* ---------- COLORS ---------- */
@@ -69,6 +69,9 @@ export default function Graphs() {
   const [selectedCalamityType, setSelectedCalamityType] = useState("all");
 
   const [tab, setTab] = useState("crops"); // 'crops' | 'calamity' | 'rankings'
+
+  // sidebar collapsed state for SuperAdminNav
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   /* ---------- Options ---------- */
   const barangays = useMemo(() => {
@@ -246,9 +249,13 @@ export default function Graphs() {
 
   return (
     <div className="flex flex-col min-h-screen bg-white font-poppins">
-      <SuperAdminNav />
+      <SuperAdminNav onCollapsedChange={setSidebarCollapsed} />
 
-      <main className="pt-[96px] flex-1">
+      <main
+        className={`ml-0 pt-8 md:pt-10 pr-0 md:pr-8 flex-1 transition-all duration-200 ${
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[48vh]">
           {/* Title */}
           <div className="mb-4">
@@ -523,7 +530,7 @@ export default function Graphs() {
         </div>
       </main>
 
-      <FooterWrapper />
+      <FooterWrapper sidebarCollapsed={sidebarCollapsed} />
     </div>
   );
 }
@@ -595,9 +602,13 @@ function NiceTooltip({ active, payload, label, suffix = "" }) {
     </div>
   );
 }
-function FooterWrapper() {
+function FooterWrapper({ sidebarCollapsed }) {
   return (
-    <div className="mt-10 border-t border-gray-100">
+    <div
+      className={`mt-10 ml-0 border-t border-gray-100 transition-all duration-200 ${
+        sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+      }`}
+    >
       <Footer />
     </div>
   );

@@ -436,8 +436,32 @@ const AdminSideBar = ({
 
   const isHarvested = isCropHarvested(selectedCrop);
 
-  const handleMarkHarvested = async () => {
+  const canMarkHarvestedNow = useMemo(() => {
+    if (!selectedCrop || isHarvested) return false;
+
+    const raw = selectedCrop.estimated_harvest;
+    // If there is no estimated date, allow marking anytime
+    if (!raw) return true;
+    const est = new Date(raw);
+    if (Number.isNaN(est.getTime())) return true;
+    const today = new Date();
+    est.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    return today > est;
+  }, [selectedCrop, isHarvested]);
+
+    const handleMarkHarvested = async () => {
     if (!selectedCrop) return;
+
+    if (!canMarkHarvestedNow) {
+      const msg = selectedCrop.estimated_harvest
+        ? `You can only mark this crop as harvested after ${fmtDate(
+            selectedCrop.estimated_harvest
+          )}.`
+        : "You cannot mark this crop as harvested yet.";
+      alert(msg);
+      return;
+    }
 
     const ok = window.confirm(
       "Mark this crop as harvested? This will set it as harvested today."
@@ -464,6 +488,7 @@ const AdminSideBar = ({
       alert("Failed to mark this crop as harvested. Please try again.");
     }
   };
+
 
   // render
   return (
@@ -590,15 +615,22 @@ const AdminSideBar = ({
                       : "Not yet harvested"}
                   </p>
 
-                  {!isHarvested && (
+                                   {!isHarvested && (
                     <button
                       type="button"
                       onClick={handleMarkHarvested}
-                      className="mt-1 inline-flex items-center rounded-md border border-green-600 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50"
+                      disabled={!canMarkHarvestedNow}
+                      className={clsx(
+                        "mt-1 inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium",
+                        canMarkHarvestedNow
+                          ? "border-green-600 text-green-700 hover:bg-green-50"
+                          : "border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50"
+                      )}
                     >
                       Mark as harvested
                     </button>
                   )}
+
 
                {isHarvested && onStartNewSeason && (
   <button

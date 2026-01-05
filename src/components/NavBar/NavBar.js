@@ -1,6 +1,7 @@
 import React from "react";
 import { useLocation } from "react-router-dom";
 import { Link } from 'react-router-dom';
+import { Map as MapIcon } from "lucide-react";
 
 const NavBar = () => {
   const location = useLocation();
@@ -41,6 +42,23 @@ const NavBar = () => {
         Contacts
       </a>
     </nav>
+
+    {/* Explore button */}
+          <Link to="/ChooseMap" className="hidden md:inline-flex">
+            <button
+              className="relative inline-flex items-center justify-center px-3.5 py-2.5 overflow-hidden font-medium text-white transition duration-300 ease-out border-2 border-emerald-600 rounded-xl shadow-md group"
+            >
+              <span className="absolute inset-0 flex items-center justify-center w-full h-full text-white duration-300 -translate-x-full bg-green-500 group-hover:translate-x-0 ease">
+                <MapIcon className="w-5 h-5" />
+              </span>
+              <span className="absolute flex items-center text-sm font-semibold justify-center w-full h-full text-emerald-700 transition-all duration-300 transform bg-white group-hover:translate-x-full ease tracking-widest">
+                Explore
+              </span>
+              <span className="relative text-sm font-semibold invisible">
+                Button Text
+              </span>
+            </button>
+          </Link>
 
           {/* CTA Buttons */}
           <Link to="/Signup">

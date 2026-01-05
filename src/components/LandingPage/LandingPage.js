@@ -61,20 +61,7 @@ const LandingPage = () => {
           <p className="mt-4 text-white text-5md" data-aos="fade-up">
             AgriGIS helps visualize farmland locations, track planted crops, and estimate harvests, empowering farmers and agricultural planners with real-time data.
           </p>
-          <Link to="/UserChooseMap">
-            <button
-              className="relative inline-flex items-center justify-center px-3.5 py-2.5 overflow-hidden font-medium text-white transition duration-300 ease-out border-2 border-white rounded-xl shadow-md group mt-4"
-              data-aos="fade-up"
-            >
-              <span className="absolute inset-0 flex items-center justify-center w-full h-full text-white duration-300 -translate-x-full bg-green-500 group-hover:translate-x-0 ease">
-                <Map className="w-6 h-6" />
-              </span>
-              <span className="absolute flex items-center text-base font-semibold justify-center w-full h-full text-white transition-all duration-300 transform group-hover:translate-x-full ease tracking-widest">
-                Explore
-              </span>
-              <span className="relative text-base font-semibold invisible">Button Text</span>
-            </button>
-          </Link>
+          
         </div>
       </section>
       <KeyFeatures />

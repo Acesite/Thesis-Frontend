@@ -1,10 +1,10 @@
-// pages/AdminCrop/SuperManageCrop.jsx
-import React, { useEffect, useMemo, useState } from "react";
+// pages/SuperAdminManageCrop.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AOS from "aos";
 import "aos/dist/aos.css";
 import axios from "axios";
-import SuperAdminNav from "../NavBar/SuperAdminNav";
+import SuperAdminNav from "../NavBar/SuperAdminSideBar";
 import Footer from "../LandingPage/Footer";
 import {
   Search,
@@ -44,14 +44,13 @@ const yieldUnitMap = {
   6: "kg",
 };
 
-/* ---------- CONFIG ---------- */
 const STANDARD_MATURITY_DAYS = {
   1: 100, // Rice
   2: 110, // Corn
   3: 360, // Banana
   4: 365, // Sugarcane
   5: 300, // Cassava
-  6: 60,  // Vegetables
+  6: 60, // Vegetables
 };
 
 /* ---------- UTILS ---------- */
@@ -84,8 +83,6 @@ const SuperAdminManageCrop = () => {
   const [cropTypes, setCropTypes] = useState([]);
   const [varieties, setVarieties] = useState([]);
   const [interVarieties, setInterVarieties] = useState([]);
-
-  // Tenure options
   const [tenures, setTenures] = useState([]);
 
   const [selectedCropTypeId, setSelectedCropTypeId] = useState(null);
@@ -98,15 +95,38 @@ const SuperAdminManageCrop = () => {
 
   const [viewingCrop, setViewingCrop] = useState(null);
 
-  // Harvest status filter (all / harvested / not_harvested)
   const [harvestFilter, setHarvestFilter] = useState("all");
 
-  // ---------- NEW: Filter UI extra state ----------
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState(0);
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const pageRef = useRef(null);
+
+  /* ---------- CLOSE KEBAB ON OUTSIDE CLICK / ESC (same logic as calamity page) ---------- */
+  useEffect(() => {
+    const onDown = (e) => {
+      if (!activeActionId) return;
+      const el = e.target;
+      const insideMenu = el.closest?.("[data-kebab-menu='true']");
+      const isButton = el.closest?.("[data-kebab-trigger='true']");
+      if (!insideMenu && !isButton) setActiveActionId(null);
+    };
+    const onEsc = (e) => {
+      if (e.key === "Escape") setActiveActionId(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [activeActionId]);
+
+  /* ---------- INIT ---------- */
   useEffect(() => {
     AOS.init({ duration: 400, once: true });
+
     (async () => {
       try {
         setIsLoading(true);
@@ -122,10 +142,7 @@ const SuperAdminManageCrop = () => {
         setIsLoading(false);
       }
     })();
-  }, []);
 
-  // Tenure list (normalized)
-  useEffect(() => {
     (async () => {
       try {
         const res = await axios.get("http://localhost:5000/api/crops/tenures");
@@ -185,7 +202,7 @@ const SuperAdminManageCrop = () => {
     }
   };
 
-  /* ------- NEW: derived stats for Filter UI ------- */
+  /* ------- STATS / FILTER UI DATA ------- */
   const harvestStats = useMemo(() => {
     let harvested = 0;
     let notHarvested = 0;
@@ -197,11 +214,7 @@ const SuperAdminManageCrop = () => {
       if (isHarvested) harvested += 1;
       else notHarvested += 1;
     });
-    return {
-      all: crops.length,
-      harvested,
-      notHarvested,
-    };
+    return { all: crops.length, harvested, notHarvested };
   }, [crops]);
 
   const cropTypeStats = useMemo(() => {
@@ -247,7 +260,6 @@ const SuperAdminManageCrop = () => {
     },
   ];
 
-  // Active filters badge count
   useEffect(() => {
     let count = 0;
     if (search) count++;
@@ -257,7 +269,7 @@ const SuperAdminManageCrop = () => {
     setActiveFilters(count);
   }, [search, selectedCropTypeId, sort, harvestFilter]);
 
-  /* ------- filter + search + harvest status ------- */
+  /* ------- FILTER + SEARCH + HARVEST STATUS ------- */
   const filtered = useMemo(() => {
     const byType = crops.filter(
       (c) => !selectedCropTypeId || c.crop_type_id === selectedCropTypeId
@@ -297,7 +309,7 @@ const SuperAdminManageCrop = () => {
     );
   }, [crops, selectedCropTypeId, search, harvestFilter]);
 
-  /* ------- sort ------- */
+  /* ------- SORT ------- */
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const toTime = (d) => {
@@ -344,12 +356,13 @@ const SuperAdminManageCrop = () => {
     setPage(1);
   }, [selectedCropTypeId, search, sort, pageSize, harvestFilter]);
 
-  /* ------- pagination ------- */
+  /* ------- PAGINATION ------- */
   const total = sorted.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const start = (page - 1) * pageSize;
   const pageItems = sorted.slice(start, start + pageSize);
 
+  /* ------- EDIT ------- */
   const handleEdit = (crop) => {
     const initialName = [crop.farmer_first_name, crop.farmer_last_name]
       .filter(Boolean)
@@ -443,7 +456,8 @@ const SuperAdminManageCrop = () => {
 
       const contactChanged =
         (editingCrop?.farmer_mobile || "") !== (editForm?.farmer_mobile || "") ||
-        (editingCrop?.farmer_address || "") !== (editForm?.farmer_address || "");
+        (editingCrop?.farmer_address || "") !==
+          (editForm?.farmer_address || "");
 
       const tenureChanged =
         (editingCrop?.tenure_id || "") !== (editForm?.tenure_id || "");
@@ -493,30 +507,26 @@ const SuperAdminManageCrop = () => {
     }
   };
 
- const confirmDelete = async () => {
-  try {
-    const currentAdminId = getCurrentUserId();
-    console.log("[DELETE] Current admin ID:", currentAdminId); // ✅ Add this
-    console.log("[DELETE] Deleting crop:", pendingDelete.id); // ✅ Add this
-    
-    await axios.delete(
-      `http://localhost:5000/api/managecrops/${pendingDelete.id}`,
-      {
-        data: { deleted_by: currentAdminId },
-        headers: { "X-User-Id": currentAdminId || "" }
-      }
-    );
-    
-    await fetchCrops();
-    setPendingDelete(null);
-    alert("Crop deleted successfully!");
-  } catch (err) {
-    console.error("Delete error:", err);
-    alert("Failed to delete crop.");
-  }
-};
+  const confirmDelete = async () => {
+    try {
+      const currentAdminId = getCurrentUserId();
+      await axios.delete(
+        `http://localhost:5000/api/managecrops/${pendingDelete.id}`,
+        {
+          data: { deleted_by: currentAdminId },
+          headers: { "X-User-Id": currentAdminId || "" },
+        }
+      );
 
-  /* ------- derived for viewing modal ------- */
+      await fetchCrops();
+      setPendingDelete(null);
+      alert("Crop deleted successfully!");
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Failed to delete crop.");
+    }
+  };
+
   const viewingIsHarvested =
     !!viewingCrop &&
     (viewingCrop.is_harvested === 1 ||
@@ -531,10 +541,17 @@ const SuperAdminManageCrop = () => {
 
   /* ---------- RENDER ---------- */
   return (
-    <div className="flex flex-col min-h-screen bg-white font-poppins">
-      <SuperAdminNav />
+    <div
+      ref={pageRef}
+      className="flex flex-col min-h-screen bg-white font-poppins"
+    >
+      <SuperAdminNav onCollapsedChange={setSidebarCollapsed} />
 
-      <main className="ml-[115px] pt-[92px] pr-8 flex-grow">
+      <main
+        className={`ml-0 pt-8 md:pt-10 pr-0 md:pr-8 flex-grow transition-all duration-200 ${
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-6">
           <div className="mb-6 space-y-4">
             <div className="flex items-start justify-between">
@@ -548,13 +565,11 @@ const SuperAdminManageCrop = () => {
               </div>
             </div>
 
-            {/* ---------- NEW: FilterUI-style Filters (copied from Admin) ---------- */}
+            {/* ---------- FILTER UI (same design as before) ---------- */}
             <div className="mt-2">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 space-y-4">
-                  {/* Top Row: Search + Filter Toggle + Reset */}
                   <div className="flex gap-3">
-                    {/* Search */}
                     <div className="flex-1 relative">
                       <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                       <input
@@ -576,7 +591,6 @@ const SuperAdminManageCrop = () => {
                       )}
                     </div>
 
-                    {/* Filter Toggle */}
                     <button
                       onClick={() => setIsFilterOpen((v) => !v)}
                       className={`h-12 px-5 rounded-xl border transition-all font-medium text-sm flex items-center gap-2 whitespace-nowrap ${
@@ -605,7 +619,6 @@ const SuperAdminManageCrop = () => {
                       />
                     </button>
 
-                    {/* Reset Button */}
                     {activeFilters > 0 && (
                       <button
                         onClick={() => {
@@ -623,7 +636,6 @@ const SuperAdminManageCrop = () => {
                     )}
                   </div>
 
-                  {/* Expandable Filter Panel */}
                   <div
                     className={`grid transition-all duration-300 ease-in-out ${
                       isFilterOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
@@ -631,7 +643,6 @@ const SuperAdminManageCrop = () => {
                   >
                     <div className="overflow-hidden">
                       <div className="pt-4 border-t border-slate-100 space-y-6">
-                        {/* Crop Type Filter */}
                         <div>
                           <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">
                             Crop Type
@@ -680,9 +691,7 @@ const SuperAdminManageCrop = () => {
                           </div>
                         </div>
 
-                        {/* Two Columns: Harvest Status + Sort */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {/* Harvest Status */}
                           <div>
                             <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">
                               Harvest Status
@@ -710,7 +719,9 @@ const SuperAdminManageCrop = () => {
                                       <Icon className="w-4 h-4" />
                                     </div>
                                     <div className="flex-1">
-                                      <div className="font-medium text-sm">{option.label}</div>
+                                      <div className="font-medium text-sm">
+                                        {option.label}
+                                      </div>
                                       <div className="text-xs text-slate-500 mt-0.5">
                                         {option.count} crops
                                       </div>
@@ -724,7 +735,6 @@ const SuperAdminManageCrop = () => {
                             </div>
                           </div>
 
-                          {/* Sort Options */}
                           <div>
                             <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">
                               Sort By
@@ -752,9 +762,13 @@ const SuperAdminManageCrop = () => {
                                       <Icon className="w-4 h-4" />
                                     </div>
                                     <div className="flex-1">
-                                      <div className="font-medium text-sm">{option.label}</div>
+                                      <div className="font-medium text-sm">
+                                        {option.label}
+                                      </div>
                                     </div>
-                                    {sort === option.value && <CheckCircle2 className="w-5 h-5" />}
+                                    {sort === option.value && (
+                                      <CheckCircle2 className="w-5 h-5" />
+                                    )}
                                   </button>
                                 );
                               })}
@@ -765,7 +779,6 @@ const SuperAdminManageCrop = () => {
                     </div>
                   </div>
 
-                  {/* Active Filters Summary (chips) */}
                   {activeFilters > 0 && !isFilterOpen && (
                     <div className="mt-1 flex items-center gap-2 flex-wrap">
                       <span className="text-sm text-slate-600 font-medium">
@@ -815,7 +828,10 @@ const SuperAdminManageCrop = () => {
                         <span className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium flex items-center gap-2">
                           {sortOptionsUI.find((s) => s.value === sort)?.label ??
                             SORT_OPTIONS.find((s) => s.value === sort)?.label}
-                          <button onClick={() => setSort("harvest_desc")} className="hover:text-slate-900">
+                          <button
+                            onClick={() => setSort("harvest_desc")}
+                            className="hover:text-slate-900"
+                          >
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </span>
@@ -825,10 +841,9 @@ const SuperAdminManageCrop = () => {
                 </div>
               </div>
             </div>
-            {/* ---------- END Filter UI ---------- */}
           </div>
 
-          {/* Grid of cards */}
+          {/* ---------- CARDS GRID ---------- */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {isLoading ? (
               Array.from({ length: pageSize }).map((_, i) => <SkeletonCard key={i} />)
@@ -850,65 +865,67 @@ const SuperAdminManageCrop = () => {
                     className="rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-sm transition relative"
                     data-aos="fade-up"
                   >
-                    {/* Actions */}
+                    {/* Kebab actions — same pattern as calamity page */}
                     <div className="absolute top-3 right-3">
-                      <button
-                        aria-label="More actions"
-                        aria-expanded={activeActionId === crop.id}
-                        onClick={() =>
-                          setActiveActionId((id) => (id === crop.id ? null : crop.id))
-                        }
-                        className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                      >
-                        <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                          <circle cx="5" cy="10" r="1.6" />
-                          <circle cx="10" cy="10" r="1.6" />
-                          <circle cx="15" cy="10" r="1.6" />
-                        </svg>
-                      </button>
-
-                      {activeActionId === crop.id && (
-                        <div
-                          className="fixed inset-0 z-40"
-                          onClick={() => setActiveActionId(null)}
-                          aria-hidden="true"
-                        />
-                      )}
-
-                      {activeActionId === crop.id && (
-                        <div
-                          className="absolute right-0 mt-2 w-36 bg-white border rounded-xl shadow-xl z-50 overflow-hidden"
-                          onClick={(e) => e.stopPropagation()}
+                      <div className="relative">
+                        <button
+                          data-kebab-trigger="true"
+                          aria-label="More actions"
+                          aria-expanded={activeActionId === crop.id}
+                          onClick={() =>
+                            setActiveActionId((id) => (id === crop.id ? null : crop.id))
+                          }
+                          className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                         >
-                          <button
-                            onClick={() => {
-                              setActiveActionId(null);
-                              handleEdit(crop);
-                            }}
-                            className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
+                          <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                            <circle cx="5" cy="10" r="1.6" />
+                            <circle cx="10" cy="10" r="1.6" />
+                            <circle cx="15" cy="10" r="1.6" />
+                          </svg>
+                        </button>
+
+                        {activeActionId === crop.id && (
+                          <div
+                            data-kebab-menu="true"
+                            className="absolute right-0 mt-2 w-36 rounded-xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 overflow-hidden"
                           >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => {
-                              setActiveActionId(null);
-                              setPendingDelete(crop);
-                            }}
-                            className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
+                            <button
+                              onClick={() => {
+                                setActiveActionId(null);
+                                handleEdit(crop);
+                              }}
+                              className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => {
+                                setActiveActionId(null);
+                                setPendingDelete(crop);
+                              }}
+                              className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Header */}
                     <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-                      <h3 className="text-[20px] font-semibold text-slate-900">{crop.crop_name}</h3>
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+                      <h3 className="text-[20px] font-semibold text-slate-900">
+                        {crop.crop_name}
+                      </h3>
                     </div>
                     {crop.variety_name && (
-                      <div className="mt-0.5 text-[13px] text-slate-500">{crop.variety_name}</div>
+                      <div className="mt-0.5 text-[13px] text-slate-500">
+                        {crop.variety_name}
+                      </div>
                     )}
 
                     <div
@@ -924,7 +941,10 @@ const SuperAdminManageCrop = () => {
                     {/* Meta */}
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
                       <Stat label="Planted" value={fmtDate(crop.planted_date)} />
-                      <Stat label="Estimated Harvest" value={fmtDate(crop.estimated_harvest)} />
+                      <Stat
+                        label="Estimated Harvest"
+                        value={fmtDate(crop.estimated_harvest)}
+                      />
                       <Stat
                         label="Estimated Volume"
                         value={`${fmtNum(crop.estimated_volume)} ${
@@ -932,7 +952,10 @@ const SuperAdminManageCrop = () => {
                         }`}
                       />
                       <Stat label="Hectares" value={fmtNum(crop.estimated_hectares)} />
-                      <Stat label="Avg elevation (m)" value={`${fmtNum(crop.avg_elevation_m)} m`} />
+                      <Stat
+                        label="Avg elevation (m)"
+                        value={`${fmtNum(crop.avg_elevation_m)} m`}
+                      />
                       <Stat label="Barangay (Crop)" value={crop.crop_barangay || "N/A"} />
                       <Stat label="Tenure" value={crop.tenure_name || "N/A"} />
                       <Stat
@@ -961,7 +984,9 @@ const SuperAdminManageCrop = () => {
                         </div>
                         <div className="text-[14px] font-medium text-emerald-900">
                           {crop.intercrop_crop_name}
-                          {crop.intercrop_variety_name ? ` · ${crop.intercrop_variety_name}` : ""}
+                          {crop.intercrop_variety_name
+                            ? ` · ${crop.intercrop_variety_name}`
+                            : ""}
                         </div>
                         <div className="mt-0.5 text-[12px] text-emerald-800">
                           {crop.intercrop_estimated_volume ? (
@@ -1075,6 +1100,8 @@ const SuperAdminManageCrop = () => {
         </div>
       </main>
 
+      {/* EDIT MODAL, VIEW MODAL, CONFIRM DELETE — unchanged behaviour, only trimmed comments */}
+
       {editingCrop && (
         <div
           className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-3 md:p-4 lg:p-6 overflow-y-auto"
@@ -1118,16 +1145,19 @@ const SuperAdminManageCrop = () => {
               {/* Crop details */}
               <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
                 <div className="mb-3">
-                  <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">Crop details</h4>
+                  <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">
+                    Crop details
+                  </h4>
                   <p className="text-[11px] md:text-[12px] text-slate-500">
                     Select crop and variety, then enter field measurements.
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Crop Type */}
-                  <div className="lg:col-span-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Crop type</label>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Crop type
+                    </label>
                     <select
                       name="crop_type_id"
                       value={editForm.crop_type_id}
@@ -1143,9 +1173,10 @@ const SuperAdminManageCrop = () => {
                     </select>
                   </div>
 
-                  {/* Variety */}
-                  <div className="lg:col-span-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Variety</label>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Variety
+                    </label>
                     <select
                       name="variety_id"
                       value={editForm.variety_id || ""}
@@ -1161,9 +1192,10 @@ const SuperAdminManageCrop = () => {
                     </select>
                   </div>
 
-                  {/* Planted date */}
-                  <div className="lg:col-span-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Planted date</label>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Planted date
+                    </label>
                     <input
                       type="date"
                       name="planted_date"
@@ -1176,22 +1208,28 @@ const SuperAdminManageCrop = () => {
                     </p>
                   </div>
 
-                  {/* Estimated harvest */}
-                  <div className="lg:col-span-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Estimated harvest</label>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Estimated harvest
+                    </label>
                     <input
                       type="date"
                       name="estimated_harvest"
-                      value={(editForm.estimated_harvest || "").toString().split("T")[0] || ""}
+                      value={
+                        (editForm.estimated_harvest || "").toString().split("T")[0] || ""
+                      }
                       onChange={handleEditChange}
                       className="w-full h-10 md:h-11 border border-slate-300 rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-emerald-600 bg-white"
                     />
-                    <p className="mt-1 text-[11px] text-slate-500">You can still adjust this date manually.</p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      You can still adjust this date manually.
+                    </p>
                   </div>
 
-                  {/* Volume */}
-                  <div className="lg:col-span-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Estimated volume</label>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Estimated volume
+                    </label>
                     <div className="relative">
                       <input
                         name="estimated_volume"
@@ -1207,9 +1245,10 @@ const SuperAdminManageCrop = () => {
                     </div>
                   </div>
 
-                  {/* Hectares */}
-                  <div className="lg:col-span-1">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Estimated hectares</label>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Estimated hectares
+                    </label>
                     <input
                       name="estimated_hectares"
                       value={editForm.estimated_hectares || ""}
@@ -1220,9 +1259,10 @@ const SuperAdminManageCrop = () => {
                     />
                   </div>
 
-                  {/* Barangay */}
-                  <div className="md:col-span-2 lg:col-span-2">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Barangay (crop)</label>
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Barangay (crop)
+                    </label>
                     <input
                       name="barangay"
                       value={editForm.barangay || ""}
@@ -1238,7 +1278,9 @@ const SuperAdminManageCrop = () => {
               <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
                 <div className="mb-3 flex items-center justify-between">
                   <div>
-                    <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">Harvest</h4>
+                    <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">
+                      Harvest
+                    </h4>
                     <p className="text-[11px] md:text-[12px] text-slate-500">
                       Track actual harvest status and date.
                     </p>
@@ -1258,12 +1300,16 @@ const SuperAdminManageCrop = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Harvested on</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Harvested on
+                    </label>
                     <input
                       type="date"
                       name="harvested_date"
                       disabled={Number(editForm.is_harvested) !== 1}
-                      value={(editForm.harvested_date || "").toString().split("T")[0] || ""}
+                      value={
+                        (editForm.harvested_date || "").toString().split("T")[0] || ""
+                      }
                       onChange={handleEditChange}
                       className={`w-full h-10 md:h-11 border rounded-lg px-3 focus:outline-none focus:ring-2 focus:ring-emerald-600 ${
                         Number(editForm.is_harvested) !== 1
@@ -1281,7 +1327,9 @@ const SuperAdminManageCrop = () => {
               {/* Farmer */}
               <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
                 <div className="mb-3">
-                  <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">Farmer</h4>
+                  <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">
+                    Farmer
+                  </h4>
                   <p className="text-[11px] md:text-[12px] text-slate-500">
                     Update the farmer’s contact and tenure.
                   </p>
@@ -1289,7 +1337,9 @@ const SuperAdminManageCrop = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">First name</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      First name
+                    </label>
                     <input
                       name="farmer_first_name"
                       value={editForm.farmer_first_name || ""}
@@ -1299,7 +1349,9 @@ const SuperAdminManageCrop = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Last name</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Last name
+                    </label>
                     <input
                       name="farmer_last_name"
                       value={editForm.farmer_last_name || ""}
@@ -1309,7 +1361,9 @@ const SuperAdminManageCrop = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Mobile</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Mobile
+                    </label>
                     <input
                       name="farmer_mobile"
                       value={editForm.farmer_mobile || ""}
@@ -1320,7 +1374,9 @@ const SuperAdminManageCrop = () => {
                   </div>
 
                   <div className="md:col-span-2 lg:col-span-3">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Full address</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Full address
+                    </label>
                     <input
                       name="farmer_address"
                       value={editForm.farmer_address || ""}
@@ -1331,7 +1387,9 @@ const SuperAdminManageCrop = () => {
                   </div>
 
                   <div className="md:col-span-2 lg:col-span-3">
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Tenure</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Tenure
+                    </label>
                     <select
                       name="tenure_id"
                       value={editForm.tenure_id || ""}
@@ -1435,7 +1493,7 @@ const SuperAdminManageCrop = () => {
                       </div>
                     </div>
 
-                    <div className="md:col-span-1 lg:col-span-1">
+                    <div>
                       <label className="block text-xs font-medium text-slate-600 mb-1">
                         Cropping system (label)
                       </label>
@@ -1475,7 +1533,9 @@ const SuperAdminManageCrop = () => {
               {/* Notes */}
               <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:p-5">
                 <div className="mb-3">
-                  <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">Notes</h4>
+                  <h4 className="text-sm md:text-[15px] font-semibold text-slate-900">
+                    Notes
+                  </h4>
                   <p className="text-[11px] md:text-[12px] text-slate-500">
                     Optional internal notes about this crop.
                   </p>
@@ -1512,7 +1572,6 @@ const SuperAdminManageCrop = () => {
         </div>
       )}
 
-      {/* View All Modal */}
       {viewingCrop && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white p-6 md:p-8 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl relative">
@@ -1522,7 +1581,9 @@ const SuperAdminManageCrop = () => {
                   {viewingCrop.crop_name}
                   {viewingCrop.variety_name ? ` · ${viewingCrop.variety_name}` : ""}
                 </h3>
-                <p className="text-sm text-slate-500">{viewingCrop.crop_barangay || "—"}</p>
+                <p className="text-sm text-slate-500">
+                  {viewingCrop.crop_barangay || "—"}
+                </p>
               </div>
               <button
                 onClick={() => setViewingCrop(null)}
@@ -1535,13 +1596,17 @@ const SuperAdminManageCrop = () => {
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-4">
-              <div className="text-[11px] tracking-wide text-slate-500 uppercase mb-2">Farmer</div>
+              <div className="text-[11px] tracking-wide text-slate-500 uppercase mb-2">
+                Farmer
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
                 <Stat
                   label="Name"
                   value={
                     viewingCrop.farmer_first_name || viewingCrop.farmer_last_name
-                      ? `${viewingCrop.farmer_first_name || ""} ${viewingCrop.farmer_last_name || ""}`.trim()
+                      ? `${viewingCrop.farmer_first_name || ""} ${
+                          viewingCrop.farmer_last_name || ""
+                        }`.trim()
                       : "N/A"
                   }
                 />
@@ -1549,7 +1614,11 @@ const SuperAdminManageCrop = () => {
                 <Stat label="Barangay" value={viewingCrop.farmer_barangay || "N/A"} />
                 <Stat
                   label="Full Address"
-                  value={<span className="break-words">{viewingCrop.farmer_address || "N/A"}</span>}
+                  value={
+                    <span className="break-words">
+                      {viewingCrop.farmer_address || "N/A"}
+                    </span>
+                  }
                 />
                 <Stat label="Tenure" value={viewingCrop.tenure_name || "N/A"} />
               </div>
@@ -1575,7 +1644,9 @@ const SuperAdminManageCrop = () => {
                 </div>
                 <div className="text-[14px] font-semibold text-emerald-900">
                   {viewingCrop.intercrop_crop_name}
-                  {viewingCrop.intercrop_variety_name ? ` · ${viewingCrop.intercrop_variety_name}` : ""}
+                  {viewingCrop.intercrop_variety_name
+                    ? ` · ${viewingCrop.intercrop_variety_name}`
+                    : ""}
                 </div>
                 <div className="mt-1 text-[13px] text-emerald-900">
                   {viewingCrop.intercrop_estimated_volume ? (
@@ -1602,8 +1673,12 @@ const SuperAdminManageCrop = () => {
 
             {viewingCrop.note && viewingCrop.note.trim() && (
               <div className="mt-4">
-                <div className="text-[11px] uppercase tracking-wide text-slate-500">Note</div>
-                <p className="text-[14px] text-slate-700 whitespace-pre-wrap">{viewingCrop.note}</p>
+                <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Note
+                </div>
+                <p className="text-[14px] text-slate-700 whitespace-pre-wrap">
+                  {viewingCrop.note}
+                </p>
               </div>
             )}
 
@@ -1619,7 +1694,6 @@ const SuperAdminManageCrop = () => {
         </div>
       )}
 
-      {/* Confirm Delete Modal */}
       {pendingDelete && (
         <ConfirmDialog
           title="Delete crop"
@@ -1631,30 +1705,23 @@ const SuperAdminManageCrop = () => {
         />
       )}
 
-      <div className="mt-5">
+      <div
+        className={`mt-5 ml-0 transition-all duration-200 ${
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+        }`}
+      >
         <Footer />
       </div>
     </div>
   );
 };
 
-/* ---------- SMALL UI PRIMS ---------- */
-const Chip = ({ active, children, onClick }) => (
-  <button
-    onClick={onClick}
-    className={`px-3 py-1.5 rounded-full border text-sm transition ${
-      active
-        ? "bg-emerald-600 text-white border-emerald-600"
-        : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-    }`}
-  >
-    {children}
-  </button>
-);
-
+/* ---------- SMALL UI PRIMS & HELPERS ---------- */
 const Stat = ({ label, value }) => (
   <div>
-    <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="text-[11px] uppercase tracking-wide text-slate-500">
+      {label}
+    </div>
     <div className="text-[14px] text-slate-900">{value}</div>
   </div>
 );
@@ -1688,7 +1755,9 @@ function NoteClamp({ text, className = "" }) {
   const needsToggle = text.length > 140;
   return (
     <div className={className}>
-      <div className="text-[11px] uppercase tracking-wide text-slate-500">Note</div>
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+        Note
+      </div>
       <p
         className={`text-[14px] text-slate-700 ${expanded ? "" : "line-clamp-3"}`}
         style={
@@ -1740,10 +1809,16 @@ function ConfirmDialog({ title, message, onCancel, onConfirm }) {
         <h4 className="text-lg font-semibold text-slate-900">{title}</h4>
         <p className="mt-2 text-sm text-slate-700">{message}</p>
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onCancel} className="px-4 py-2 rounded-md border border-slate-300 hover:bg-slate-50">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-md border border-slate-300 hover:bg-slate-50"
+          >
             Cancel
           </button>
-          <button onClick={onConfirm} className="px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700">
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700"
+          >
             Delete
           </button>
         </div>

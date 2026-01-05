@@ -1,6 +1,7 @@
 // components/AdminNavBar.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, Link, useNavigate } from "react-router-dom";
+import { Map as MapIcon } from "lucide-react";
 import AdminProfileForm from "../AdminCrop/AdminProfileForm";
 
 function AvatarButton({ profilePicture, initials, onClick }) {
@@ -80,6 +81,7 @@ const IconUser = (props) => (
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
+
 const IconLogout = (props) => (
   <svg
     viewBox="0 0 24 24"
@@ -192,61 +194,90 @@ const AdminNavBar = () => {
           />
         </div>
 
-        {/* Nav links */}
-        <nav className="ml-auto hidden space-x-6 md:flex">
-          <a
-            href="/AdminLanding"
-            className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/AdminLanding"
-                ? "text-emerald-700 font-medium"
-                : "text-gray-800"
-            }`}
-          >
-            Home
-          </a>
+        {/* Center area: nav links + Explore button */}
+        <div className="ml-auto flex items-center space-x-6">
+          {/* Nav links */}
+          <nav className="hidden space-x-6 md:flex">
+            <a
+              href="/AdminLanding"
+              className={`tracking-wide font-light hover:text-emerald-700 ${
+                location.pathname === "/AdminLanding"
+                  ? "text-emerald-700 font-medium"
+                  : "text-gray-800"
+              }`}
+            >
+              Home
+            </a>
 
-          <a
-            href="/AdminManageCrop"
-            className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/AdminManageCrop"
-                ? "text-emerald-700 font-medium"
-                : "text-gray-800"
-            }`}
-          >
-            Crops
-          </a>
+            <a
+              href="/AdminManageCrop"
+              className={`tracking-wide font-light hover:text-emerald-700 ${
+                location.pathname === "/AdminManageCrop"
+                  ? "text-emerald-700 font-medium"
+                  : "text-gray-800"
+              }`}
+            >
+              Crops
+            </a>
 
-          <a
-            href="/AdminManageCalamity"
-            className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/AdminManageCalamity"
-                ? "text-emerald-700 font-medium"
-                : "text-gray-800"
-            }`}
-          >
-            Calamity
-          </a>
+            <a
+              href="/AdminManageCalamity"
+              className={`tracking-wide font-light hover:text-emerald-700 ${
+                location.pathname === "/AdminManageCalamity"
+                  ? "text-emerald-700 font-medium"
+                  : "text-gray-800"
+              }`}
+            >
+              Calamity
+            </a>
 
-          {/* NEW: Glossary link */}
-          <a
-            href="/AdminGlossary"
-            className={`tracking-wide font-light hover:text-emerald-700 ${
-              location.pathname === "/AdminGlossary"
-                ? "text-emerald-700 font-medium"
-                : "text-gray-800"
-            }`}
-          >
-            Glossary
-          </a>
-        </nav>
+            <a
+              href="/AdminGlossary"
+              className={`tracking-wide font-light hover:text-emerald-700 ${
+                location.pathname === "/AdminGlossary"
+                  ? "text-emerald-700 font-medium"
+                  : "text-gray-800"
+              }`}
+            >
+              Glossary
+            </a>
+          </nav>
 
-        {/* Avatar & dropdown */}
-        <div className="relative ml-6 mr-[130px]" ref={dropdownRef}>
-          <AvatarButton
-            profilePicture={adminProfile.profile_picture}
-            initials={initials}
-            onClick={() => setShowDropdown((s) => !s)}
-          />
+          {/* Explore button */}
+          <Link to="/ChooseMap" className="hidden md:inline-flex">
+            <button className="relative inline-flex items-center justify-center px-3.5 py-2.5 overflow-hidden font-medium text-white transition duration-300 ease-out border-2 border-emerald-600 rounded-xl shadow-md group">
+              <span className="absolute inset-0 flex items-center justify-center w-full h-full text-white duration-300 -translate-x-full bg-green-500 group-hover:translate-x-0 ease">
+                <MapIcon className="w-5 h-5" />
+              </span>
+              <span className="absolute flex items-center text-sm font-semibold justify-center w-full h-full text-emerald-700 transition-all duration-300 transform bg-white group-hover:translate-x-full ease tracking-widest">
+                Explore
+              </span>
+              <span className="relative text-sm font-semibold invisible">
+                Button Text
+              </span>
+            </button>
+          </Link>
+        </div>
+
+        {/* Avatar, greeting, visible name/email & dropdown */}
+        <div className="relative ml-4 mr-8" ref={dropdownRef}>
+          <div className="flex items-center gap-2">
+            <AvatarButton
+              profilePicture={adminProfile.profile_picture}
+              initials={initials}
+              onClick={() => setShowDropdown((s) => !s)}
+            />
+            {/* Greeting block – smaller and truncated */}
+            <div className="hidden md:flex flex-col leading-tight max-w-[170px]">
+              <span className="text-[11px] text-gray-500">Hi!</span>
+              <span className="text-[13px] font-semibold text-gray-900 truncate">
+                {firstName || "Admin"} {lastName}
+              </span>
+              <span className="hidden lg:block text-[11px] text-gray-500 truncate">
+                {email || "superadmin@bago.gov"}
+              </span>
+            </div>
+          </div>
 
           {showDropdown && (
             <div
@@ -257,19 +288,7 @@ const AdminNavBar = () => {
             >
               <div className="absolute -top-1 right-4 h-2 w-2 rotate-45 rounded-sm bg-white ring-1 ring-gray-100" />
 
-              <div className="flex items-center gap-3 rounded-lg px-3 py-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white">
-                  {initials || "U"}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-[14px] font-medium text-gray-900">
-                    {firstName || "Admin"} {lastName}
-                  </div>
-                  <div className="truncate text-[12px] text-gray-500">
-                    {email || "—"}
-                  </div>
-                </div>
-              </div>
+             
 
               <div className="my-2 h-px bg-gray-100" />
 
@@ -284,10 +303,13 @@ const AdminNavBar = () => {
                 Profile
               </MenuItem>
 
-              <MenuItem icon={<IconLogout />} onClick={() => {
-                setShowDropdown(false);
-                handleLogout();
-              }}>
+              <MenuItem
+                icon={<IconLogout />}
+                onClick={() => {
+                  setShowDropdown(false);
+                  handleLogout();
+                }}
+              >
                 Logout
               </MenuItem>
             </div>

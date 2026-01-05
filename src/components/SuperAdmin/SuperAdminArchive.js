@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import SuperAdminNav from "../NavBar/SuperAdminNav";
+import SuperAdminNav from "../NavBar/SuperAdminSideBar";
 import Footer from "../LandingPage/Footer";
 
 const MODULES = ["All", "Crops"]; // you can add other modules later
@@ -61,6 +61,9 @@ const SuperAdminArchive = () => {
 
   // kebab menu (per row)
   const [openMenuId, setOpenMenuId] = useState(null);
+
+  // sidebar collapsed state
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // fetch archived crops
   async function fetchArchive() {
@@ -207,9 +210,13 @@ const SuperAdminArchive = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-poppins">
-      <SuperAdminNav />
+      <SuperAdminNav onCollapsedChange={setSidebarCollapsed} />
 
-      <main className="ml-[115px] pt-[92px] pr-8 flex-grow">
+      <main
+        className={`ml-0 pt-8 md:pt-10 pr-0 md:pr-8 flex-grow transition-all duration-200 ${
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-6 pb-10">
           {/* Header */}
           <div className="mb-6 space-y-4">
@@ -336,7 +343,8 @@ const SuperAdminArchive = () => {
               No archived items found.
             </div>
           ) : (
-<div className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">              {/* Header row */}
+            <div className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {/* Header row */}
               <div
                 className={`grid ${gridCols} items-center border-b border-slate-200 bg-slate-50 px-6 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide`}
               >
@@ -534,7 +542,11 @@ const SuperAdminArchive = () => {
         </div>
       </main>
 
-      <div className="mt-5">
+      <div
+        className={`mt-5 ml-0 transition-all duration-200 ${
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+        }`}
+      >
         <Footer />
       </div>
     </div>

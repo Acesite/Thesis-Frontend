@@ -1,7 +1,8 @@
 // components/Admin/AdminGlossary.js
 import React, { useMemo, useState } from "react";
-import SuperAdminNav from "../NavBar/SuperAdminNav";
+import SuperAdminNav from "../NavBar/SuperAdminSideBar";
 import Footer from "../LandingPage/Footer";
+
 /* ------------------------------- Glossary data ------------------------------ */
 const GLOSSARY_ITEMS = [
   // SYSTEM / GENERAL
@@ -233,7 +234,7 @@ const GLOSSARY_ITEMS = [
     definition:
       "The farmer-facing map view where residents can see fields, crops, and calamity information.",
   },
-    // ECOSYSTEMS
+  // ECOSYSTEMS
   {
     term: "Irrigated Rice Ecosystem",
     category: "Ecosystem",
@@ -368,7 +369,7 @@ const GLOSSARY_ITEMS = [
     definition:
       "A farmer who received land through the government’s agrarian reform program, usually with specific rights and responsibilities.",
   },
-    // CROPPING SYSTEM
+  // CROPPING SYSTEM
   {
     term: "Cropping system",
     category: "Cropping system",
@@ -411,8 +412,6 @@ const GLOSSARY_ITEMS = [
     definition:
       "The additional crop planted with the main crop in an intercropped field.",
   },
-
-
 ];
 
 /* -------------------------- categories for dropdown ------------------------- */
@@ -428,9 +427,8 @@ const ALL_CATEGORIES = [
   "Roles",
   "System",
   "Tenure",
-  "Cropping System"
+  "Cropping System",
 ];
-
 
 /* ----------------------------- Pagination Button ---------------------------- */
 const PageBtn = ({ disabled, onClick, children, aria }) => (
@@ -458,6 +456,9 @@ const SuperAdminGlossary = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
 
+  // sidebar collapsed state for SuperAdminNav
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let items = GLOSSARY_ITEMS.filter((item) => {
@@ -477,9 +478,13 @@ const SuperAdminGlossary = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-white font-poppins">
-      <SuperAdminNav/>
+      <SuperAdminNav onCollapsedChange={setSidebarCollapsed} />
 
-      <main className="ml-[115px] pt-[92px] pr-8 flex-grow">
+      <main
+        className={`ml-0 pt-8 md:pt-10 pr-0 md:pr-8 flex-grow transition-all duration-200 ${
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+        }`}
+      >
         <div className="max-w-7xl mx-auto px-6">
           {/* Header */}
           <div className="mb-6 space-y-4">
@@ -573,7 +578,7 @@ const SuperAdminGlossary = () => {
                         setPage(1);
                       }}
                       placeholder="Search by term…"
-                      className="h-10 w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
+                      className="h-10 w-[min(18rem,80vw)] sm:w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/70"
                     />
                   </div>
                 </div>
@@ -686,8 +691,11 @@ const SuperAdminGlossary = () => {
         </div>
       </main>
 
-      {/* Footer */}
-      <div className="mt-5">
+      <div
+        className={`mt-5 ml-0 transition-all duration-200 ${
+          sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+        }`}
+      >
         <Footer />
       </div>
     </div>

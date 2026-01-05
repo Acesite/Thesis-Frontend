@@ -1163,7 +1163,7 @@ useEffect(() => {
                         </Select>
                       </Field>
 
-                      <Field label="Is this field intercropped?">
+                      {/* <Field label="Is this field intercropped?">
                         <div className="flex items-center gap-2">
                           <input
                             id="isIntercropped"
@@ -1190,7 +1190,7 @@ useEffect(() => {
                             Yes, there is a second crop in this area.
                           </label>
                         </div>
-                      </Field>
+                      </Field> */}
 
                       {(croppingSystemId !== "1" || isIntercropped) && (
                         <>

@@ -82,7 +82,7 @@ const Login = () => {
 
       // Redirect by role
       if (role === "super_admin") {
-        navigate("/SuperAdminLandingPage");
+        navigate("/ManageAccount");
       } else if (role === "admin") {
         navigate("/AdminLanding");
       } else {

@@ -5,7 +5,7 @@ import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Pagination } from "swiper/modules";
 import "swiper/css";
 import "swiper/css/pagination";
-import SuperAdminNav from "../NavBar/SuperAdminNav";
+import SuperAdminNav from "../NavBar/SuperAdminSideBar";
 import { Map } from "lucide-react";
 import Footer from "../LandingPage/Footer";
 import KeyFeatures from "../LandingPage/KeyFeatures";
