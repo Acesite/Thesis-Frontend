@@ -244,7 +244,7 @@ const AdminNavBar = () => {
           </nav>
 
           {/* Explore button */}
-          <Link to="/ChooseMap" className="hidden md:inline-flex">
+          <Link to="/UnifiedAgriMap" className="hidden md:inline-flex">
             <button className="relative inline-flex items-center justify-center px-3.5 py-2.5 overflow-hidden font-medium text-white transition duration-300 ease-out border-2 border-emerald-600 rounded-xl shadow-md group">
               <span className="absolute inset-0 flex items-center justify-center w-full h-full text-white duration-300 -translate-x-full bg-green-500 group-hover:translate-x-0 ease">
                 <MapIcon className="w-5 h-5" />

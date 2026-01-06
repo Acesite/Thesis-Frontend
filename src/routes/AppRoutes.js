@@ -28,6 +28,8 @@ import UserCalamityMap from "../components/User/UserCalamityMap";
 import SuperAdminGlossary from "../components/SuperAdmin/SuperAdminGlossary";
 import AdminGlossary from "../components/AdminCrop/AdminGlossary";
 import SuperAdminArchive from "../components/SuperAdmin/SuperAdminArchive";
+import UnifiedAgriMap from "../components/UnifiedMap/UnifiedAgriMap";
+
 
 
 const AppRoutes = () => {
@@ -54,7 +56,7 @@ const AppRoutes = () => {
       <Route path="/SuperAdminChooseMap" element={<SuperAdminChooseMap />} />
       <Route path="/SuperAdminGlossary" element={<SuperAdminGlossary />} />
       <Route path="/SuperAdminArchive" element={<SuperAdminArchive />} />
-
+      <Route path="/UnifiedAgriMap" element={<UnifiedAgriMap />} />
 
 
 
