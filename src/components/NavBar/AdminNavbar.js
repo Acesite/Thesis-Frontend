@@ -250,7 +250,7 @@ const AdminNavBar = () => {
                 <MapIcon className="w-5 h-5" />
               </span>
               <span className="absolute flex items-center text-sm font-semibold justify-center w-full h-full text-emerald-700 transition-all duration-300 transform bg-white group-hover:translate-x-full ease tracking-widest">
-                Explore
+                Exploredsdsds
               </span>
               <span className="relative text-sm font-semibold invisible">
                 Button Text
