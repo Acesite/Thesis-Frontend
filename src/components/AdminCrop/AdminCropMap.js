@@ -1905,7 +1905,7 @@ useEffect(() => {
 
   // ------------- UI -------------
   return (
-    <div className="relative h-screen w-screen">
+    <div className="relative h-full w-full">
       {/* GPS / toolbar */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-white/70 backdrop-blur rounded-xl p-2 shadow-md">
         <IconButton
