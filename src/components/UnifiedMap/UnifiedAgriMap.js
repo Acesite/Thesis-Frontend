@@ -77,6 +77,6 @@ const UnifiedAgriMap = () => {
       </main>
     </div>
   );
-};
+};  
 
 export default UnifiedAgriMap;
