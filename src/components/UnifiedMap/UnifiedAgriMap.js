@@ -18,7 +18,7 @@ const UnifiedAgriMap = () => {
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 min-w-0">
               <h1 className="text-base font-semibold text-slate-900 truncate">
-                AgriGIS Unified Map
+                AgriGIS Unified Maps
               </h1>
               <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-[2px] text-[11px] font-semibold text-emerald-700">
                 <MapPin className="h-3 w-3" />
