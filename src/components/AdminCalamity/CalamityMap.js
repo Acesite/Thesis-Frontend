@@ -81,7 +81,8 @@ function resolveImageURL(calamity) {
   }
 
   if (!raw) return null;
-  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) return raw;
+  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:"))
+    return raw;
   if (raw.startsWith("/")) return `${API_BASE}${raw}`;
   return `${API_BASE}/${raw}`;
 }
@@ -174,7 +175,9 @@ function startGeoWatch(onPos, onErr, opts) {
   }
   const id = navigator.geolocation.watchPosition(onPos, onErr, opts);
   return () => {
-    try { navigator.geolocation?.clearWatch?.(id); } catch {}
+    try {
+      navigator.geolocation?.clearWatch?.(id);
+    } catch {}
   };
 }
 function extractHeadingFromEvent(e) {
@@ -184,8 +187,10 @@ function extractHeadingFromEvent(e) {
 }
 async function startCompass(onHeading) {
   try {
-    if (typeof DeviceOrientationEvent !== "undefined" &&
-        typeof DeviceOrientationEvent.requestPermission === "function") {
+    if (
+      typeof DeviceOrientationEvent !== "undefined" &&
+      typeof DeviceOrientationEvent.requestPermission === "function"
+    ) {
       const p = await DeviceOrientationEvent.requestPermission();
       if (p !== "granted") throw new Error("Compass permission denied.");
     }
@@ -206,7 +211,9 @@ function IconButton({ title, active, onClick, children }) {
       title={title}
       onClick={onClick}
       className={`w-9 h-9 grid place-items-center rounded-lg border transition shadow-sm ${
-        active ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-800 border-gray-300"
+        active
+          ? "bg-emerald-600 text-white border-emerald-600"
+          : "bg-white text-gray-800 border-gray-300"
       } hover:shadow-md`}
     >
       {children}
@@ -243,9 +250,15 @@ function strictDetectBarangayForGeometry(geom, barangaysFC) {
     if (!g) continue;
     if (!turf.booleanPointInPolygon(center, g)) continue;
     const ring =
-      geom.type === "Polygon" ? (geom.coordinates?.[0] || []) : (geom.coordinates?.[0]?.[0] || []);
+      geom.type === "Polygon"
+        ? geom.coordinates?.[0] || []
+        : geom.coordinates?.[0]?.[0] || [];
     const allInside = ring.every((coord) => {
-      try { return turf.booleanPointInPolygon(turf.point(coord), g); } catch { return false; }
+      try {
+        return turf.booleanPointInPolygon(turf.point(coord), g);
+      } catch {
+        return false;
+      }
     });
     if (!allInside) continue;
     return {
@@ -322,10 +335,22 @@ const CalamityFarmerMap = () => {
   };
 
   const mapStyles = {
-    Default: { url: "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d", thumbnail: DefaultThumbnail },
-    Satellite: { url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n", thumbnail: SatelliteThumbnail },
-    Dark: { url: "mapbox://styles/wompwomp-69/cm96veqvt009101szf7g42jps", thumbnail: DarkThumbnail },
-    Light: { url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0", thumbnail: LightThumbnail },
+    Default: {
+      url: "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d",
+      thumbnail: DefaultThumbnail,
+    },
+    Satellite: {
+      url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n",
+      thumbnail: SatelliteThumbnail,
+    },
+    Dark: {
+      url: "mapbox://styles/wompwomp-69/cm96veqvt009101szf7g42jps",
+      thumbnail: DarkThumbnail,
+    },
+    Light: {
+      url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0",
+      thumbnail: LightThumbnail,
+    },
   };
 
   const zoomToBarangay = (coordinates) => {
@@ -349,8 +374,16 @@ const CalamityFarmerMap = () => {
       const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
         <div class="text-sm">
           <h3 class="font-bold text-red-600 text-base">${barangayData.name}</h3>
-          ${barangayData.population ? `<p><strong>Population:</strong> ${barangayData.population}</p>` : ""}
-          ${barangayData.hazards ? `<p><strong>Hazards:</strong> ${barangayData.hazards.join(", ")}</p>` : ""}
+          ${
+            barangayData.population
+              ? `<p><strong>Population:</strong> ${barangayData.population}</p>`
+              : ""
+          }
+          ${
+            barangayData.hazards
+              ? `<p><strong>Hazards:</strong> ${barangayData.hazards.join(", ")}</p>`
+              : ""
+          }
         </div>
       `);
 
@@ -571,9 +604,7 @@ const CalamityFarmerMap = () => {
       if (!e.features?.length) return;
       const feature = e.features[0];
       const polyId = String(feature.properties?.id ?? "");
-      const calam = sidebarCalamities.find(
-        (c) => String(c.calamity_id ?? c.id) === polyId
-      );
+      const calam = sidebarCalamities.find((c) => String(c.calamity_id ?? c.id) === polyId);
       if (calam) {
         setSelectedCalamity(calam);
         highlightSelection(calam);
@@ -582,9 +613,7 @@ const CalamityFarmerMap = () => {
       try {
         const coords = feature.geometry?.coordinates?.[0];
         if (Array.isArray(coords) && coords.length > 2) {
-          const center = turf
-            .centerOfMass(turf.polygon([coords]))
-            .geometry.coordinates;
+          const center = turf.centerOfMass(turf.polygon([coords])).geometry.coordinates;
           map.current.easeTo({ center, zoom: Math.max(map.current.getZoom(), 13) });
         }
       } catch {}
@@ -609,10 +638,17 @@ const CalamityFarmerMap = () => {
     map.current.on("mouseleave", "calamity-polygons-layer", handlePolyLeave);
   }, [handlePolyClick, handlePolyEnter, handlePolyLeave]);
 
+  // keep latest polygons in a ref so we can compute damage overlays
+  const latestPolygonsRef = useRef(null);
+  const [polyVersion, setPolyVersion] = useState(0);
+
   const loadPolygons = useCallback(
     async (geojsonData = null, isFiltered = false) => {
       const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
       const fullData = geojsonData || res.data;
+
+      latestPolygonsRef.current = fullData;
+      setPolyVersion((v) => v + 1);
 
       const paintStyle = isFiltered
         ? {
@@ -688,9 +724,7 @@ const CalamityFarmerMap = () => {
       const filtered =
         selectedCalamityType === "All"
           ? calamities
-          : calamities.filter(
-              (calamity) => calamity.calamity_type === selectedCalamityType
-            );
+          : calamities.filter((calamity) => calamity.calamity_type === selectedCalamityType);
 
       if (filtered.length === 0) {
         toast.info("No Calamities Found .", {
@@ -827,17 +861,17 @@ const CalamityFarmerMap = () => {
     }
     if (!m.getLayer(USER_ACC_LAYER)) {
       m.addLayer({
-        id: "user-accuracy-layer",
+        id: USER_ACC_LAYER,
         type: "fill",
-        source: "user-accuracy-source",
+        source: USER_ACC_SOURCE,
         paint: { "fill-color": "#3b82f6", "fill-opacity": 0.15 },
       });
     }
     if (!m.getLayer(USER_ACC_OUTLINE)) {
       m.addLayer({
-        id: "user-accuracy-outline",
+        id: USER_ACC_OUTLINE,
         type: "line",
-        source: "user-accuracy-source",
+        source: USER_ACC_SOURCE,
         paint: { "line-color": "#2563eb", "line-width": 2 },
       });
     }
@@ -918,15 +952,9 @@ const CalamityFarmerMap = () => {
       if (!map.current) return;
 
       if (lockToBago && !isInsideBounds([glng, glat], BAGO_CITY_BOUNDS)) {
-        const expanded = expandBoundsToIncludePoint(
-          BAGO_CITY_BOUNDS,
-          [glng, glat],
-          0.05
-        );
+        const expanded = expandBoundsToIncludePoint(BAGO_CITY_BOUNDS, [glng, glat], 0.05);
         map.current.setMaxBounds(expanded);
-        toast.info(
-          "You’re outside Bago. Temporarily expanded bounds to include your location."
-        );
+        toast.info("You’re outside Bago. Temporarily expanded bounds to include your location.");
       }
 
       setUserLoc({ lng: glng, lat: glat, acc: accuracy });
@@ -941,14 +969,14 @@ const CalamityFarmerMap = () => {
     if (!BARANGAYS_FC?.features?.length) return;
     const m = map.current;
 
-    // source
     if (!m.getSource("barangays-src")) {
       m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
     } else {
-      try { m.getSource("barangays-src").setData(BARANGAYS_FC); } catch {}
+      try {
+        m.getSource("barangays-src").setData(BARANGAYS_FC);
+      } catch {}
     }
 
-    // 1) glow/casing
     if (!m.getLayer("barangays-casing")) {
       m.addLayer({
         id: "barangays-casing",
@@ -959,18 +987,24 @@ const CalamityFarmerMap = () => {
           "line-opacity": 0.9,
           "line-blur": 1.2,
           "line-width": [
-            "interpolate", ["linear"], ["zoom"],
-            10, 2.0,
-            12, 3.0,
-            14, 4.0,
-            16, 6.0,
-            18, 9.0
-          ]
-        }
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10,
+            2.0,
+            12,
+            3.0,
+            14,
+            4.0,
+            16,
+            6.0,
+            18,
+            9.0,
+          ],
+        },
       });
     }
 
-    // 2) main stroke
     if (!m.getLayer("barangays-line")) {
       m.addLayer({
         id: "barangays-line",
@@ -980,18 +1014,24 @@ const CalamityFarmerMap = () => {
           "line-color": "#065f46",
           "line-opacity": 0.95,
           "line-width": [
-            "interpolate", ["linear"], ["zoom"],
-            10, 1.2,
-            12, 1.8,
-            14, 2.6,
-            16, 3.6,
-            18, 5.5
-          ]
-        }
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10,
+            1.2,
+            12,
+            1.8,
+            14,
+            2.6,
+            16,
+            3.6,
+            18,
+            5.5,
+          ],
+        },
       });
     }
 
-    // 3) labels
     if (!m.getLayer("barangays-labels")) {
       m.addLayer({
         id: "barangays-labels",
@@ -999,7 +1039,12 @@ const CalamityFarmerMap = () => {
         source: "barangays-src",
         layout: {
           "text-field": [
-            "coalesce", ["get","Barangay"], ["get","barangay"], ["get","NAME"], ["get","name"], ""
+            "coalesce",
+            ["get", "Barangay"],
+            ["get", "barangay"],
+            ["get", "NAME"],
+            ["get", "name"],
+            "",
           ],
           "symbol-placement": "point",
           "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 12, 12, 14, 14, 16, 18],
@@ -1007,24 +1052,24 @@ const CalamityFarmerMap = () => {
           "text-allow-overlap": true,
           "text-ignore-placement": true,
           "symbol-sort-key": 999999,
-          "visibility": "visible"
+          visibility: "visible",
         },
         paint: {
           "text-color": "#0b3b2e",
           "text-halo-color": "rgba(255,255,255,0.98)",
           "text-halo-width": 2.2,
-          "text-halo-blur": 0.4
-        }
+          "text-halo-blur": 0.4,
+        },
       });
     }
 
-    // order
     try {
       m.moveLayer("barangays-casing");
       m.moveLayer("barangays-line");
       const layers = m.getStyle()?.layers || [];
       const topId = layers[layers.length - 1]?.id;
-      if (topId) m.moveLayer("barangays-labels", topId); else m.moveLayer("barangays-labels");
+      if (topId) m.moveLayer("barangays-labels", topId);
+      else m.moveLayer("barangays-labels");
     } catch {}
   }, []);
 
@@ -1049,6 +1094,298 @@ const CalamityFarmerMap = () => {
       } catch {}
     };
   }, [ensureBarangayLayers]);
+
+  /* ======================================================================
+     DAMAGE RADIUS MODE
+  ====================================================================== */
+  const DAMAGE_CIRCLE_SRC = "damage-circle-src";
+  const DAMAGE_CIRCLE_FILL = "damage-circle-fill";
+  const DAMAGE_CIRCLE_LINE = "damage-circle-line";
+
+  const damageCenterMarkerRef = useRef(null);
+  const [damageMode, setDamageMode] = useState(false);
+  const [damageCenter, setDamageCenter] = useState(null); // [lng, lat]
+  const [damageRadiusM, setDamageRadiusM] = useState(500);
+
+  const DAMAGE_COLORS = {
+    Severe: "#dc2626",
+    High: "#ef4444",
+    Moderate: "#f59e0b",
+    Low: "#3b82f6",
+    None: "#9ca3af",
+  };
+
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+  // Photoshop-like 2-step state
+  const [damageStage, setDamageStage] = useState("idle"); // "idle" | "centerSet" | "dragging"
+  const damageRafRef = useRef(null);
+  const damageMeasureElRef = useRef(null);
+
+  const ensureDamageCircleLayers = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+
+    if (!m.getSource(DAMAGE_CIRCLE_SRC)) {
+      m.addSource(DAMAGE_CIRCLE_SRC, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+    }
+
+    if (!m.getLayer(DAMAGE_CIRCLE_FILL)) {
+      m.addLayer({
+        id: DAMAGE_CIRCLE_FILL,
+        type: "fill",
+        source: DAMAGE_CIRCLE_SRC,
+        paint: { "fill-color": "#111827", "fill-opacity": 0.08 },
+      });
+    }
+
+    if (!m.getLayer(DAMAGE_CIRCLE_LINE)) {
+      m.addLayer({
+        id: DAMAGE_CIRCLE_LINE,
+        type: "line",
+        source: DAMAGE_CIRCLE_SRC,
+        paint: { "line-color": "#111827", "line-width": 2, "line-opacity": 0.65 },
+      });
+    }
+  }, []);
+
+  const setDamageCircle = useCallback(
+    (centerLngLat, radiusMeters) => {
+      const m = map.current;
+      if (!m) return;
+
+      ensureDamageCircleLayers();
+
+      const circle = turf.circle(centerLngLat, radiusMeters / 1000, {
+        steps: 80,
+        units: "kilometers",
+      });
+
+      try {
+        m.getSource(DAMAGE_CIRCLE_SRC).setData(circle);
+      } catch {}
+    },
+    [ensureDamageCircleLayers]
+  );
+
+  const removeDamageCircle = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+    try {
+      if (m.getLayer(DAMAGE_CIRCLE_FILL)) m.removeLayer(DAMAGE_CIRCLE_FILL);
+      if (m.getLayer(DAMAGE_CIRCLE_LINE)) m.removeLayer(DAMAGE_CIRCLE_LINE);
+      if (m.getSource(DAMAGE_CIRCLE_SRC)) m.removeSource(DAMAGE_CIRCLE_SRC);
+    } catch {}
+  }, []);
+
+  const upsertDamageCenterMarker = useCallback(
+    (centerLngLat) => {
+      const m = map.current;
+      if (!m) return;
+
+      if (!damageCenterMarkerRef.current) {
+        const el = document.createElement("div");
+        el.style.width = "18px";
+        el.style.height = "18px";
+        el.style.borderRadius = "9999px";
+        el.style.background = "#111827";
+        el.style.border = "3px solid #fff";
+        el.style.boxShadow = "0 6px 16px rgba(0,0,0,0.25)";
+
+        const marker = new mapboxgl.Marker({ element: el, draggable: true })
+          .setLngLat(centerLngLat)
+          .addTo(m);
+
+        marker.on("dragend", () => {
+          const ll = marker.getLngLat();
+          setDamageCenter([ll.lng, ll.lat]);
+        });
+
+        damageCenterMarkerRef.current = marker;
+      } else {
+        damageCenterMarkerRef.current.setLngLat(centerLngLat);
+        damageCenterMarkerRef.current.addTo(m);
+      }
+    },
+    [setDamageCenter]
+  );
+
+  const removeDamageCenterMarker = useCallback(() => {
+    try {
+      damageCenterMarkerRef.current?.remove();
+    } catch {}
+  }, []);
+
+  const computeDamageGeoJSON = useCallback(
+    (geojson, centerLngLat, radiusMeters) => {
+      if (!geojson?.features?.length || !centerLngLat || !radiusMeters) return geojson;
+
+      const centerPt = turf.point(centerLngLat);
+      const circle = turf.circle(centerLngLat, radiusMeters / 1000, {
+        steps: 80,
+        units: "kilometers",
+      });
+
+      const W_DIST = 0.65;
+      const W_OVERLAP = 0.35;
+
+      return {
+        ...geojson,
+        features: geojson.features.map((f) => {
+          try {
+            const geom = f.geometry;
+            if (!geom) return f;
+
+            const polyFeat = {
+              type: "Feature",
+              geometry: geom,
+              properties: f.properties || {},
+            };
+
+            const centroid = turf.centerOfMass(polyFeat);
+            const distKm = turf.distance(centerPt, centroid, { units: "kilometers" });
+            const distM = distKm * 1000;
+            const distFactor = clamp01(1 - distM / radiusMeters);
+
+            const polyArea = turf.area(polyFeat);
+            let overlapRatio = 0;
+
+            if (polyArea > 0) {
+              let inter = null;
+              try {
+                inter = turf.intersect(circle, polyFeat);
+              } catch {
+                inter = null;
+              }
+              if (inter) {
+                const interArea = turf.area(inter);
+                overlapRatio = clamp01(interArea / polyArea);
+              }
+            }
+
+            const score = clamp01(W_DIST * distFactor + W_OVERLAP * overlapRatio);
+
+            let level = "None";
+            if (score >= 0.78) level = "Severe";
+            else if (score >= 0.58) level = "High";
+            else if (score >= 0.38) level = "Moderate";
+            else if (score >= 0.18) level = "Low";
+
+            return {
+              ...f,
+              properties: {
+                ...(f.properties || {}),
+                damage_score: +score.toFixed(3),
+                damage_level: level,
+                damage_dist_m: Math.round(distM),
+                damage_overlap: +overlapRatio.toFixed(3),
+              },
+            };
+          } catch {
+            return f;
+          }
+        }),
+      };
+    },
+    []
+  );
+
+  const applyDamageStyling = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+
+    const fillExpr = [
+      "match",
+      ["get", "damage_level"],
+      "Severe",
+      DAMAGE_COLORS.Severe,
+      "High",
+      DAMAGE_COLORS.High,
+      "Moderate",
+      DAMAGE_COLORS.Moderate,
+      "Low",
+      DAMAGE_COLORS.Low,
+      DAMAGE_COLORS.None,
+    ];
+
+    try {
+      if (m.getLayer("calamity-polygons-layer")) {
+        m.setPaintProperty("calamity-polygons-layer", "fill-color", fillExpr);
+        m.setPaintProperty("calamity-polygons-layer", "fill-opacity", 0.55);
+      }
+      if (m.getLayer("calamity-polygons-outline")) {
+        m.setPaintProperty("calamity-polygons-outline", "line-color", "#111827");
+        m.setPaintProperty("calamity-polygons-outline", "line-width", 2);
+      }
+    } catch {}
+  }, [DAMAGE_COLORS]);
+
+  const applyNormalPolygonStyling = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+
+    const fillExpr = [
+      "match",
+      ["get", "calamity_type"],
+      "Flood",
+      "#3b82f6",
+      "Earthquake",
+      "#ef4444",
+      "Typhoon",
+      "#8b5cf6",
+      "Landslide",
+      "#f59e0b",
+      "Drought",
+      "#f97316",
+      "Wildfire",
+      "#dc2626",
+      "#ef4444",
+    ];
+
+    try {
+      if (m.getLayer("calamity-polygons-layer")) {
+        m.setPaintProperty("calamity-polygons-layer", "fill-color", fillExpr);
+        m.setPaintProperty("calamity-polygons-layer", "fill-opacity", 0.4);
+      }
+      if (m.getLayer("calamity-polygons-outline")) {
+        m.setPaintProperty("calamity-polygons-outline", "line-color", "#7f1d1d");
+        m.setPaintProperty("calamity-polygons-outline", "line-width", 2);
+      }
+    } catch {}
+  }, []);
+
+  const applyDamageIfActive = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+    if (!damageMode || !damageCenter || !latestPolygonsRef.current) return;
+
+    setDamageCircle(damageCenter, damageRadiusM);
+    upsertDamageCenterMarker(damageCenter);
+
+    const computed = computeDamageGeoJSON(
+      latestPolygonsRef.current,
+      damageCenter,
+      damageRadiusM
+    );
+
+    try {
+      if (m.getSource("calamity-polygons")) {
+        m.getSource("calamity-polygons").setData(computed);
+        applyDamageStyling();
+      }
+    } catch {}
+  }, [
+    damageMode,
+    damageCenter,
+    damageRadiusM,
+    setDamageCircle,
+    upsertDamageCenterMarker,
+    computeDamageGeoJSON,
+    applyDamageStyling,
+  ]);
 
   /** -------- map init: RUNS ONCE -------- **/
   useEffect(() => {
@@ -1076,6 +1413,9 @@ const CalamityFarmerMap = () => {
         const res = await axios.get(`${API_BASE}/api/calamities/polygons`);
         const geojson = res.data;
 
+        latestPolygonsRef.current = geojson;
+        setPolyVersion((v) => v + 1);
+
         if (map.current.getSource("calamity-polygons")) {
           map.current.getSource("calamity-polygons").setData(geojson);
         } else {
@@ -1102,7 +1442,7 @@ const CalamityFarmerMap = () => {
 
       ensureUserAccuracyLayers();
       ensureBarangayLayers();
-      // keep-alive for barangay labels/borders
+
       const __disarm = armBarangayKeepAlive();
       map.current.__barangayDisarm = __disarm;
 
@@ -1130,7 +1470,11 @@ const CalamityFarmerMap = () => {
         }
 
         if (!didHighlight && Number.isFinite(target.lat) && Number.isFinite(target.lng)) {
-          map.current.flyTo({ center: [target.lng, target.lat], zoom: target.zoom, essential: true });
+          map.current.flyTo({
+            center: [target.lng, target.lat],
+            zoom: target.zoom,
+            essential: true,
+          });
         }
 
         if (didHighlight) hasDeepLinkedRef.current = true;
@@ -1139,8 +1483,7 @@ const CalamityFarmerMap = () => {
       // draw constraint
       const handleDrawAttempt = (feature) => {
         if (!feature?.geometry) return;
-        if (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon")
-          return;
+        if (feature.geometry.type !== "Polygon" && feature.geometry.type !== "MultiPolygon") return;
 
         const poly = feature.geometry;
         const detection = strictDetectBarangayForGeometry(poly, BARANGAYS_FC);
@@ -1157,8 +1500,7 @@ const CalamityFarmerMap = () => {
           return false;
         }
 
-        const ring =
-          poly.type === "Polygon" ? poly.coordinates?.[0] : poly.coordinates?.[0]?.[0];
+        const ring = poly.type === "Polygon" ? poly.coordinates?.[0] : poly.coordinates?.[0]?.[0];
         const area = turf.area({ type: "Feature", geometry: poly, properties: {} });
         const hectares = +(area / 10000).toFixed(2);
 
@@ -1191,10 +1533,9 @@ const CalamityFarmerMap = () => {
     map.current.setStyle(mapStyle);
     map.current.once("style.load", async () => {
       ensureUserAccuracyLayers();
-      await loadPolygons();            // add fills/lines first
-      ensureBarangayLayers();          // then add + hoist labels to top
+      await loadPolygons();
+      ensureBarangayLayers();
 
-      // re-arm keep-alive after style swap
       map.current.__barangayDisarm?.();
       const __disarm2 = armBarangayKeepAlive();
       map.current.__barangayDisarm = __disarm2;
@@ -1232,6 +1573,9 @@ const CalamityFarmerMap = () => {
           }
         }
       }
+
+      // re-apply damage mode visuals after style swap
+      applyDamageIfActive();
     });
   }, [
     mapStyle,
@@ -1252,6 +1596,7 @@ const CalamityFarmerMap = () => {
     updateUserAccuracyCircle,
     headingDeg,
     userLoc,
+    applyDamageIfActive,
   ]);
 
   // deep-link after list arrives (no setStyle here)
@@ -1271,9 +1616,7 @@ const CalamityFarmerMap = () => {
 
       const center =
         getCalamityCenter(hit) ||
-        (Number.isFinite(target.lng) && Number.isFinite(target.lat)
-          ? [target.lng, target.lat]
-          : null);
+        (Number.isFinite(target.lng) && Number.isFinite(target.lat) ? [target.lng, target.lat] : null);
       if (center) map.current.flyTo({ center, zoom: target.zoom ?? 16, essential: true });
       hasDeepLinkedRef.current = true;
     });
@@ -1313,9 +1656,7 @@ const CalamityFarmerMap = () => {
       } else {
         const filtered = {
           ...geojson,
-          features: geojson.features.filter(
-            (f) => f.properties.calamity_type === selectedCalamityType
-          ),
+          features: geojson.features.filter((f) => f.properties.calamity_type === selectedCalamityType),
         };
         await loadPolygons(filtered, true);
       }
@@ -1331,11 +1672,254 @@ const CalamityFarmerMap = () => {
     return () => window.removeEventListener("keydown", handleEsc);
   }, []);
 
-  // Cleanup GPS + selection + animation + hover popup
+  // DAMAGE recompute whenever polygons refresh OR radius/center changes
+  useEffect(() => {
+    if (!map.current) return;
+    if (!damageMode || !damageCenter || !latestPolygonsRef.current) return;
+    applyDamageIfActive();
+  }, [polyVersion, damageMode, damageCenter, damageRadiusM, applyDamageIfActive]);
+
+  // Photoshop-like: click to set center, then hold+drag to size radius (2-step)
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+
+    const MIN_R = 50;
+    const MAX_R = 3000;
+
+    const scheduleApply = () => {
+      if (damageRafRef.current) return;
+      damageRafRef.current = requestAnimationFrame(() => {
+        damageRafRef.current = null;
+        applyDamageIfActive();
+      });
+    };
+
+    const ensureDamageMeasureEl = () => {
+      if (damageMeasureElRef.current) return damageMeasureElRef.current;
+      const host = mapContainer.current;
+      if (!host) return null;
+
+      const el = document.createElement("div");
+      el.style.position = "absolute";
+      el.style.left = "0px";
+      el.style.top = "0px";
+      el.style.transform = "translate(12px, 12px)";
+      el.style.zIndex = "60";
+      el.style.pointerEvents = "none";
+      el.style.fontFamily = "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+      el.style.fontSize = "12px";
+      el.style.fontWeight = "700";
+      el.style.color = "#fff";
+      el.style.background = "rgba(17,24,39,0.88)";
+      el.style.border = "1px solid rgba(255,255,255,0.18)";
+      el.style.borderRadius = "9999px";
+      el.style.padding = "4px 10px";
+      el.style.boxShadow = "0 10px 25px rgba(0,0,0,0.18)";
+      el.style.display = "none";
+      el.textContent = "0 m";
+
+      host.style.position = host.style.position || "relative";
+      host.appendChild(el);
+
+      damageMeasureElRef.current = el;
+      return el;
+    };
+
+    const showMeasureAtLngLat = (lngLat, meters) => {
+      const el = ensureDamageMeasureEl();
+      if (!el) return;
+      try {
+        const p = m.project(lngLat);
+        el.style.left = `${p.x}px`;
+        el.style.top = `${p.y}px`;
+        el.textContent = `${Math.round(meters)} m`;
+        el.style.display = "block";
+      } catch {}
+    };
+
+    const hideMeasure = () => {
+      const el = damageMeasureElRef.current;
+      if (!el) return;
+      el.style.display = "none";
+    };
+
+    const clampRadius = (r) => Math.max(MIN_R, Math.min(MAX_R, r));
+
+    const metersBetweenLngLat = (a, b) => {
+      try {
+        return turf.distance(turf.point(a), turf.point(b), { units: "kilometers" }) * 1000;
+      } catch {
+        return 0;
+      }
+    };
+
+    // 1) Click once to set CENTER
+    const onClickSetCenter = (e) => {
+      if (!damageMode) return;
+      if (damageStage === "dragging") return;
+
+      try {
+        m.off("click", "calamity-polygons-layer", handlePolyClick);
+      } catch {}
+
+      const center = [e.lngLat.lng, e.lngLat.lat];
+      setDamageCenter(center);
+      upsertDamageCenterMarker(center);
+
+      const startR = Math.max(MIN_R, Math.min(500, damageRadiusM || 500));
+      setDamageRadiusM(startR);
+      setDamageCircle(center, startR);
+
+      setDamageStage("centerSet");
+      toast.info("Center set. Now hold left-click and drag to size the radius.");
+      applyDamageIfActive();
+    };
+
+    // 2) Hold + drag to size
+    const onMouseDownStartDrag = (e) => {
+      if (!damageMode) return;
+
+      if (!damageCenter) {
+        const center = [e.lngLat.lng, e.lngLat.lat];
+        setDamageCenter(center);
+        upsertDamageCenterMarker(center);
+        setDamageRadiusM(MIN_R);
+        setDamageCircle(center, MIN_R);
+        setDamageStage("centerSet");
+        applyDamageIfActive();
+        return;
+      }
+
+      setDamageStage("dragging");
+
+      try {
+        m.dragPan.disable();
+      } catch {}
+      try {
+        m.getCanvas().style.cursor = "crosshair";
+      } catch {}
+
+      const curr = [e.lngLat.lng, e.lngLat.lat];
+      const r = clampRadius(metersBetweenLngLat(damageCenter, curr));
+
+      setDamageRadiusM(Math.round(r));
+      setDamageCircle(damageCenter, r);
+      showMeasureAtLngLat(e.lngLat, r);
+      scheduleApply();
+    };
+
+    const onMouseMoveDrag = (e) => {
+      if (!damageMode) return;
+      if (damageStage !== "dragging") return;
+      if (!damageCenter) return;
+
+      const curr = [e.lngLat.lng, e.lngLat.lat];
+      const r = clampRadius(metersBetweenLngLat(damageCenter, curr));
+
+      setDamageRadiusM(Math.round(r));
+      setDamageCircle(damageCenter, r);
+      showMeasureAtLngLat(e.lngLat, r);
+      scheduleApply();
+    };
+
+    const onMouseUpEndDrag = () => {
+      if (!damageMode) return;
+      if (damageStage !== "dragging") return;
+
+      setDamageStage("centerSet");
+      hideMeasure();
+
+      try {
+        m.dragPan.enable();
+      } catch {}
+      try {
+        m.getCanvas().style.cursor = "";
+      } catch {}
+
+      toast.success("Radius updated. Click a new center to reposition, or drag again to resize.");
+    };
+
+    if (damageMode) {
+      try {
+        m.getCanvas().style.cursor = "crosshair";
+      } catch {}
+
+      m.on("click", onClickSetCenter);
+
+      m.on("mousedown", onMouseDownStartDrag);
+      m.on("mousemove", onMouseMoveDrag);
+      m.on("mouseup", onMouseUpEndDrag);
+
+      m.on("touchstart", onMouseDownStartDrag);
+      m.on("touchmove", onMouseMoveDrag);
+      m.on("touchend", onMouseUpEndDrag);
+      m.on("touchcancel", onMouseUpEndDrag);
+    }
+
+    return () => {
+      try {
+        m.off("click", onClickSetCenter);
+
+        m.off("mousedown", onMouseDownStartDrag);
+        m.off("mousemove", onMouseMoveDrag);
+        m.off("mouseup", onMouseUpEndDrag);
+
+        m.off("touchstart", onMouseDownStartDrag);
+        m.off("touchmove", onMouseMoveDrag);
+        m.off("touchend", onMouseUpEndDrag);
+        m.off("touchcancel", onMouseUpEndDrag);
+
+        try {
+          m.dragPan.enable();
+          attachPolygonInteractivity();
+          m.getCanvas().style.cursor = "";
+        } catch {}
+
+        if (damageRafRef.current) {
+          cancelAnimationFrame(damageRafRef.current);
+          damageRafRef.current = null;
+        }
+
+        hideMeasure();
+        setDamageStage("idle");
+      } catch {}
+    };
+  }, [
+    damageMode,
+    damageStage,
+    damageCenter,
+    damageRadiusM,
+    applyDamageIfActive,
+    setDamageCircle,
+    upsertDamageCenterMarker,
+    attachPolygonInteractivity,
+    handlePolyClick,
+  ]);
+
+  // When damage mode turns OFF: remove circle + marker + restore normal styling/data
+  useEffect(() => {
+    const m = map.current;
+    if (!m) return;
+
+    if (damageMode) return;
+
+    removeDamageCircle();
+    removeDamageCenterMarker();
+
+    if (latestPolygonsRef.current && m.getSource("calamity-polygons")) {
+      try {
+        m.getSource("calamity-polygons").setData(latestPolygonsRef.current);
+      } catch {}
+    }
+    applyNormalPolygonStyling();
+  }, [damageMode, removeDamageCircle, removeDamageCenterMarker, applyNormalPolygonStyling]);
+
+  // Cleanup GPS + selection + animation + hover popup + damage mode artifacts
   useEffect(() => {
     return () => {
       try {
-        map.current?.__barangayDisarm?.(); // remove keep-alive listeners
+        map.current?.__barangayDisarm?.();
         watchStopRef.current?.();
         userMarkerRef.current?.remove();
         compassStopRef.current?.();
@@ -1344,10 +1928,12 @@ const CalamityFarmerMap = () => {
           HILITE_ANIM_REF.current = null;
         }
         hoverPopupRef.current?.remove();
+        removeDamageCircle();
+        removeDamageCenterMarker();
         clearSelection();
       } catch {}
     };
-  }, [clearSelection]);
+  }, [clearSelection, removeDamageCircle, removeDamageCenterMarker]);
 
   return (
     <div className="relative h-full w-full">
@@ -1487,7 +2073,68 @@ const CalamityFarmerMap = () => {
             </svg>
           )}
         </IconButton>
+
+        {/* Damage Radius Mode */}
+        <IconButton
+          title={damageMode ? "Exit Damage Radius Mode" : "Damage Radius Mode"}
+          active={damageMode}
+          onClick={() => {
+            setDamageMode((prev) => {
+              const next = !prev;
+              if (next) {
+                setDamageStage("idle");
+                toast.info("Damage tool ON: click once to set center, then hold + drag to size.");
+              } else {
+                setDamageStage("idle");
+                toast.info("Damage tool OFF.");
+              }
+              return next;
+            });
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2Zm0 3a7 7 0 1 1 0 14a7 7 0 0 1 0-14Z" />
+          </svg>
+        </IconButton>
       </div>
+
+      {/* Damage radius control panel */}
+      {damageMode && (
+        <div className="absolute top-[72px] left-1/2 -translate-x-1/2 z-50 bg-white/80 backdrop-blur rounded-xl shadow-md border border-gray-200 px-4 py-3 flex items-center gap-3">
+          <div className="text-sm font-semibold text-gray-800">Damage Radius</div>
+
+          <input
+            type="range"
+            min={50}
+            max={3000}
+            step={50}
+            value={damageRadiusM}
+            onChange={(e) => setDamageRadiusM(Number(e.target.value))}
+            className="w-56"
+          />
+
+          <div className="text-sm tabular-nums text-gray-700 w-[84px] text-right">
+            {damageRadiusM} m
+          </div>
+
+          <button
+            type="button"
+            className="ml-2 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-800 hover:shadow-sm"
+            onClick={() => {
+              setDamageCenter(null);
+              removeDamageCircle();
+              removeDamageCenterMarker();
+              applyNormalPolygonStyling();
+              if (map.current?.getSource("calamity-polygons") && latestPolygonsRef.current) {
+                map.current.getSource("calamity-polygons").setData(latestPolygonsRef.current);
+              }
+              toast.info("Damage radius cleared.");
+            }}
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {/* Map */}
       <div ref={mapContainer} className="h-full w-full" />
@@ -1735,11 +2382,7 @@ const CalamityFarmerMap = () => {
           >
             ×
           </button>
-          <img
-            src={enlargedImage}
-            alt="Fullscreen Calamity"
-            className="max-w-full max-h-full object-contain"
-          />
+          <img src={enlargedImage} alt="Fullscreen Calamity" className="max-w-full max-h-full object-contain" />
         </div>
       )}
     </div>

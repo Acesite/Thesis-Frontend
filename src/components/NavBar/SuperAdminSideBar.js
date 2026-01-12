@@ -13,6 +13,7 @@ import {
   User as UserIcon,
   ChevronLeft,
   Menu,
+  MapPin, // <-- added
 } from "lucide-react";
 
 const SuperAdminSideBar = ({ onCollapsedChange }) => {
@@ -229,6 +230,19 @@ const SuperAdminSideBar = ({ onCollapsedChange }) => {
               className={iconClass("/SuperAdminManageCalamity")}
             />
             {!collapsed && <span>Calamity</span>}
+          </Link>
+
+          {/* Calamity Map with anchored/pin icon */}
+          <Link
+            to="/SuperAdminCalamityMap"
+            className={
+              linkClass("/SuperAdminCalamityMap") +
+              (collapsed ? " justify-center px-0" : "")
+            }
+            title={collapsed ? "Calamity Map" : undefined}
+          >
+            <MapPin className={iconClass("/SuperAdminCalamityMap")} />
+            {!collapsed && <span>Calamity Map</span>}
           </Link>
 
           <Link
