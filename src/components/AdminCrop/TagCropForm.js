@@ -1,4 +1,3 @@
-// components/User/TagCropForm.js
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import { SaveIcon, ArrowRight, ArrowLeft } from "lucide-react";
 
@@ -13,13 +12,14 @@ import {
 
 /* ---------- CONFIG ---------- */
 const STANDARD_MATURITY_DAYS = {
-  1: 100,
-  2: 110,
-  3: 360,
-  4: 365,
-  5: 300,
-  6: 60,
+  1: 100, // rice
+  2: 110, // corn
+  3: 360, // banana
+  4: 365, // sugarcane
+  5: 300, // cassava
+  6: 60, // vegetables
 };
+
 const yieldUnitMap = {
   1: "sacks",
   2: "sacks",
@@ -28,6 +28,7 @@ const yieldUnitMap = {
   5: "tons",
   6: "kg",
 };
+
 const yieldPerHectare = {
   1: 80,
   2: 85.4,
@@ -45,6 +46,7 @@ const CROPPING_SYSTEMS = {
   4: "Strip intercropping",
   5: "Mixed cropping / Polyculture",
 };
+
 // matches backend CROPPING_META / CROPPING_SYSTEM_IDS keys
 const CROPPING_SYSTEM_KEYS = {
   "1": "monocrop",
@@ -90,11 +92,209 @@ function addDaysToISO(dateStr, days) {
   return d.toISOString().slice(0, 10);
 }
 
+/* ---------- Farmgate / value estimation (2025) ---------- */
+
+// Default conversion settings (editable in UI)
+const DEFAULT_KG_PER_SACK = 50; // dry palay / corn sack assumption
+const DEFAULT_KG_PER_BUNCH = 15; // bunch varies; make configurable
+const KG_PER_TON = 1000;
+
+function peso(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  return x.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function normalizeName(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Single input price => internal range (±spreadPct%)
+ * Used to remove Low/High boxes while keeping a min–max estimate.
+ */
+function singlePriceToRange(price, spreadPct = 10) {
+  const p = Number(price);
+  if (!Number.isFinite(p) || p <= 0) return null;
+  const spread = p * (spreadPct / 100);
+  return { low: Math.max(0, p - spread), high: p + spread };
+}
+function formatUnitPrice(low, high, unit) {
+  const lo = Number(low);
+  const hi = Number(high);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return "";
+
+  // If low and high are the same (or almost), show only one price
+  if (almostEqual(lo, hi)) {
+    return `₱${lo.toFixed(0)}/${unit}`;
+  }
+
+  // Otherwise show the range
+  return `₱${lo.toFixed(0)}–₱${hi.toFixed(0)}/${unit}`;
+}
+
+
+/**
+ * Return { low, high, unit:"kg"|"ton", note } OR null if unknown.
+ * Prices updated per your provided bases (2025 estimate).
+ */
+function resolveFarmgateRange(cropTypeId, varietyNameRaw, vegCategoryRaw) {
+  const v = normalizeName(varietyNameRaw);
+  const veg = normalizeName(vegCategoryRaw);
+
+  // 🍌 BANANA (₱ per kg – 2025 estimate)
+  if (String(cropTypeId) === "3") {
+    if (v.includes("tinigib"))
+      return { low: 70, high: 90, unit: "kg", note: "Banana Tinigib" };
+    if (v.includes("lagkitan") || v.includes("lakatan"))
+      return {
+        low: v.includes("lagkitan") ? 80 : 90,
+        high: v.includes("lagkitan") ? 100 : 110,
+        unit: "kg",
+        note: v.includes("lagkitan")
+          ? "Banana Lagkitan"
+          : "Banana Lakatan",
+      };
+    if (v.includes("saba"))
+      return { low: 45, high: 55, unit: "kg", note: "Banana Saba" };
+    if (v.includes("cavendish"))
+      return { low: 120, high: 150, unit: "kg", note: "Banana Cavendish" };
+
+    // fallback banana
+    return { low: 70, high: 110, unit: "kg", note: "Banana (fallback range)" };
+  }
+
+  // 🍚 RICE (Palay – ₱ per kg, farmgate 2025)
+  if (String(cropTypeId) === "1") {
+    // (NSIC / Rc varieties usually share the same market price)
+    if (v.includes("216"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice NSIC Rc 216" };
+    if (v.includes("222"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice Rc 222" };
+    if (v.includes("15"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice Rc 15" };
+    if (v.includes("224"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice NSIC Rc 224" };
+    if (v.includes("188"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice NSIC Rc 188" };
+    return { low: 18, high: 22, unit: "kg", note: "Rice (fallback range)" };
+  }
+
+  // 🌾 CORN (not provided in your bases; keep conservative fallback)
+  if (String(cropTypeId) === "2") {
+    return { low: 18, high: 22, unit: "kg", note: "Corn (fallback range)" };
+  }
+
+  // 🌱 SUGARCANE (₱ per ton, farmgate 2025) — you provided this set
+  // Note: You listed “Sugarcane Varieties” with Phil/Co codes; we match by variety text but range is same.
+  if (String(cropTypeId) === "4") {
+    return { low: 2200, high: 2700, unit: "ton", note: "Sugarcane (₱/ton)" };
+  }
+
+  // 🌾 CASSAVA (₱ per kg, fresh root – 2025)
+  if (String(cropTypeId) === "5") {
+    if (v.includes("ku50") || v.includes("ku 50"))
+      return { low: 8, high: 12, unit: "kg", note: "Cassava KU50" };
+    if (v.includes("golden yellow"))
+      return { low: 8, high: 12, unit: "kg", note: "Cassava Golden Yellow" };
+    if (v.includes("rayong 5") || v.includes("rayong5"))
+      return { low: 8, high: 12, unit: "kg", note: "Cassava Rayong 5" };
+    return { low: 8, high: 12, unit: "kg", note: "Cassava (fallback range)" };
+  }
+
+  // 🥬 VEGETABLES (keep your previous general categories)
+  if (String(cropTypeId) === "6") {
+    if (veg === "leafy")
+      return { low: 40, high: 60, unit: "kg", note: "Vegetables (leafy)" };
+    if (veg === "fruiting")
+      return { low: 35, high: 80, unit: "kg", note: "Vegetables (fruiting)" };
+    if (veg === "gourd")
+      return { low: 30, high: 60, unit: "kg", note: "Vegetables (gourd crops)" };
+    return { low: 30, high: 80, unit: "kg", note: "Vegetables (general fallback)" };
+  }
+
+  return null;
+}
+
+/**
+ * Convert volume (in app unit) → kg, then apply price.
+ * If price is per ton, uses ton quantity.
+ *
+ * Returns:
+ * {
+ *  valueLow, valueHigh,
+ *  qty, qtyUnit,              // qty in kg or ton depending on priceUnit
+ *  priceLow, priceHigh, priceUnit,
+ *  note
+ * }
+ */
+function computeFarmgateValueRange({
+  cropTypeId,
+  varietyName,
+  vegCategory,
+  volume,
+  unit, // app yield unit: kg | tons | sacks | bunches
+  kgPerSack,
+  kgPerBunch,
+  userPriceLow,
+  userPriceHigh,
+}) {
+  const vol = Number(volume);
+  if (!Number.isFinite(vol) || vol <= 0) return null;
+
+  const baseRange = resolveFarmgateRange(cropTypeId, varietyName, vegCategory);
+  if (!baseRange) return null;
+
+  // Allow override using the user's single “desired price” (internally low/high)
+  const priceLow = Number(userPriceLow);
+  const priceHigh = Number(userPriceHigh);
+
+  const finalPriceLow = Number.isFinite(priceLow) && priceLow > 0 ? priceLow : baseRange.low;
+  const finalPriceHigh =
+    Number.isFinite(priceHigh) && priceHigh > 0 ? priceHigh : baseRange.high;
+
+  const priceUnit = baseRange.unit; // "kg" or "ton"
+
+  // Convert app volume -> kg
+  let kgFactor = 1;
+  if (unit === "kg") kgFactor = 1;
+  else if (unit === "tons") kgFactor = KG_PER_TON;
+  else if (unit === "sacks")
+    kgFactor = Math.max(1, Number(kgPerSack) || DEFAULT_KG_PER_SACK);
+  else if (unit === "bunches")
+    kgFactor = Math.max(1, Number(kgPerBunch) || DEFAULT_KG_PER_BUNCH);
+
+  const kgTotal = vol * kgFactor;
+
+  // Quantity used for pricing
+  let qty = kgTotal;
+  let qtyUnit = "kg";
+  if (priceUnit === "ton") {
+    qty = kgTotal / KG_PER_TON;
+    qtyUnit = "ton";
+  }
+
+  const valueLow = qty * finalPriceLow;
+  const valueHigh = qty * finalPriceHigh;
+
+  return {
+    valueLow,
+    valueHigh,
+    qty,
+    qtyUnit,
+    priceLow: finalPriceLow,
+    priceHigh: finalPriceHigh,
+    priceUnit,
+    note: baseRange.note,
+  };
+}
+
 /* ---------- Geo helpers using your barangay GeoJSON ---------- */
 function getBarangayName(props) {
-  return (
-    props?.Barangay ?? props?.barangay ?? props?.NAME ?? props?.name ?? ""
-  );
+  return props?.Barangay ?? props?.barangay ?? props?.NAME ?? props?.name ?? "";
 }
 
 function listBarangayNamesFromFC(barangaysFC) {
@@ -140,7 +340,6 @@ function detectBarangayFeature(farmGeometry, barangaysFC) {
 }
 
 /* ---------- SMALL UI PIECES ---------- */
-
 const Section = ({ title, subtitle, children }) => (
   <div>
     <div className="mb-3">
@@ -172,7 +371,6 @@ const baseInputClasses =
   "w-full rounded-xl px-4 py-3 bg-white text-sm focus:outline-none focus:ring-2";
 
 function decorateClasses(hasError) {
-  // When error, force red; else use green theme
   return hasError
     ? ["border-2 border-red-500 focus:ring-red-500 focus:border-red-500"]
     : ["border-2 border-gray-200 focus:ring-green-600 focus:border-green-600"];
@@ -265,6 +463,21 @@ const STEPS = [
   { id: 3, title: "Farmer details", subtitle: "Owner / farmer information" },
 ];
 
+/* ---------- HELPERS ---------- */
+function clampPct(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
+}
+function round2(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Math.round(x * 100) / 100;
+}
+function almostEqual(a, b, eps = 0.01) {
+  return Math.abs(Number(a) - Number(b)) <= eps;
+}
+
 /* ---------- COMPONENT ---------- */
 const TagCropForm = ({
   onCancel,
@@ -313,6 +526,15 @@ const TagCropForm = ({
   const [intercropVarieties, setIntercropVarieties] = useState([]);
   const [intercropVarietyId, setIntercropVarietyId] = useState("");
 
+  // Land usage percentages (main vs secondary)
+  const [mainLandPct, setMainLandPct] = useState("100");
+  const [secondaryLandPct, setSecondaryLandPct] = useState("0");
+
+  // Relay crop dates (ONLY shown/required in Step 2 when Relay system)
+  const [relayPlantedDate, setRelayPlantedDate] = useState("");
+  const [relayEstimatedHarvest, setRelayEstimatedHarvest] = useState("");
+  const [relayHarvestTouched, setRelayHarvestTouched] = useState(false);
+
   // Farmer
   const [farmerFirstName, setFarmerFirstName] = useState("");
   const [farmerLastName, setFarmerLastName] = useState("");
@@ -320,10 +542,10 @@ const TagCropForm = ({
   const [farmerBarangay, setFarmerBarangay] = useState("");
   const [farmerAddress, setFarmerAddress] = useState("");
 
-  // 🔹 Farmer privacy
+  // Farmer privacy
   const [isAnonymousFarmer, setIsAnonymousFarmer] = useState(false);
 
-  // 🔹 Tenure
+  // Tenure
   const [tenureTypes, setTenureTypes] = useState([]);
   const [selectedTenureId, setSelectedTenureId] = useState("");
 
@@ -341,10 +563,87 @@ const TagCropForm = ({
   // elevation (meters)
   const [avgElevation, setAvgElevation] = useState("");
 
+  // Farmgate / value estimation UI settings
+  const [vegCategoryMain, setVegCategoryMain] = useState(""); // leafy | fruiting | gourd
+  const [vegCategorySecondary, setVegCategorySecondary] = useState("");
+  const [kgPerSack, setKgPerSack] = useState(String(DEFAULT_KG_PER_SACK));
+  const [kgPerBunch, setKgPerBunch] = useState(String(DEFAULT_KG_PER_BUNCH));
+
+  // Single desired price inputs (no low/high boxes)
+  const [mainPrice, setMainPrice] = useState("");
+  const [secondaryPrice, setSecondaryPrice] = useState("");
+
   // Errors
   const [errors, setErrors] = useState({});
 
   /* ---------- DERIVED ---------- */
+
+  // Are we in any intercropping mode?
+  const isIntercropMode = useMemo(
+    () => croppingSystemId !== "1" || isIntercropped,
+    [croppingSystemId, isIntercropped]
+  );
+
+  const isRelayMode = useMemo(() => String(croppingSystemId) === "3", [croppingSystemId]);
+
+  // hectares numeric
+  const hectaresNum = useMemo(() => {
+    const ha = Number(hectares);
+    return Number.isFinite(ha) ? ha : 0;
+  }, [hectares]);
+
+  const mainLandPctNum = useMemo(() => clampPct(mainLandPct), [mainLandPct]);
+  const secondaryLandPctNum = useMemo(
+    () => clampPct(secondaryLandPct),
+    [secondaryLandPct]
+  );
+
+  // computed land usage in hectares
+  const mainHectaresUsed = useMemo(() => {
+    if (!hectaresNum || hectaresNum <= 0) return 0;
+    if (!isIntercropMode) return hectaresNum;
+    return round2(hectaresNum * (mainLandPctNum / 100));
+  }, [hectaresNum, isIntercropMode, mainLandPctNum]);
+
+  const secondaryHectaresUsed = useMemo(() => {
+    if (!hectaresNum || hectaresNum <= 0) return 0;
+    if (!isIntercropMode) return 0;
+    return round2(hectaresNum * (secondaryLandPctNum / 100));
+  }, [hectaresNum, isIntercropMode, secondaryLandPctNum]);
+
+  // Keep secondaryHectares state in sync
+  useEffect(() => {
+    if (!isIntercropMode) {
+      setSecondaryHectares("");
+      setMainLandPct("100");
+      setSecondaryLandPct("0");
+      return;
+    }
+    if (hectaresNum <= 0) {
+      setSecondaryHectares("");
+      return;
+    }
+    setSecondaryHectares(String(secondaryHectaresUsed.toFixed(2)));
+  }, [isIntercropMode, hectaresNum, secondaryHectaresUsed]);
+
+  // When switching into intercropped: default 50/50 (only if still at monocrop defaults)
+  useEffect(() => {
+    if (!isIntercropMode) return;
+    const m = clampPct(mainLandPct);
+    const s = clampPct(secondaryLandPct);
+    const sum = m + s;
+
+    if ((almostEqual(m, 100) && almostEqual(s, 0)) || almostEqual(sum, 0)) {
+      setMainLandPct("50");
+      setSecondaryLandPct("50");
+    } else if (!almostEqual(sum, 100)) {
+      const ratio = sum > 0 ? m / sum : 0.5;
+      const newM = round2(ratio * 100);
+      const newS = round2(100 - newM);
+      setMainLandPct(String(newM));
+      setSecondaryLandPct(String(newS));
+    }
+  }, [isIntercropMode]); // intentionally only on toggle
 
   // Build barangay dropdown list
   const availableFromFC = useMemo(
@@ -365,76 +664,58 @@ const TagCropForm = ({
     return inferredTop && !uniq.has(inferredTop) ? [inferredTop, ...base] : base;
   }, [availableBarangays, availableFromFC, detectedBarangayName, selectedBarangay]);
 
-    // 🔹 Prefill farmer details when reusing previous season
-useEffect(() => {
-  if (!defaultLocation) return;
+  // Prefill farmer details when reusing previous season
+  useEffect(() => {
+    if (!defaultLocation) return;
 
-  // Name
-  setFarmerFirstName((cur) =>
-    cur ||
-    defaultLocation.farmerFirstName ||
-    defaultLocation.farmer_first_name ||
-    ""
-  );
-  setFarmerLastName((cur) =>
-    cur ||
-    defaultLocation.farmerLastName ||
-    defaultLocation.farmer_last_name ||
-    ""
-  );
+    setFarmerFirstName(
+      (cur) =>
+        cur ||
+        defaultLocation.farmerFirstName ||
+        defaultLocation.farmer_first_name ||
+        ""
+    );
+    setFarmerLastName(
+      (cur) =>
+        cur ||
+        defaultLocation.farmerLastName ||
+        defaultLocation.farmer_last_name ||
+        ""
+    );
+    setFarmerMobile(
+      (cur) =>
+        cur || defaultLocation.farmerMobile || defaultLocation.farmer_mobile || ""
+    );
+    setFarmerBarangay(
+      (cur) =>
+        cur ||
+        defaultLocation.farmerBarangay ||
+        defaultLocation.farmer_barangay ||
+        defaultLocation.barangay ||
+        ""
+    );
+    setFarmerAddress(
+      (cur) =>
+        cur ||
+        defaultLocation.farmerAddress ||
+        defaultLocation.farmer_address ||
+        defaultLocation.completeAddress ||
+        defaultLocation.complete_address ||
+        ""
+    );
 
-  // Mobile
-  setFarmerMobile((cur) =>
-    cur ||
-    defaultLocation.farmerMobile ||
-    defaultLocation.farmer_mobile ||
-    ""
-  );
+    const tenureRaw =
+      defaultLocation.tenureId ??
+      defaultLocation.tenure_id ??
+      defaultLocation.tenure;
+    if (tenureRaw != null && tenureRaw !== "")
+      setSelectedTenureId((cur) => cur || String(tenureRaw));
 
-  // Barangay
-  setFarmerBarangay((cur) =>
-    cur ||
-    defaultLocation.farmerBarangay ||
-    defaultLocation.farmer_barangay ||
-    defaultLocation.barangay ||
-    ""
-  );
-
-  // ✅ Complete address
-  setFarmerAddress((cur) =>
-    cur ||
-    defaultLocation.farmerAddress ||  
-    defaultLocation.farmer_address ||
-    defaultLocation.completeAddress ||
-    defaultLocation.complete_address ||
-    ""
-  );
-
-  // Tenure
-  const tenureRaw =
-    defaultLocation.tenureId ??
-    defaultLocation.tenure_id ??
-    defaultLocation.tenure;
-
-  if (tenureRaw != null && tenureRaw !== "") {
-    setSelectedTenureId((cur) => cur || String(tenureRaw));
-  }
-
-  // Anonymous flag
-  const anon =
-    defaultLocation.isAnonymousFarmer ??
-    defaultLocation.is_anonymous_farmer;
-  if (
-    anon === 1 ||
-    anon === "1" ||
-    anon === true ||
-    anon === "true"
-  ) {
-    setIsAnonymousFarmer(true);
-  }
-}, [defaultLocation]);
-
-
+    const anon =
+      defaultLocation.isAnonymousFarmer ?? defaultLocation.is_anonymous_farmer;
+    if (anon === 1 || anon === "1" || anon === true || anon === "true")
+      setIsAnonymousFarmer(true);
+  }, [defaultLocation]);
 
   // Try to detect barangay from farm polygon
   useEffect(() => {
@@ -443,10 +724,7 @@ useEffect(() => {
       setDetectedBarangayName(res.name);
       setDetectedBarangayFeature(res.feature || null);
 
-      // Prefill Location barangay if empty
       setManualBarangay((cur) => cur || res.name);
-
-      // Prefill Farmer barangay if empty
       setFarmerBarangay((cur) => cur || res.name);
     }
   }, [farmGeometry, barangaysFC]);
@@ -461,9 +739,7 @@ useEffect(() => {
 
   // If user picks a Location barangay, auto-fill Farmer barangay if still empty
   useEffect(() => {
-    if (manualBarangay && !farmerBarangay) {
-      setFarmerBarangay(manualBarangay);
-    }
+    if (manualBarangay && !farmerBarangay) setFarmerBarangay(manualBarangay);
   }, [manualBarangay, farmerBarangay]);
 
   // Load ecosystems for selected crop
@@ -484,32 +760,43 @@ useEffect(() => {
     return addDaysToISO(plantedDate, days);
   }, [plantedDate, selectedCropType]);
 
+  // Relay crop auto-harvest candidate (based on relay planted date + secondary crop maturity)
+  const autoRelayHarvestCandidate = useMemo(() => {
+    const days = STANDARD_MATURITY_DAYS[interCropTypeId] || 0;
+    return addDaysToISO(relayPlantedDate, days);
+  }, [relayPlantedDate, interCropTypeId]);
+
+  // Main yield auto-calc uses MAIN hectares used (percentage-aware)
   const autoVolumeCandidate = useMemo(() => {
     const yph = yieldPerHectare[selectedCropType];
-    const ha = Number(hectares);
+    const ha = isIntercropMode ? mainHectaresUsed : hectaresNum;
     if (!yph || !Number.isFinite(ha) || ha <= 0) return "";
     return (yph * ha).toFixed(2);
-  }, [selectedCropType, hectares]);
+  }, [selectedCropType, hectaresNum, isIntercropMode, mainHectaresUsed]);
 
+  // Secondary yield auto-calc uses SECONDARY hectares used (percentage-aware)
   const secondaryAutoVolumeCandidate = useMemo(() => {
     const yph = yieldPerHectare[interCropTypeId];
-    const ha = Number(secondaryHectares || hectares);
+    const ha = secondaryHectaresUsed;
     if (!yph || !Number.isFinite(ha) || ha <= 0) return "";
     return (yph * ha).toFixed(2);
-  }, [interCropTypeId, hectares, secondaryHectares]);
+  }, [interCropTypeId, secondaryHectaresUsed]);
 
   useEffect(() => {
     if (!harvestTouched) setEstimatedHarvest(autoHarvestCandidate || "");
   }, [autoHarvestCandidate, harvestTouched]);
 
   useEffect(() => {
+    if (!relayHarvestTouched) setRelayEstimatedHarvest(autoRelayHarvestCandidate || "");
+  }, [autoRelayHarvestCandidate, relayHarvestTouched]);
+
+  useEffect(() => {
     if (!volumeTouched) setEstimatedVolume(autoVolumeCandidate || "");
   }, [autoVolumeCandidate, volumeTouched]);
 
   useEffect(() => {
-    if (!secondaryVolumeTouched) {
+    if (!secondaryVolumeTouched)
       setSecondaryEstimatedVolume(secondaryAutoVolumeCandidate || "");
-    }
   }, [secondaryAutoVolumeCandidate, secondaryVolumeTouched]);
 
   // Crop types
@@ -520,7 +807,7 @@ useEffect(() => {
       .catch((err) => console.error("Failed to load crop types:", err));
   }, []);
 
-  // 🔹 Tenure types
+  // Tenure types
   useEffect(() => {
     fetch("http://localhost:5000/api/crops/tenure-types")
       .then((res) => res.json())
@@ -533,20 +820,15 @@ useEffect(() => {
     if (defaultLocation?.hectares) setHectares(defaultLocation.hectares);
   }, [defaultLocation]);
 
-  // 🔹 Default avg elevation from defaultLocation (meters) – HANDLE NUMBER OR STRING
+  // Default avg elevation
   useEffect(() => {
     if (!defaultLocation) return;
-
-    // Prefer avgElevationM, but be flexible
     const raw =
       defaultLocation.avgElevationM ??
       defaultLocation.avgElevation ??
       defaultLocation.elevation;
-
     const num = Number(raw);
-    if (Number.isFinite(num)) {
-      setAvgElevation(num.toFixed(1)); // ex: 23.4
-    }
+    if (Number.isFinite(num)) setAvgElevation(num.toFixed(1));
   }, [defaultLocation]);
 
   // varieties for selected crop
@@ -575,40 +857,161 @@ useEffect(() => {
       .catch((err) => console.error("Failed to load intercrop varieties:", err));
   }, [interCropTypeId]);
 
+  // If crop switches away from Vegetables, clear category
+  useEffect(() => {
+    if (String(selectedCropType) !== "6") setVegCategoryMain("");
+  }, [selectedCropType]);
+
+  useEffect(() => {
+    if (String(interCropTypeId) !== "6") setVegCategorySecondary("");
+  }, [interCropTypeId]);
+
+  /* ---------- VALUE ESTIMATION (computed) ---------- */
+
+  const mainVarietyName = useMemo(() => {
+    const v = dynamicVarieties.find((x) => String(x.id) === String(selectedVarietyId));
+    return v?.name || "";
+  }, [dynamicVarieties, selectedVarietyId]);
+
+  const secondaryVarietyName = useMemo(() => {
+    const v = intercropVarieties.find((x) => String(x.id) === String(intercropVarietyId));
+    return v?.name || "";
+  }, [intercropVarieties, intercropVarietyId]);
+
+  const mainUnit = yieldUnitMap[selectedCropType] || "units";
+  const secondaryUnit = yieldUnitMap[interCropTypeId] || "units";
+
+  // only show the conversion inputs that are actually needed
+  const needsKgPerSack = useMemo(
+    () => [mainUnit, secondaryUnit].includes("sacks"),
+    [mainUnit, secondaryUnit]
+  );
+  const needsKgPerBunch = useMemo(
+    () => [mainUnit, secondaryUnit].includes("bunches"),
+    [mainUnit, secondaryUnit]
+  );
+  const needsKgPerTon = useMemo(
+    () => [mainUnit, secondaryUnit].includes("tons"),
+    [mainUnit, secondaryUnit]
+  );
+
+  const bunchLabel = useMemo(() => {
+    const mainIsBanana = String(selectedCropType) === "3";
+    const secIsBanana = String(interCropTypeId) === "3";
+    if (mainIsBanana || secIsBanana) return "Kg per banana bunchs";
+    return "Kg per bunch";
+  }, [selectedCropType, interCropTypeId]);
+
+  const conversionSummary = useMemo(() => {
+    const parts = [];
+    if (needsKgPerSack) parts.push(`Sack=${kgPerSack || DEFAULT_KG_PER_SACK}kg`);
+    if (needsKgPerBunch) parts.push(`Bunch=${kgPerBunch || DEFAULT_KG_PER_BUNCH}kg`);
+    if (needsKgPerTon) parts.push("Ton=1000kg");
+    if (parts.length === 0) return "No conversion (kg-based)";
+    return parts.join(", ");
+  }, [needsKgPerSack, needsKgPerBunch, needsKgPerTon, kgPerSack, kgPerBunch]);
+
+  // Convert single desired price to internal range (±10%)
+  const mainPriceRange = useMemo(() => singlePriceToRange(mainPrice, 0), [mainPrice]);
+const secondaryPriceRange = useMemo(
+  () => singlePriceToRange(secondaryPrice, 0),
+  [secondaryPrice]
+);
+
+  const mainFarmgate = useMemo(() => {
+    if (!selectedCropType) return null;
+    return computeFarmgateValueRange({
+      cropTypeId: selectedCropType,
+      varietyName: mainVarietyName,
+      vegCategory: vegCategoryMain,
+      volume: estimatedVolume,
+      unit: mainUnit,
+      kgPerSack,
+      kgPerBunch,
+      userPriceLow: mainPriceRange?.low,
+      userPriceHigh: mainPriceRange?.high,
+    });
+  }, [
+    selectedCropType,
+    mainVarietyName,
+    vegCategoryMain,
+    estimatedVolume,
+    mainUnit,
+    kgPerSack,
+    kgPerBunch,
+    mainPriceRange,
+  ]);
+
+  const secondaryFarmgate = useMemo(() => {
+    if (!interCropTypeId) return null;
+    if (!secondaryEstimatedVolume) return null;
+    return computeFarmgateValueRange({
+      cropTypeId: interCropTypeId,
+      varietyName: secondaryVarietyName,
+      vegCategory: vegCategorySecondary,
+      volume: secondaryEstimatedVolume,
+      unit: secondaryUnit,
+      kgPerSack,
+      kgPerBunch,
+      userPriceLow: secondaryPriceRange?.low,
+      userPriceHigh: secondaryPriceRange?.high,
+    });
+  }, [
+    interCropTypeId,
+    secondaryVarietyName,
+    vegCategorySecondary,
+    secondaryEstimatedVolume,
+    secondaryUnit,
+    kgPerSack,
+    kgPerBunch,
+    secondaryPriceRange,
+  ]);
+
+  // Monocrop => main only; Intercrop => main + secondary
+  const displayFarmgate = useMemo(() => {
+    if (!mainFarmgate) return null;
+
+    if (!isIntercropMode) {
+      return { low: mainFarmgate.valueLow, high: mainFarmgate.valueHigh };
+    }
+
+    const low = (mainFarmgate?.valueLow || 0) + (secondaryFarmgate?.valueLow || 0);
+    const high = (mainFarmgate?.valueHigh || 0) + (secondaryFarmgate?.valueHigh || 0);
+
+    if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+    if (low <= 0 && high <= 0) return null;
+    return { low, high };
+  }, [isIntercropMode, mainFarmgate, secondaryFarmgate]);
+
   /* ---------- VALIDATION ---------- */
 
   const setFieldError = (field, message) =>
     setErrors((e) => ({ ...e, [field]: message || "" }));
 
-  // Step 1: crop & dates
+  // Step 1
   const validateStep1 = () => {
     const newErr = {};
 
-    if (!selectedCropType)
-      newErr.selectedCropType = "Please select a crop type.";
+    if (!selectedCropType) newErr.selectedCropType = "Please select a crop type.";
 
     if ((ecosystems?.length || 0) > 0 && !selectedEcosystem) {
       newErr.selectedEcosystem = "Please select an ecosystem.";
     }
 
-    if (!plantedDate) {
-      newErr.plantedDate = "Please select the planting date.";
-    }
+    if (!plantedDate) newErr.plantedDate = "Please select the planting date.";
 
     if (estimatedHarvest) {
       const p = new Date(plantedDate);
       const eh = new Date(estimatedHarvest);
-      if (plantedDate && eh < p) {
-        newErr.estimatedHarvest =
-          "Harvest date cannot be before planting date.";
-      }
+      if (plantedDate && eh < p)
+        newErr.estimatedHarvest = "Harvest date cannot be before planting date.";
     }
 
     setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
   };
 
-  // Step 2: area, cropping system, barangay
+  // Step 2
   const validateStep2 = () => {
     const newErr = {};
 
@@ -619,37 +1022,56 @@ useEffect(() => {
 
     if (!manualBarangay) newErr.manualBarangay = "Please choose a barangay.";
 
-    if ((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId) {
+    if (isIntercropMode && !interCropTypeId) {
       newErr.interCropTypeId = "Please select the secondary crop type.";
     }
 
-    setErrors((prev) => ({ ...prev, ...newErr }));
+    // Validate land usage percentages for intercropped
+    if (isIntercropMode) {
+      const m = clampPct(mainLandPct);
+      const s = clampPct(secondaryLandPct);
+      const sum = m + s;
+
+      if (!almostEqual(sum, 100)) {
+        newErr.landPct = "Main % + Secondary % must equal 100%.";
+      }
+      if (m <= 0) newErr.mainLandPct = "Main crop % must be greater than 0.";
+      if (s <= 0) newErr.secondaryLandPct = "Secondary crop % must be greater than 0.";
+    }
+
+    // Relay only: require relay planted date + validate relay harvest
+    if (isRelayMode) {
+      if (!relayPlantedDate)
+        newErr.relayPlantedDate = "Please select relay crop planted date.";
+      if (relayEstimatedHarvest && relayPlantedDate) {
+        const rp = new Date(relayPlantedDate);
+        const rh = new Date(relayEstimatedHarvest);
+        if (rh < rp)
+          newErr.relayEstimatedHarvest =
+            "Relay harvest cannot be before relay planted date.";
+      }
+    }
+
+  setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
   };
 
-  // Step 3: farmer details (conditional if anonymous)
+  // Step 3
   const validateStep3 = () => {
     const newErr = {};
 
     if (!isAnonymousFarmer) {
-      if (!farmerFirstName.trim())
-        newErr.farmerFirstName = "First name is required.";
-      if (!farmerLastName.trim())
-        newErr.farmerLastName = "Last name is required.";
+      if (!farmerFirstName.trim()) newErr.farmerFirstName = "First name is required.";
+      if (!farmerLastName.trim()) newErr.farmerLastName = "Last name is required.";
 
       const phoneRegex = /^09\d{9}$/;
-      if (!farmerMobile) {
-        newErr.farmerMobile = "Mobile number is required.";
-      } else if (!phoneRegex.test(farmerMobile)) {
+      if (!farmerMobile) newErr.farmerMobile = "Mobile number is required.";
+      else if (!phoneRegex.test(farmerMobile))
         newErr.farmerMobile = "Use PH format: 09XXXXXXXXX.";
-      }
 
       if (!farmerBarangay) newErr.farmerBarangay = "Please choose a barangay.";
-      if (!farmerAddress.trim())
-        newErr.farmerAddress = "Complete address is required.";
-
-      if (!selectedTenureId)
-        newErr.tenure = "Please choose land tenure type.";
+      if (!farmerAddress.trim()) newErr.farmerAddress = "Complete address is required.";
+      if (!selectedTenureId) newErr.tenure = "Please choose land tenure type.";
     }
 
     setErrors((prev) => ({ ...prev, ...newErr }));
@@ -657,14 +1079,28 @@ useEffect(() => {
   };
 
   const isStep1Valid = () =>
-    selectedCropType &&
-    plantedDate &&
-    (!(ecosystems?.length > 0) || selectedEcosystem);
+    selectedCropType && plantedDate && (!(ecosystems?.length > 0) || selectedEcosystem);
 
-  const isStep2Valid = () =>
-    hectares &&
-    manualBarangay &&
-    !((croppingSystemId !== "1" || isIntercropped) && !interCropTypeId);
+  const isStep2Valid = () => {
+    const baseOk = hectares && manualBarangay && !(isIntercropMode && !interCropTypeId);
+    if (!baseOk) return false;
+
+    if (isIntercropMode) {
+      const m = clampPct(mainLandPct);
+      const s = clampPct(secondaryLandPct);
+      if (!(almostEqual(m + s, 100) && m > 0 && s > 0)) return false;
+    }
+
+    if (isRelayMode) {
+      if (!relayPlantedDate) return false;
+      if (relayEstimatedHarvest && relayPlantedDate) {
+        const rp = new Date(relayPlantedDate);
+        const rh = new Date(relayEstimatedHarvest);
+        if (rh < rp) return false;
+      }
+    }
+    return true;
+  };
 
   const isStep3Valid = () =>
     isAnonymousFarmer ||
@@ -689,18 +1125,14 @@ useEffect(() => {
     else if (currentStep === 2) ok = validateStep2();
     if (!ok) return;
 
-    // When moving from Area step to Farmer step, default farmer barangay
     if (currentStep === 2 && !farmerBarangay) {
-      setFarmerBarangay(
-        manualBarangay || detectedBarangayName || selectedBarangay || ""
-      );
+      setFarmerBarangay(manualBarangay || detectedBarangayName || selectedBarangay || "");
     }
 
     setCurrentStep((s) => Math.min(s + 1, STEPS.length));
   };
 
-  const handleBack = () =>
-    setCurrentStep((s) => Math.max(s - 1, 1));
+  const handleBack = () => setCurrentStep((s) => Math.max(s - 1, 1));
 
   const handlePhotosChange = (e) => {
     const files = Array.from(e.target.files || []);
@@ -716,6 +1148,27 @@ useEffect(() => {
     setPhotos(e.target.files);
   };
 
+  // Percentage change handlers (keep total 100)
+  const handleMainPctChange = (val) => {
+    const m = clampPct(val);
+    const s = round2(100 - m);
+    setMainLandPct(String(m));
+    setSecondaryLandPct(String(s));
+    setFieldError("landPct", "");
+    setFieldError("mainLandPct", "");
+    setFieldError("secondaryLandPct", "");
+  };
+
+  const handleSecondaryPctChange = (val) => {
+    const s = clampPct(val);
+    const m = round2(100 - s);
+    setSecondaryLandPct(String(s));
+    setMainLandPct(String(m));
+    setFieldError("landPct", "");
+    setFieldError("mainLandPct", "");
+    setFieldError("secondaryLandPct", "");
+  };
+
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
     const ok1 = validateStep1();
@@ -725,7 +1178,6 @@ useEffect(() => {
 
     setShowConfirmation(false);
 
-    // Prefer caller-provided, else derive coordinates from farmGeometry
     const coordsFromDefault = defaultLocation?.coordinates || [];
     const coordsFromFarm =
       farmGeometry?.type === "Polygon"
@@ -734,9 +1186,8 @@ useEffect(() => {
         ? farmGeometry.coordinates?.[0]?.[0] || []
         : [];
     const farmCoords = coordsFromDefault.length ? coordsFromDefault : coordsFromFarm;
-    const croppingSystemKey =
-      CROPPING_SYSTEM_KEYS[croppingSystemId] || "monocrop";
 
+    const croppingSystemKey = CROPPING_SYSTEM_KEYS[croppingSystemId] || "monocrop";
     const formData = new FormData();
 
     // main crop
@@ -755,14 +1206,38 @@ useEffect(() => {
     formData.append("is_intercropped", isIntercropped ? "1" : "0");
     formData.append("intercrop_crop_type_id", interCropTypeId || "");
     formData.append("intercrop_variety_id", intercropVarietyId || "");
+    formData.append("intercrop_estimated_volume", secondaryEstimatedVolume || "");
+
+    // Relay-specific dates (ONLY meaningful when croppingSystemId === "3")
+    formData.append("relay_planted_date", isRelayMode ? relayPlantedDate || "" : "");
     formData.append(
-      "intercrop_estimated_volume",
-      secondaryEstimatedVolume || ""
+      "relay_estimated_harvest",
+      isRelayMode ? relayEstimatedHarvest || "" : ""
     );
-    formData.append(
-      "intercrop_hectares",
-      secondaryHectares || hectares || ""
-    );
+
+    // percentage-based land usage + computed hectares per crop
+    const finalMainPct = isIntercropMode ? clampPct(mainLandPct) : 100;
+    const finalSecondaryPct = isIntercropMode ? clampPct(secondaryLandPct) : 0;
+
+    formData.append("main_land_pct", String(finalMainPct));
+    formData.append("secondary_land_pct", String(finalSecondaryPct));
+    formData.append("main_hectares_used", String(round2(mainHectaresUsed)));
+    formData.append("intercrop_hectares", String(round2(secondaryHectaresUsed)));
+
+    // Conversion settings + desired prices (single input)
+    formData.append("kg_per_sack", String(kgPerSack || ""));
+    formData.append("kg_per_bunch", String(kgPerBunch || ""));
+    formData.append("main_desired_price", String(mainPrice || ""));
+    formData.append("secondary_desired_price", String(secondaryPrice || ""));
+
+ // Use exact desired price (no ±%) for stored low/high
+const mRange = singlePriceToRange(mainPrice, 0);
+const sRange = singlePriceToRange(secondaryPrice, 0);
+formData.append("main_price_low", mRange?.low ? String(mRange.low) : "");
+formData.append("main_price_high", mRange?.high ? String(mRange.high) : "");
+formData.append("secondary_price_low", sRange?.low ? String(sRange.low) : "");
+formData.append("secondary_price_high", sRange?.high ? String(sRange.high) : "");
+
 
     formData.append("coordinates", JSON.stringify(farmCoords));
 
@@ -785,35 +1260,14 @@ useEffect(() => {
 
     if (adminId) formData.append("admin_id", String(adminId));
 
-    // 🔹 Farmer privacy flag + conditional fields
+    // Farmer privacy
     formData.append("is_anonymous_farmer", isAnonymousFarmer ? "1" : "0");
-
-    formData.append(
-      "farmer_first_name",
-      isAnonymousFarmer ? "" : (farmerFirstName || "")
-    );
-    formData.append(
-      "farmer_last_name",
-      isAnonymousFarmer ? "" : (farmerLastName || "")
-    );
-    formData.append(
-      "farmer_mobile",
-      isAnonymousFarmer ? "" : (farmerMobile || "")
-    );
-    formData.append(
-      "farmer_barangay",
-      isAnonymousFarmer ? "" : (farmerBarangay || "")
-    );
-    formData.append(
-      "full_address",
-      isAnonymousFarmer ? "" : (farmerAddress || "")
-    );
-
-    // 🔹 land tenure
-    formData.append(
-      "tenure_id",
-      isAnonymousFarmer ? "" : (selectedTenureId || "")
-    );
+    formData.append("farmer_first_name", isAnonymousFarmer ? "" : farmerFirstName || "");
+    formData.append("farmer_last_name", isAnonymousFarmer ? "" : farmerLastName || "");
+    formData.append("farmer_mobile", isAnonymousFarmer ? "" : farmerMobile || "");
+    formData.append("farmer_barangay", isAnonymousFarmer ? "" : farmerBarangay || "");
+    formData.append("full_address", isAnonymousFarmer ? "" : farmerAddress || "");
+    formData.append("tenure_id", isAnonymousFarmer ? "" : selectedTenureId || "");
 
     if (photos) {
       for (let i = 0; i < photos.length; i++) formData.append("photos", photos[i]);
@@ -826,6 +1280,7 @@ useEffect(() => {
     setHectares("");
     setSelectedCropType("");
     setSelectedVarietyId("");
+    setSelectedEcosystem("");
     setPlantedDate("");
     setManualBarangay(finalBarangay || "");
     setEstimatedHarvest("");
@@ -835,6 +1290,17 @@ useEffect(() => {
     setSecondaryEstimatedVolume("");
     setSecondaryVolumeTouched(false);
     setSecondaryHectares("");
+    setCroppingSystemId("1");
+    setIsIntercropped(false);
+    setInterCropTypeId("");
+    setIntercropVarietyId("");
+    setMainLandPct("100");
+    setSecondaryLandPct("0");
+
+    setRelayPlantedDate("");
+    setRelayEstimatedHarvest("");
+    setRelayHarvestTouched(false);
+
     setNote("");
     setPhotos(null);
     setFarmerFirstName("");
@@ -842,38 +1308,56 @@ useEffect(() => {
     setFarmerMobile("");
     setFarmerBarangay("");
     setFarmerAddress("");
-    setSelectedEcosystem("");
     setAvgElevation("");
     setSelectedTenureId("");
     setIsAnonymousFarmer(false);
+    setVegCategoryMain("");
+    setVegCategorySecondary("");
+    setKgPerSack(String(DEFAULT_KG_PER_SACK));
+    setKgPerBunch(String(DEFAULT_KG_PER_BUNCH));
+    setMainPrice("");
+    setSecondaryPrice("");
     setErrors({});
   };
 
   const getCropTypeName = () => {
-    const crop = cropTypes.find((c) => c.id === selectedCropType);
+    const crop = cropTypes.find((c) => String(c.id) === String(selectedCropType));
     return crop ? crop.name : "—";
   };
   const getVarietyName = () => {
     const variety = dynamicVarieties.find(
-      (v) => v.id === parseInt(selectedVarietyId)
+      (v) => String(v.id) === String(selectedVarietyId)
     );
     return variety ? variety.name : "—";
   };
-
   const getCroppingSystemLabel = () => {
     const idNum = Number(croppingSystemId);
     return CROPPING_SYSTEMS[idNum] || "Monocrop";
   };
-
   const getTenureLabel = () => {
     const t = tenureTypes.find((x) => String(x.id) === String(selectedTenureId));
     return t ? t.name : "—";
+  };
+  const getSecondaryCropTypeName = () => {
+    const crop = cropTypes.find((c) => String(c.id) === String(interCropTypeId));
+    return crop ? crop.name : "—";
+  };
+  const getSecondaryVarietyName = () => {
+    const variety = intercropVarieties.find(
+      (v) => String(v.id) === String(intercropVarietyId)
+    );
+    return variety ? variety.name : "—";
   };
 
   /* ---------- UI ---------- */
 
   const activeStepMeta = STEPS.find((s) => s.id === currentStep);
   const totalSteps = STEPS.length;
+
+  // Helper labels for pricing unit
+  const mainPriceUnitLabel = mainFarmgate?.priceUnit === "ton" ? "₱/ton" : "₱/kg";
+  const secondaryPriceUnitLabel =
+    secondaryFarmgate?.priceUnit === "ton" ? "₱/ton" : "₱/kg";
 
   return (
     <div className="fixed inset-0 bg-black/45 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -895,9 +1379,7 @@ useEffect(() => {
                   <p className="text-xs font-medium text-gray-500">
                     Step {currentStep} of {totalSteps}
                   </p>
-                  <p className="text-xs text-gray-400">
-                    {activeStepMeta?.title}
-                  </p>
+                  <p className="text-xs text-gray-400">{activeStepMeta?.title}</p>
                 </div>
               </div>
 
@@ -922,9 +1404,7 @@ useEffect(() => {
                       </div>
                       <span
                         className={
-                          isCurrent || isCompleted
-                            ? "text-gray-900"
-                            : "text-gray-400"
+                          isCurrent || isCompleted ? "text-gray-900" : "text-gray-400"
                         }
                       >
                         {step.title}
@@ -952,9 +1432,7 @@ useEffect(() => {
                     {Number(defaultLocation.hectares).toFixed(2)} ha (from map)
                   </Pill>
                 )}
-                {avgElevation && (
-                  <Pill color="gray">{avgElevation} m elevation</Pill>
-                )}
+                {avgElevation && <Pill color="gray">{avgElevation} m elevation</Pill>}
               </div>
 
               {/* Step contents */}
@@ -976,10 +1454,18 @@ useEffect(() => {
                           required
                           value={selectedCropType}
                           onChange={(e) => {
-                            const id = parseInt(e.target.value);
-                            setSelectedCropType(Number.isFinite(id) ? id : "");
+                            const id = parseInt(e.target.value, 10);
+                            const next = Number.isFinite(id) ? id : "";
+                            setSelectedCropType(next);
                             setSelectedVarietyId("");
+                            setSelectedEcosystem("");
+                            setVegCategoryMain("");
+                            setHarvestTouched(false);
+                            setEstimatedHarvest("");
+                            setVolumeTouched(false);
+                            setEstimatedVolume("");
                             setFieldError("selectedCropType", "");
+                            setFieldError("selectedEcosystem", "");
                           }}
                           onBlur={() => {
                             if (!selectedCropType)
@@ -1043,6 +1529,30 @@ useEffect(() => {
                           ))}
                         </Select>
                       </Field>
+
+                      {/* Vegetables category (main) */}
+                      {String(selectedCropType) === "6" && (
+                        <Field
+                          label="Vegetable category (for farmgate estimate)"
+                          hint="Used to estimate farmgate value. You can refine later."
+                        >
+                          <Select
+                            value={vegCategoryMain}
+                            onChange={(e) => setVegCategoryMain(e.target.value)}
+                          >
+                            <option value="">Select category (recommended)</option>
+                            <option value="leafy">
+                              Leafy vegetables (₱40–₱60 /kg)
+                            </option>
+                            <option value="fruiting">
+                              Fruiting vegetables (₱35–₱80 /kg)
+                            </option>
+                            <option value="gourd">
+                              Gourd crops (₱30–₱60 /kg)
+                            </option>
+                          </Select>
+                        </Field>
+                      )}
                     </div>
                   </Section>
 
@@ -1149,7 +1659,21 @@ useEffect(() => {
                               setSecondaryVolumeTouched(false);
                               setSecondaryEstimatedVolume("");
                               setSecondaryHectares("");
+                              setVegCategorySecondary("");
+                              setMainLandPct("100");
+                              setSecondaryLandPct("0");
+
+                              // Relay dates cleared when leaving relay
+                              setRelayPlantedDate("");
+                              setRelayEstimatedHarvest("");
+                              setRelayHarvestTouched(false);
+
                               setFieldError("interCropTypeId", "");
+                              setFieldError("landPct", "");
+                              setFieldError("mainLandPct", "");
+                              setFieldError("secondaryLandPct", "");
+                              setFieldError("relayPlantedDate", "");
+                              setFieldError("relayEstimatedHarvest", "");
                             } else {
                               setIsIntercropped(true);
                             }
@@ -1163,156 +1687,602 @@ useEffect(() => {
                         </Select>
                       </Field>
 
-                      {/* <Field label="Is this field intercropped?">
-                        <div className="flex items-center gap-2">
-                          <input
-                            id="isIntercropped"
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                            checked={isIntercropped}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setIsIntercropped(checked);
-                              if (!checked && croppingSystemId === "1") {
-                                setInterCropTypeId("");
-                                setIntercropVarietyId("");
-                                setSecondaryVolumeTouched(false);
-                                setSecondaryEstimatedVolume("");
-                                setSecondaryHectares("");
-                                setFieldError("interCropTypeId", "");
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor="isIntercropped"
-                            className="text-sm text-gray-600 select-none"
-                          >
-                            Yes, there is a second crop in this area.
-                          </label>
-                        </div>
-                      </Field> */}
-
-                      {(croppingSystemId !== "1" || isIntercropped) && (
-                        <>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Field
-                              label="Secondary crop type"
-                              required
-                              error={errors.interCropTypeId}
-                            >
-                              <Select
-                                error={errors.interCropTypeId}
-                                value={interCropTypeId}
-                                onChange={(e) => {
-                                  const id = parseInt(e.target.value);
-                                  setInterCropTypeId(
-                                    Number.isFinite(id) ? id : ""
-                                  );
-                                  setSecondaryVolumeTouched(false);
-                                  setFieldError(
-                                    "interCropTypeId",
-                                    Number.isFinite(id)
-                                      ? ""
-                                      : "Please select the secondary crop type."
-                                  );
-                                }}
-                                onBlur={() => {
-                                  if (!interCropTypeId) {
-                                    setFieldError(
-                                      "interCropTypeId",
-                                      "Please select the secondary crop type."
-                                    );
-                                  }
-                                }}
-                              >
-                                <option value="">
-                                  Select secondary crop type
-                                </option>
-                                {cropTypes.map((type) => (
-                                  <option key={type.id} value={type.id}>
-                                    {type.name}
-                                  </option>
-                                ))}
-                              </Select>
-                            </Field>
-
-                            <Field label="Secondary variety">
-                              <Select
-                                value={intercropVarietyId}
-                                onChange={(e) =>
-                                  setIntercropVarietyId(e.target.value)
-                                }
-                              >
-                                <option value="">
-                                  Select variety (optional)
-                                </option>
-                                {intercropVarieties.map((v) => (
-                                  <option key={v.id} value={v.id}>
-                                    {v.name}
-                                  </option>
-                                ))}
-                              </Select>
-                            </Field>
+                      {/* MAIN + SECONDARY block */}
+                      {isIntercropMode && (
+                        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+                          {/* Main crop header */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">
+                                Main crop (editable)
+                              </p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                You can review and change the main crop here
+                                without going back to Step 1.
+                              </p>
+                            </div>
                           </div>
 
-                          <Field
-                            label="Secondary area (ha)"
-                            hint="How much of this field is planted with the secondary crop."
-                          >
-                            <SuffixInput
-                              suffix="ha"
-                              inputProps={{
-                                type: "number",
-                                min: "0",
-                                step: "0.01",
-                                value: secondaryHectares,
-                                onChange: (e) =>
-                                  setSecondaryHectares(e.target.value),
-                                placeholder: hectares || "0.00",
-                                className: "text-right",
-                              }}
-                            />
-                          </Field>
+                          <div className="mt-4 space-y-5">
+                            {/* Main crop type + variety */}
+                           {/* Main crop type + variety */}
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <Field
+    label="Main crop type"
+    required
+    error={errors.selectedCropType}
+  >
+    <Select
+      error={errors.selectedCropType}
+      required
+      value={selectedCropType}
+      onChange={(e) => {
+        const id = parseInt(e.target.value, 10);
+        const next = Number.isFinite(id) ? id : "";
+        setSelectedCropType(next);
+        setSelectedVarietyId("");
+        setSelectedEcosystem("");
+        setVegCategoryMain("");
 
-                          {interCropTypeId && (
-                            <Field
-                              label={`Secondary est. yield ${
-                                yieldUnitMap[interCropTypeId]
-                                  ? `(${yieldUnitMap[interCropTypeId]})`
-                                  : ""
-                              }`}
-                              hint="Auto-calculated from area × typical yield; you can override."
-                            >
-                              <SuffixInput
-                                suffix={yieldUnitMap[interCropTypeId] || "units"}
-                                inputProps={{
-                                  type: "number",
-                                  min: "0",
-                                  step: "0.1",
-                                  value: secondaryEstimatedVolume,
-                                  onChange: (e) => {
-                                    setSecondaryVolumeTouched(true);
-                                    setSecondaryEstimatedVolume(e.target.value);
-                                  },
-                                  placeholder: "Auto-calculated",
-                                  className: "text-right",
-                                }}
-                              />
-                            </Field>
-                          )}
-                        </>
+        setVolumeTouched(false);
+        setEstimatedVolume("");
+        setHarvestTouched(false);
+        setEstimatedHarvest("");
+
+        setFieldError(
+          "selectedCropType",
+          next ? "" : "Please select a crop type."
+        );
+        setFieldError("selectedEcosystem", "");
+      }}
+      onBlur={() => {
+        if (!selectedCropType)
+          setFieldError(
+            "selectedCropType",
+            "Please select a crop type."
+          );
+      }}
+    >
+      <option value="">Select crop type</option>
+      {cropTypes.map((type) => (
+        <option key={type.id} value={type.id}>
+          {type.name}
+        </option>
+      ))}
+    </Select>
+  </Field>
+
+  <Field label="Main variety">
+    <Select
+      value={selectedVarietyId}
+      onChange={(e) =>
+        setSelectedVarietyId(e.target.value)
+      }
+    >
+      <option value="">Select variety (optional)</option>
+      {dynamicVarieties.map((v) => (
+        <option key={v.id} value={v.id}>
+          {v.name}
+        </option>
+      ))}
+    </Select>
+  </Field>
+</div>
+
+{/* Relay: main crop dates just under type/variety */}
+{isRelayMode && (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+    <Field
+      label="Main crop planted date"
+      required
+      error={errors.plantedDate}
+    >
+      <Input
+        type="date"
+        required
+        value={plantedDate}
+        onChange={(e) => {
+          setPlantedDate(e.target.value);
+          setFieldError("plantedDate", "");
+          if (estimatedHarvest) {
+            const p = new Date(e.target.value);
+            const h = new Date(estimatedHarvest);
+            setFieldError(
+              "estimatedHarvest",
+              h < p
+                ? "Harvest date cannot be before planting date."
+                : ""
+            );
+          }
+        }}
+        onBlur={() => {
+          if (!plantedDate)
+            setFieldError(
+              "plantedDate",
+              "Please select the planting date."
+            );
+        }}
+        error={errors.plantedDate}
+      />
+    </Field>
+
+    <Field
+      label="Main crop estimated harvest"
+      hint="Auto-fills based on crop maturity; you can override."
+      error={errors.estimatedHarvest}
+    >
+      <Input
+        type="date"
+        value={estimatedHarvest}
+        onChange={(e) => {
+          setHarvestTouched(true);
+          setEstimatedHarvest(e.target.value);
+          if (plantedDate) {
+            const p = new Date(plantedDate);
+            const h = new Date(e.target.value);
+            setFieldError(
+              "estimatedHarvest",
+              h < p
+                ? "Harvest date cannot be before planting date."
+                : ""
+            );
+          }
+        }}
+        onBlur={() => {
+          if (estimatedHarvest && plantedDate) {
+            const p = new Date(plantedDate);
+            const h = new Date(estimatedHarvest);
+            if (h < p)
+              setFieldError(
+                "estimatedHarvest",
+                "Harvest date cannot be before planting date."
+              );
+          }
+        }}
+        error={errors.estimatedHarvest}
+      />
+    </Field>
+  </div>
+)}
+
+
+                            {/* Land % errors */}
+                            {(errors.landPct ||
+                              errors.mainLandPct ||
+                              errors.secondaryLandPct) && (
+                              <ErrorText>
+                                {errors.landPct ||
+                                  errors.mainLandPct ||
+                                  errors.secondaryLandPct}
+                              </ErrorText>
+                            )}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <Field
+                                label="Main crop land"
+                                required
+                                error={errors.mainLandPct}
+                              >
+                                <SuffixInput
+                                  suffix="%"
+                                  error={errors.mainLandPct}
+                                  inputProps={{
+                                    type: "number",
+                                    min: "0",
+                                    max: "100",
+                                    step: "0.1",
+                                    value: mainLandPct,
+                                    onChange: (e) =>
+                                      handleMainPctChange(e.target.value),
+                                    onBlur: () => {
+                                      const m = clampPct(mainLandPct);
+                                      const s = clampPct(secondaryLandPct);
+                                      if (!almostEqual(m + s, 100))
+                                        setFieldError(
+                                          "landPct",
+                                          "Main % + Secondary % must equal 100%."
+                                        );
+                                      if (m <= 0)
+                                        setFieldError(
+                                          "mainLandPct",
+                                          "Main crop % must be greater than 0."
+                                        );
+                                    },
+                                    className: "text-right",
+                                  }}
+                                />
+                              </Field>
+
+                              <Field
+                                label="Main crop est. yield"
+                                hint={
+                                  yieldUnitMap[selectedCropType]
+                                    ? `Unit: ${yieldUnitMap[selectedCropType]}`
+                                    : ""
+                                }
+                              >
+                                <SuffixInput
+                                  suffix={yieldUnitMap[selectedCropType] || "units"}
+                                  inputProps={{
+                                    type: "number",
+                                    min: "0",
+                                    step: "0.1",
+                                    value: estimatedVolume,
+                                    onChange: (e) => {
+                                      setVolumeTouched(true);
+                                      setEstimatedVolume(e.target.value);
+                                    },
+                                    placeholder: "Auto-calculated",
+                                    className: "text-right",
+                                  }}
+                                />
+                              </Field>
+                            </div>
+
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                              <Field
+                                label="Main hectares used (computed)"
+                                hint="Auto = total ha × main %"
+                              >
+                                <SuffixInput
+                                  suffix="ha"
+                                  inputProps={{
+                                    type: "text",
+                                    readOnly: true,
+                                    value:
+                                      hectaresNum > 0
+                                        ? mainHectaresUsed.toFixed(2)
+                                        : "",
+                                    placeholder: "0.00",
+                                    className:
+                                      "text-right bg-white cursor-not-allowed",
+                                  }}
+                                />
+                              </Field>
+                            </div>
+
+                            {/* Vegetables category (main) */}
+                            {String(selectedCropType) === "6" && (
+                              <Field
+                                label="Main vegetable category (for farmgate estimate)"
+                                hint="Used to estimate farmgate value for the main crop."
+                              >
+                                <Select
+                                  value={vegCategoryMain}
+                                  onChange={(e) =>
+                                    setVegCategoryMain(e.target.value)
+                                  }
+                                >
+                                  <option value="">
+                                    Select category (recommended)
+                                  </option>
+                                  <option value="leafy">
+                                    Leafy vegetables (₱40–₱60 /kg)
+                                  </option>
+                                  <option value="fruiting">
+                                    Fruiting vegetables (₱35–₱80 /kg)
+                                  </option>
+                                  <option value="gourd">
+                                    Gourd crops (₱30–₱60 /kg)
+                                  </option>
+                                </Select>
+                              </Field>
+                            )}
+
+                            {/* SECONDARY CROP block */}
+                            <div className="pt-1">
+                              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+                                Secondary crop
+                              </p>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <Field
+    label="Secondary crop type"
+    required
+    error={errors.interCropTypeId}
+  >
+    <Select
+      error={errors.interCropTypeId}
+      value={interCropTypeId}
+      onChange={(e) => {
+        const id = parseInt(e.target.value, 10);
+        const next = Number.isFinite(id) ? id : "";
+        setInterCropTypeId(next);
+        setSecondaryVolumeTouched(false);
+        setSecondaryEstimatedVolume("");
+
+        // reset relay harvest auto when crop changes
+        setRelayHarvestTouched(false);
+
+        setFieldError(
+          "interCropTypeId",
+          next
+            ? ""
+            : "Please select the secondary crop type."
+        );
+      }}
+      onBlur={() => {
+        if (!interCropTypeId)
+          setFieldError(
+            "interCropTypeId",
+            "Please select the secondary crop type."
+          );
+      }}
+    >
+      <option value="">
+        Select secondary crop type
+      </option>
+      {cropTypes.map((type) => (
+        <option key={type.id} value={type.id}>
+          {type.name}
+        </option>
+      ))}
+    </Select>
+  </Field>
+
+  <Field label="Secondary variety">
+    <Select
+      value={intercropVarietyId}
+      onChange={(e) =>
+        setIntercropVarietyId(e.target.value)
+      }
+    >
+      <option value="">
+        Select variety (optional)
+      </option>
+      {intercropVarieties.map((v) => (
+        <option key={v.id} value={v.id}>
+          {v.name}
+        </option>
+      ))}
+    </Select>
+  </Field>
+</div>
+
+{/* Relay: secondary crop dates just under secondary type/variety */}
+{isRelayMode && (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+    <Field
+      label="Secondary crop planted date"
+      required
+      error={errors.relayPlantedDate}
+    >
+      <Input
+        type="date"
+        value={relayPlantedDate}
+        onChange={(e) => {
+          setRelayPlantedDate(e.target.value);
+          setFieldError("relayPlantedDate", "");
+
+          // validate harvest if already set
+          if (relayEstimatedHarvest) {
+            const rp = new Date(e.target.value);
+            const rh = new Date(relayEstimatedHarvest);
+            setFieldError(
+              "relayEstimatedHarvest",
+              rh < rp
+                ? "Relay harvest cannot be before relay planted date."
+                : ""
+            );
+          }
+
+          // auto-harvest will update if not touched
+          setRelayHarvestTouched(false);
+        }}
+        onBlur={() => {
+          if (!relayPlantedDate)
+            setFieldError(
+              "relayPlantedDate",
+              "Please select relay crop planted date."
+            );
+        }}
+        error={errors.relayPlantedDate}
+      />
+    </Field>
+
+    <Field
+      label="Secondary crop estimated harvest"
+      hint="Auto-fills based on relay crop maturity; you can override."
+      error={errors.relayEstimatedHarvest}
+    >
+      <Input
+        type="date"
+        value={relayEstimatedHarvest}
+        onChange={(e) => {
+          setRelayHarvestTouched(true);
+          setRelayEstimatedHarvest(e.target.value);
+
+          if (relayPlantedDate) {
+            const rp = new Date(relayPlantedDate);
+            const rh = new Date(e.target.value);
+            setFieldError(
+              "relayEstimatedHarvest",
+              rh < rp
+                ? "Relay harvest cannot be before relay planted date."
+                : ""
+            );
+          }
+        }}
+        onBlur={() => {
+          if (relayEstimatedHarvest && relayPlantedDate) {
+            const rp = new Date(relayPlantedDate);
+            const rh = new Date(relayEstimatedHarvest);
+            if (rh < rp)
+              setFieldError(
+                "relayEstimatedHarvest",
+                "Relay harvest cannot be before relay planted date."
+              );
+          }
+        }}
+        error={errors.relayEstimatedHarvest}
+      />
+    </Field>
+  </div>
+)}
+
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <Field
+                                  label="Secondary crop land"
+                                  required
+                                  error={errors.secondaryLandPct}
+                                >
+                                  <SuffixInput
+                                    suffix="%"
+                                    error={errors.secondaryLandPct}
+                                    inputProps={{
+                                      type: "number",
+                                      min: "0",
+                                      max: "100",
+                                      step: "0.1",
+                                      value: secondaryLandPct,
+                                      onChange: (e) =>
+                                        handleSecondaryPctChange(e.target.value),
+                                      onBlur: () => {
+                                        const m = clampPct(mainLandPct);
+                                        const s = clampPct(secondaryLandPct);
+                                        if (!almostEqual(m + s, 100))
+                                          setFieldError(
+                                            "landPct",
+                                            "Main % + Secondary % must equal 100%."
+                                          );
+                                        if (s <= 0)
+                                          setFieldError(
+                                            "secondaryLandPct",
+                                            "Secondary crop % must be greater than 0."
+                                          );
+                                      },
+                                      className: "text-right",
+                                    }}
+                                  />
+                                </Field>
+
+                                <Field
+                                  label="Secondary crop est. yield"
+                                  hint={
+                                    yieldUnitMap[interCropTypeId]
+                                      ? `Unit: ${yieldUnitMap[interCropTypeId]}`
+                                      : ""
+                                  }
+                                >
+                                  <SuffixInput
+                                    suffix={
+                                      yieldUnitMap[interCropTypeId] || "units"
+                                    }
+                                    inputProps={{
+                                      type: "number",
+                                      min: "0",
+                                      step: "0.1",
+                                      value: secondaryEstimatedVolume,
+                                      onChange: (e) => {
+                                        setSecondaryVolumeTouched(true);
+                                        setSecondaryEstimatedVolume(e.target.value);
+                                      },
+                                      placeholder: "Auto-calculated",
+                                      className: "text-right",
+                                    }}
+                                  />
+                                </Field>
+                              </div>
+
+                              <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 mt-4">
+                                <Field
+                                  label="Secondary hectares used (computed)"
+                                  hint="Auto = total ha × secondary %"
+                                >
+                                  <SuffixInput
+                                    suffix="ha"
+                                    inputProps={{
+                                      type: "text",
+                                      readOnly: true,
+                                      value:
+                                        hectaresNum > 0
+                                          ? secondaryHectaresUsed.toFixed(2)
+                                          : "",
+                                      placeholder: "0.00",
+                                      className:
+                                        "text-right bg-white cursor-not-allowed",
+                                    }}
+                                  />
+                                </Field>
+                              </div>
+
+                              {/* Vegetables category (secondary) */}
+                              {String(interCropTypeId) === "6" && (
+                                <Field
+                                  label="Secondary vegetable category (for farmgate estimate)"
+                                  hint="Used to estimate farmgate value for the secondary crop."
+                                >
+                                  <Select
+                                    value={vegCategorySecondary}
+                                    onChange={(e) =>
+                                      setVegCategorySecondary(e.target.value)
+                                    }
+                                  >
+                                    <option value="">
+                                      Select category (recommended)
+                                    </option>
+                                    <option value="leafy">
+                                      Leafy vegetables (₱40–₱60 /kg)
+                                    </option>
+                                    <option value="fruiting">
+                                      Fruiting vegetables (₱35–₱80 /kg)
+                                    </option>
+                                    <option value="gourd">
+                                      Gourd crops (₱30–₱60 /kg)
+                                    </option>
+                                  </Select>
+                                </Field>
+                              )}
+                            </div>
+
+                            {/* MAIN ECOSYSTEM below secondary crop */}
+                            {selectedCropType && ecosystems.length > 0 && (
+                              <Field
+                                label="Main ecosystem"
+                                required
+                                error={errors.selectedEcosystem}
+                                hint="Required for reporting and maps."
+                              >
+                                <Select
+                                  error={errors.selectedEcosystem}
+                                  value={selectedEcosystem}
+                                  onChange={(e) => {
+                                    setSelectedEcosystem(e.target.value);
+                                    setFieldError("selectedEcosystem", "");
+                                  }}
+                                  onBlur={() => {
+                                    if (!selectedEcosystem)
+                                      setFieldError(
+                                        "selectedEcosystem",
+                                        "Please select an ecosystem."
+                                      );
+                                  }}
+                                >
+                                  <option value="">Select ecosystem</option>
+                                  {ecosystems.map((eco) => (
+                                    <option key={eco.id} value={eco.id}>
+                                      {eco.name}
+                                    </option>
+                                  ))}
+                                </Select>
+                              </Field>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </Section>
 
-                  {/* Area & Yield */}
+                  {/* Area & yield */}
                   <Section
                     title="Area & yield"
                     subtitle="Estimated coverage and production."
                   >
+                    {/* Row 1: Total area (left) + Average elevation (right) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <Field
-                        label="Area (ha)"
+                        label="Total area (ha)"
                         required
                         error={errors.hectares}
                       >
@@ -1330,7 +2300,9 @@ useEffect(() => {
                               const v = Number(e.target.value);
                               setFieldError(
                                 "hectares",
-                                !e.target.value || !Number.isFinite(v) || v <= 0
+                                !e.target.value ||
+                                  !Number.isFinite(v) ||
+                                  v <= 0
                                   ? "Area must be a number greater than 0."
                                   : ""
                               );
@@ -1342,48 +2314,290 @@ useEffect(() => {
                       </Field>
 
                       <Field
-                        label={`Est. yield ${
-                          yieldUnitMap[selectedCropType]
-                            ? `(${yieldUnitMap[selectedCropType]})`
-                            : ""
-                        }`}
-                        hint="Estimated from area × typical yield; you can override."
+                        label="Average elevation (m)"
+                        hint="Optional, auto-estimated from terrain."
                       >
                         <SuffixInput
-                          suffix={yieldUnitMap[selectedCropType] || "units"}
+                          suffix="m"
                           inputProps={{
                             type: "number",
-                            min: "0",
-                            step: "0.1",
-                            value: estimatedVolume,
-                            onChange: (e) => {
-                              setVolumeTouched(true);
-                              setEstimatedVolume(e.target.value);
-                            },
-                            placeholder: "Auto-calculated",
-                            className: "text-right",
+                            readOnly: true,
+                            value: avgElevation,
+                            placeholder: "Auto from map",
+                            className:
+                              "text-right bg-gray-50 cursor-not-allowed",
                           }}
                         />
                       </Field>
                     </div>
 
-                    <Field
-                      label="Average elevation (m)"
-                      hint="Optional, auto-estimated from terrain."
-                    >
-                      <SuffixInput
-                        suffix="m"
-                        inputProps={{
-                          type: "number",
-                          readOnly: true,
-                          value: avgElevation,
-                          placeholder: "Auto from map",
-                          className:
-                            "text-right bg-gray-50 cursor-not-allowed",
-                        }}
-                      />
-                    </Field>
+                    {/* Row 2: MONOCROP ONLY - yield stays below */}
+                    {!isIntercropMode && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        <Field
+                          label={`Main est. yield ${
+                            yieldUnitMap[selectedCropType]
+                              ? `(${yieldUnitMap[selectedCropType]})`
+                              : ""
+                          }`}
+                          hint="Estimated from area × typical yield; you can override."
+                        >
+                          <SuffixInput
+                            suffix={yieldUnitMap[selectedCropType] || "units"}
+                            inputProps={{
+                              type: "number",
+                              min: "0",
+                              step: "0.1",
+                              value: estimatedVolume,
+                              onChange: (e) => {
+                                setVolumeTouched(true);
+                                setEstimatedVolume(e.target.value);
+                              },
+                              placeholder: "Auto-calculated",
+                              className: "text-right",
+                            }}
+                          />
+                        </Field>
+                      </div>
+                    )}
                   </Section>
+
+                
+                  {/* Estimated farmgate value (PHP) — match screenshot style */}
+                 {/* Estimated farmgate value (PHP) — follow screenshot layout */}
+<Section
+  title="Estimated farmgate value (PHP)"
+  subtitle="Based on 2025 farmgate ranges and your estimated yield. Conversions and prices are adjustable."
+>
+  <div className="space-y-4">
+    {/* 1. TOP CARD: conversion settings (single bordered card) */}
+    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* LEFT: specific conversion input (banana bunch / sack / ton / none) */}
+        {needsKgPerBunch ? (
+          <Field
+            label={bunchLabel}
+            hint="Used when unit is bunches (typically banana)."
+          >
+            <SuffixInput
+              suffix="kg"
+              inputProps={{
+                type: "number",
+                min: "1",
+                step: "1",
+                value: kgPerBunch,
+                onChange: (e) => setKgPerBunch(e.target.value),
+                className: "text-right",
+              }}
+            />
+          </Field>
+        ) : needsKgPerSack ? (
+          <Field
+            label="Kg per sack"
+            hint="Used when unit is sacks (typically rice/corn)."
+          >
+            <SuffixInput
+              suffix="kg"
+              inputProps={{
+                type: "number",
+                min: "1",
+                step: "1",
+                value: kgPerSack,
+                onChange: (e) => setKgPerSack(e.target.value),
+                className: "text-right",
+              }}
+            />
+          </Field>
+        ) : needsKgPerTon ? (
+          <Field
+            label="Ton conversion"
+            hint="Fixed conversion for tons."
+          >
+            <SuffixInput
+              suffix="kg"
+              inputProps={{
+                type: "text",
+                readOnly: true,
+                value: "1000",
+                className: "text-right bg-gray-50 cursor-not-allowed",
+              }}
+            />
+          </Field>
+        ) : (
+          <Field
+            label="Conversion"
+            hint="No conversion needed (kg-based)."
+          >
+            <Input
+              value="Not required"
+              readOnly
+              className="bg-gray-50 cursor-not-allowed text-right"
+            />
+          </Field>
+        )}
+
+        {/* RIGHT: conversion summary display */}
+        <Field
+          label="Conversion used"
+          hint="Auto based on selected crop units."
+        >
+          <Input
+            value={conversionSummary}
+            readOnly
+            className="bg-gray-50 cursor-not-allowed"
+          />
+        </Field>
+      </div>
+    </div>
+
+    {/* 2. MAIN CROP CARD (its own bordered div, like in screenshot) */}
+    <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-gray-900">Main Crop</p>
+          <p className="text-xs text-gray-500">Desired price and value estimate.</p>
+        </div>
+        <p className="text-xs text-gray-500">{getCropTypeName()}</p>
+      </div>
+
+    <Field
+  label={`Desired price (${mainPriceUnitLabel})`}
+  hint="Total value is based directly on this price. Leave blank to use standard farmgate range."
+>
+
+        <div className="relative">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={mainPrice}
+            onChange={(e) => setMainPrice(e.target.value)}
+            placeholder="e.g. 90"
+            className={[
+              baseInputClasses,
+              "pr-16",
+              ...decorateClasses(false),
+              "text-right",
+            ].join(" ")}
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 select-none">
+            {mainPriceUnitLabel}
+          </span>
+        </div>
+      </Field>
+
+      {/* INNER CARD: main crop value (matches “Total Estimated Crop Value” box) */}
+      <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+        <p className="text-sm font-medium text-gray-800 mb-1">
+          Total Estimated Crop Value
+        </p>
+        <p className="text-lg font-bold text-gray-900">
+          {mainFarmgate
+            ? `₱${peso(mainFarmgate.valueLow)} – ₱${peso(
+                mainFarmgate.valueHigh
+              )}`
+            : "—"}
+        </p>
+        <p className="text-xs text-gray-500 mt-1">
+          {mainFarmgate
+  ? `${mainFarmgate.qty.toLocaleString(undefined, {
+      maximumFractionDigits: 0,
+    })} ${mainFarmgate.qtyUnit} × ${formatUnitPrice(
+      mainFarmgate.priceLow,
+      mainFarmgate.priceHigh,
+      mainFarmgate.priceUnit
+    )}`
+  : "Fill yield (and optional desired price) to estimate value."}
+
+        </p>
+      </div>
+    </div>
+
+    {/* 3. SECONDARY CROP CARD (separate bordered div like screenshot) */}
+    {isIntercropMode && (
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Secondary Crop</p>
+            <p className="text-xs text-gray-500">
+              Optional – only if you encoded a secondary crop.
+            </p>
+          </div>
+          <p className="text-xs text-gray-500">
+            {getSecondaryCropTypeName()}
+          </p>
+        </div>
+
+       <Field
+  label={`Desired price (${secondaryPriceUnitLabel})`}
+  hint="Total value is based directly on this price. Leave blank to use standard farmgate range."
+>
+
+          <div className="relative">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={secondaryPrice}
+              onChange={(e) => setSecondaryPrice(e.target.value)}
+              placeholder="e.g. 22"
+              className={[
+                baseInputClasses,
+                "pr-16",
+                ...decorateClasses(false),
+                "text-right",
+              ].join(" ")}
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 select-none">
+              {secondaryPriceUnitLabel}
+            </span>
+          </div>
+        </Field>
+
+        <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <p className="text-sm font-medium text-gray-800 mb-1">
+            Total Estimated Crop Value
+          </p>
+          <p className="text-lg font-bold text-gray-900">
+            {secondaryFarmgate
+              ? `₱${peso(secondaryFarmgate.valueLow)} – ₱${peso(
+                  secondaryFarmgate.valueHigh
+                )}`
+              : "—"}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            {secondaryFarmgate
+              ? `${secondaryFarmgate.qty.toLocaleString(undefined, {
+                  maximumFractionDigits: 0,
+                })} ${secondaryFarmgate.qtyUnit} × ₱${secondaryFarmgate.priceLow.toFixed(
+                  0
+                )}–₱${secondaryFarmgate.priceHigh.toFixed(0)}/${
+                  secondaryFarmgate.priceUnit
+                }`
+              : "Fill secondary yield (and optional price) to estimate value."}
+          </p>
+        </div>
+      </div>
+    )}
+
+    {/* 4. TOTAL CROP VALUE CARD (bottom separate bordered div) */}
+    {displayFarmgate && (
+      <div className="rounded-2xl border border-gray-200 bg-white p-5">
+        <p className="text-sm font-medium text-gray-800 mb-1">
+          Total crop value (all crops)
+        </p>
+        <p className="text-lg font-bold text-gray-900">
+          ₱{peso(displayFarmgate.low)} – ₱{peso(displayFarmgate.high)}
+        </p>
+        <p className="text-xs text-gray-500 mt-1">
+          Combined main{isIntercropMode ? " and secondary" : ""} crop value
+          based on current yields and prices.
+        </p>
+      </div>
+    )}
+  </div>
+</Section>
+
 
                   {/* Location & Notes */}
                   <Section
@@ -1419,6 +2633,7 @@ useEffect(() => {
                             </option>
                           ))}
                         </Select>
+
                         {(detectedBarangayName || selectedBarangay) &&
                           manualBarangay ===
                             (detectedBarangayName || selectedBarangay) && (
@@ -1456,13 +2671,12 @@ useEffect(() => {
               )}
 
               {currentStep === 3 && (
-                // Step 3: Farmer
                 <div className="space-y-7 animate-fadeIn">
                   <Section
                     title="Farmer details"
                     subtitle="Information of the owner / farmer of this field."
                   >
-                    {/* 🔹 Anonymous toggle */}
+                    {/* Anonymous toggle */}
                     <div className="mb-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3">
                       <label className="flex items-start gap-3 text-sm text-gray-700">
                         <input
@@ -1474,7 +2688,6 @@ useEffect(() => {
                             setIsAnonymousFarmer(checked);
 
                             if (checked) {
-                              // Clear errors when switching to anonymous
                               setErrors((prev) => ({
                                 ...prev,
                                 farmerFirstName: "",
@@ -1492,8 +2705,8 @@ useEffect(() => {
                             Farmer prefers not to share personal details
                           </span>
                           <span className="block text-xs text-gray-500 mt-0.5">
-                            If checked, name, mobile number, address, and tenure will not be required.
-                            The crop will still be tagged to this field and barangay.
+                            If checked, name, mobile number, address, and tenure
+                            will not be required.
                           </span>
                         </span>
                       </label>
@@ -1529,7 +2742,9 @@ useEffect(() => {
                           placeholder="Juan"
                           error={errors.farmerFirstName}
                           className={
-                            isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                            isAnonymousFarmer
+                              ? "bg-gray-50 cursor-not-allowed"
+                              : ""
                           }
                         />
                       </Field>
@@ -1563,7 +2778,9 @@ useEffect(() => {
                           placeholder="Dela Cruz"
                           error={errors.farmerLastName}
                           className={
-                            isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                            isAnonymousFarmer
+                              ? "bg-gray-50 cursor-not-allowed"
+                              : ""
                           }
                         />
                       </Field>
@@ -1602,7 +2819,9 @@ useEffect(() => {
                         placeholder="09123456789"
                         error={errors.farmerMobile}
                         className={
-                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                          isAnonymousFarmer
+                            ? "bg-gray-50 cursor-not-allowed"
+                            : ""
                         }
                       />
                     </Field>
@@ -1629,7 +2848,9 @@ useEffect(() => {
                             );
                         }}
                         className={
-                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                          isAnonymousFarmer
+                            ? "bg-gray-50 cursor-not-allowed"
+                            : ""
                         }
                       >
                         <option value="">Select barangay</option>
@@ -1641,7 +2862,7 @@ useEffect(() => {
                       </Select>
                     </Field>
 
-                    {/* 🔹 Land tenure */}
+                    {/* Land tenure */}
                     <Field
                       label="Land tenure type"
                       required={!isAnonymousFarmer}
@@ -1657,10 +2878,15 @@ useEffect(() => {
                         }}
                         onBlur={() => {
                           if (!isAnonymousFarmer && !selectedTenureId)
-                            setFieldError("tenure", "Please choose land tenure type.");
+                            setFieldError(
+                              "tenure",
+                              "Please choose land tenure type."
+                            );
                         }}
                         className={
-                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                          isAnonymousFarmer
+                            ? "bg-gray-50 cursor-not-allowed"
+                            : ""
                         }
                       >
                         <option value="">Select tenure type</option>
@@ -1701,7 +2927,9 @@ useEffect(() => {
                         placeholder="House no., street, purok/sitio"
                         error={errors.farmerAddress}
                         className={
-                          isAnonymousFarmer ? "bg-gray-50 cursor-not-allowed" : ""
+                          isAnonymousFarmer
+                            ? "bg-gray-50 cursor-not-allowed"
+                            : ""
                         }
                       />
                     </Field>
@@ -1709,7 +2937,7 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* Step-level error (optional) */}
+              {/* Step-level error */}
               {errors._form && <ErrorText>{errors._form}</ErrorText>}
             </form>
           </div>
@@ -1770,7 +2998,6 @@ useEffect(() => {
           aria-modal="true"
         >
           <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden">
-            {/* sticky header */}
             <div className="sticky top-0 z-10 px-6 py-5 border-b bg-white/95 backdrop-blur">
               <h3 className="text-xl font-bold text-gray-900">Review details</h3>
               <p className="text-sm text-gray-500 mt-0.5">
@@ -1779,7 +3006,6 @@ useEffect(() => {
             </div>
 
             <div className="p-6 max-h-[62vh] overflow-y-auto space-y-6">
-              {/* Crop */}
               <section>
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Crop information
@@ -1787,26 +3013,46 @@ useEffect(() => {
                 <div className="mt-3 rounded-xl border border-gray-200">
                   {[
                     ["Crop", getCropTypeName()],
-                    ...(selectedVarietyId
-                      ? [["Variety", getVarietyName()]]
+                    ...(selectedVarietyId ? [["Variety", getVarietyName()]] : []),
+                    ...(String(selectedCropType) === "6" && vegCategoryMain
+                      ? [["Vegetable category", vegCategoryMain]]
                       : []),
                     ["Cropping system", getCroppingSystemLabel()],
-                    ...(interCropTypeId
+                    ...(isIntercropMode
                       ? [
                           [
-                            "Secondary crop",
-                            cropTypes.find((c) => c.id === interCropTypeId)
-                              ?.name || "—",
+                            "Main land %",
+                            `${clampPct(mainLandPct)}% (${mainHectaresUsed.toFixed(
+                              2
+                            )} ha)`,
+                          ],
+                          [
+                            "Secondary land %",
+                            `${clampPct(
+                              secondaryLandPct
+                            )}% (${secondaryHectaresUsed.toFixed(2)} ha)`,
                           ],
                         ]
                       : []),
-                    ...(intercropVarietyId
+                    ...(isIntercropMode && interCropTypeId
+                      ? [["Secondary crop", getSecondaryCropTypeName()]]
+                      : []),
+                    ...(isIntercropMode && intercropVarietyId
+                      ? [["Secondary variety", getSecondaryVarietyName()]]
+                      : []),
+                    ...(isRelayMode && relayPlantedDate
                       ? [
                           [
-                            "Secondary variety",
-                            intercropVarieties.find(
-                              (v) => v.id === parseInt(intercropVarietyId)
-                            )?.name || "—",
+                            "Relay planted",
+                            new Date(relayPlantedDate).toLocaleDateString(),
+                          ],
+                        ]
+                      : []),
+                    ...(isRelayMode && relayEstimatedHarvest
+                      ? [
+                          [
+                            "Relay harvest",
+                            new Date(relayEstimatedHarvest).toLocaleDateString(),
                           ],
                         ]
                       : []),
@@ -1824,21 +3070,23 @@ useEffect(() => {
                           ],
                         ]
                       : []),
-                    ["Area", hectares ? `${hectares} ha` : "—"],
+                    ["Total area", hectares ? `${hectares} ha` : "—"],
                     ...(avgElevation
                       ? [["Avg elevation", `${avgElevation} m`]]
                       : []),
                     ...(estimatedVolume
                       ? [
                           [
-                            "Est. yield",
+                            "Main est. yield",
                             `${estimatedVolume} ${
                               yieldUnitMap[selectedCropType] || "units"
                             }`,
                           ],
                         ]
                       : []),
-                    ...(secondaryEstimatedVolume && interCropTypeId
+                    ...(isIntercropMode &&
+                    secondaryEstimatedVolume &&
+                    interCropTypeId
                       ? [
                           [
                             "Secondary est. yield",
@@ -1857,8 +3105,56 @@ useEffect(() => {
                           [
                             "Ecosystem",
                             ecosystems.find(
-                              (e) => e.id === parseInt(selectedEcosystem)
+                              (e) =>
+                                String(e.id) === String(selectedEcosystem)
                             )?.name || "—",
+                          ],
+                        ]
+                      : []),
+                    ...(mainFarmgate
+                      ? [
+                          [
+                            "Main farmgate value (PHP)",
+                            `₱${peso(
+                              mainFarmgate.valueLow
+                            )} – ₱${peso(mainFarmgate.valueHigh)}`,
+                          ],
+                        ]
+                      : []),
+                    ...(isIntercropMode && secondaryFarmgate
+                      ? [
+                          [
+                            "Secondary farmgate value (PHP)",
+                            `₱${peso(
+                              secondaryFarmgate.valueLow
+                            )} – ₱${peso(secondaryFarmgate.valueHigh)}`,
+                          ],
+                        ]
+                      : []),
+                    ...(displayFarmgate
+                      ? [
+                          [
+                            "Total crop value (PHP)",
+                            `₱${peso(
+                              displayFarmgate.low
+                            )} – ₱${peso(displayFarmgate.high)}`,
+                          ],
+                        ]
+                      : []),
+                    ["Conversion used", conversionSummary],
+                    ...(mainPrice
+                      ? [
+                          [
+                            "Main desired price",
+                            `${mainPrice} ${mainPriceUnitLabel}`,
+                          ],
+                        ]
+                      : []),
+                    ...(secondaryPrice
+                      ? [
+                          [
+                            "Secondary desired price",
+                            `${secondaryPrice} ${secondaryPriceUnitLabel}`,
                           ],
                         ]
                       : []),
@@ -1878,7 +3174,6 @@ useEffect(() => {
                 </div>
               </section>
 
-              {/* Farmer */}
               <section>
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                   Farmer information
@@ -1899,7 +3194,7 @@ useEffect(() => {
                     <div
                       key={k}
                       className={`flex items-start justify-between px-4 py-3 ${
-                        i < a.length - 1 ? "border-b border-gray-200" : ""
+                        i < a.length - 1 ? "border-gray-200 border-b" : ""
                       }`}
                     >
                       <span className="text-sm text-gray-600">{k}</span>
@@ -1912,7 +3207,6 @@ useEffect(() => {
               </section>
             </div>
 
-            {/* sticky footer */}
             <div className="sticky bottom-0 z-10 px-6 py-4 bg-white/95 backdrop-blur border-t border-gray-200 flex gap-3">
               <button
                 onClick={() => setShowConfirmation(false)}
@@ -1932,9 +3226,9 @@ useEffect(() => {
       )}
 
       <style>{`
-        @keyframes fadeIn { 
-          from { opacity: 0; transform: translateY(6px);} 
-          to { opacity: 1; transform: translateY(0);} 
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         .animate-fadeIn { animation: fadeIn 0.20s ease-out; }
       `}</style>
@@ -1943,3 +3237,4 @@ useEffect(() => {
 };
 
 export default TagCropForm;
+
