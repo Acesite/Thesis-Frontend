@@ -2387,6 +2387,6 @@ const CalamityFarmerMap = () => {
       )}
     </div>
   );
-};
+};  
 
 export default CalamityFarmerMap;

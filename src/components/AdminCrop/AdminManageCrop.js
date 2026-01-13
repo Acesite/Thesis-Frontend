@@ -1,4 +1,4 @@
-// pages/AdminCrop/SuperManageCrop.jsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AOS from "aos";
@@ -69,6 +69,144 @@ const fmtDate = (date) => {
         day: "numeric",
       });
 };
+
+/* ---------- FARMGATE HELPERS (same logic style as sidebar) ---------- */
+const DEFAULT_KG_PER_SACK = 50;
+const DEFAULT_KG_PER_BUNCH = 15;
+const KG_PER_TON = 1000;
+
+const peso = (n) => {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  return x.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
+
+function normalizeName(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Return { low, high, unit:"kg", note } OR null if unknown */
+function resolveFarmgateRangePerKg(cropTypeId, varietyNameRaw, vegCategoryRaw) {
+  const v = normalizeName(varietyNameRaw);
+  const veg = normalizeName(vegCategoryRaw);
+
+  // BANANA
+  if (String(cropTypeId) === "3") {
+    if (v.includes("tinigib"))
+      return { low: 20, high: 25, unit: "kg", note: "Banana Tinigib" };
+    if (v.includes("lagkitan") || v.includes("lakatan"))
+      return {
+        low: 38,
+        high: 45,
+        unit: "kg",
+        note: "Banana Lakatan/Lagkitan",
+      };
+    if (v.includes("saba"))
+      return { low: 22, high: 26, unit: "kg", note: "Banana Saba" };
+    if (v.includes("cavendish"))
+      return { low: 18, high: 22, unit: "kg", note: "Banana Cavendish" };
+    return { low: 20, high: 25, unit: "kg", note: "Banana (fallback range)" };
+  }
+
+  // RICE (Palay)
+  if (String(cropTypeId) === "1") {
+    if (v.includes("216"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 216" };
+    if (v.includes("222"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 222" };
+    if (v.includes("15"))
+      return { low: 17, high: 22, unit: "kg", note: "Rice Rc 15" };
+    if (v.includes("224"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 224" };
+    if (v.includes("188"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 188" };
+    return { low: 18, high: 23, unit: "kg", note: "Rice (fallback range)" };
+  }
+
+  // CORN
+  if (String(cropTypeId) === "2") {
+    if (v.includes("99-1793") || v.includes("99 1793"))
+      return { low: 18, high: 22, unit: "kg", note: "Corn Phil 99-1793" };
+    if (v.includes("2000-2569") || v.includes("2000 2569"))
+      return { low: 18, high: 22, unit: "kg", note: "Corn Phil 2000-2569" };
+    if (v.includes("co 0238") || v.includes("0238"))
+      return { low: 18, high: 22, unit: "kg", note: "Corn Co 0238" };
+    return { low: 18, high: 22, unit: "kg", note: "Corn (fallback range)" };
+  }
+
+  // CASSAVA
+  if (String(cropTypeId) === "5") {
+    if (v.includes("ku50") || v.includes("ku 50"))
+      return { low: 30, high: 35, unit: "kg", note: "Cassava KU50" };
+    if (v.includes("golden yellow"))
+      return { low: 30, high: 35, unit: "kg", note: "Cassava Golden Yellow" };
+    if (v.includes("rayong 5") || v.includes("rayong5"))
+      return { low: 30, high: 35, unit: "kg", note: "Cassava Rayong 5" };
+    return { low: 30, high: 35, unit: "kg", note: "Cassava (fallback range)" };
+  }
+
+  // SUGARCANE
+  if (String(cropTypeId) === "4") {
+    return { low: 1.8, high: 2.5, unit: "kg", note: "Sugarcane (all varieties)" };
+  }
+
+  // VEGETABLES
+  if (String(cropTypeId) === "6") {
+    if (veg === "leafy")
+      return { low: 40, high: 60, unit: "kg", note: "Vegetables (leafy)" };
+    if (veg === "fruiting")
+      return { low: 35, high: 80, unit: "kg", note: "Vegetables (fruiting)" };
+    if (veg === "gourd")
+      return { low: 30, high: 60, unit: "kg", note: "Vegetables (gourd crops)" };
+    return { low: 30, high: 80, unit: "kg", note: "Vegetables (general fallback)" };
+  }
+
+  return null;
+}
+
+/**
+ * Convert volume (in app unit) → kg, then apply price per kg.
+ * Returns { valueLow, valueHigh, kgTotal, priceLow, priceHigh, note } or null
+ */
+function computeFarmgateValueRange({
+  cropTypeId,
+  varietyName,
+  vegCategory,
+  volume,
+  unit,
+  kgPerSack,
+  kgPerBunch,
+}) {
+  const vol = Number(volume);
+  if (!Number.isFinite(vol) || vol <= 0) return null;
+
+  const range = resolveFarmgateRangePerKg(cropTypeId, varietyName, vegCategory);
+  if (!range) return null;
+
+  let kgFactor = 1;
+  if (unit === "kg") kgFactor = 1;
+  else if (unit === "tons") kgFactor = KG_PER_TON;
+  else if (unit === "sacks")
+    kgFactor = Math.max(1, Number(kgPerSack) || DEFAULT_KG_PER_SACK);
+  else if (unit === "bunches")
+    kgFactor = Math.max(1, Number(kgPerBunch) || DEFAULT_KG_PER_BUNCH);
+
+  const kgTotal = vol * kgFactor;
+  const valueLow = kgTotal * range.low;
+  const valueHigh = kgTotal * range.high;
+
+  return {
+    valueLow,
+    valueHigh,
+    kgTotal,
+    priceLow: range.low,
+    priceHigh: range.high,
+    note: range.note,
+  };
+}
 
 /* ---------- PAGE ---------- */
 const AdminManageCrop = () => {
@@ -524,29 +662,28 @@ const AdminManageCrop = () => {
     }
   };
 
-const confirmDelete = async () => {
-  try {
-    const currentAdminId = getCurrentUserId();
-    console.log("[DELETE] Current admin ID:", currentAdminId); // ✅ Add this
-    console.log("[DELETE] Deleting crop:", pendingDelete.id); // ✅ Add this
-    
-    await axios.delete(
-      `http://localhost:5000/api/managecrops/${pendingDelete.id}`,
-      {
-        data: { deleted_by: currentAdminId },
-        headers: { "X-User-Id": currentAdminId || "" }
-      }
-    );
-    
-    await fetchCrops();
-    setPendingDelete(null);
-    alert("Crop deleted successfully!");
-  } catch (err) {
-    console.error("Delete error:", err);
-    alert("Failed to delete crop.");
-  }
-};
+  const confirmDelete = async () => {
+    try {
+      const currentAdminId = getCurrentUserId();
+      console.log("[DELETE] Current admin ID:", currentAdminId);
+      console.log("[DELETE] Deleting crop:", pendingDelete.id);
 
+      await axios.delete(
+        `http://localhost:5000/api/managecrops/${pendingDelete.id}`,
+        {
+          data: { deleted_by: currentAdminId },
+          headers: { "X-User-Id": currentAdminId || "" },
+        }
+      );
+
+      await fetchCrops();
+      setPendingDelete(null);
+      alert("Crop deleted successfully!");
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Failed to delete crop.");
+    }
+  };
 
   /* ------- derived for viewing modal ------- */
   const viewingIsHarvested =
@@ -891,7 +1028,7 @@ const confirmDelete = async () => {
             </div>
           </div>
 
-          {/* Grid of cards (unchanged) */}
+          {/* Grid of cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {isLoading ? (
               Array.from({ length: pageSize }).map((_, i) => (
@@ -908,6 +1045,51 @@ const confirmDelete = async () => {
                 const harvestStatusLabel = isHarvested
                   ? `Harvested on ${fmtDate(crop.harvested_date)}`
                   : "Not yet harvested";
+
+                // 🔹 Farmgate for main crop
+                const mainUnit =
+                  yieldUnitMap[crop.crop_type_id] || "units";
+                const mainFarmgate =
+                  crop.estimated_volume != null
+                    ? computeFarmgateValueRange({
+                        cropTypeId: crop.crop_type_id,
+                        varietyName: crop.variety_name,
+                        vegCategory: "",
+                        volume: crop.estimated_volume,
+                        unit: mainUnit,
+                        kgPerSack: DEFAULT_KG_PER_SACK,
+                        kgPerBunch: DEFAULT_KG_PER_BUNCH,
+                      })
+                    : null;
+
+                // 🔹 Farmgate for secondary crop (if any)
+                const secondaryUnit =
+                  yieldUnitMap[crop.intercrop_crop_type_id] || "units";
+                const secondaryFarmgate =
+                  crop.intercrop_crop_type_id &&
+                  crop.intercrop_estimated_volume != null
+                    ? computeFarmgateValueRange({
+                        cropTypeId: crop.intercrop_crop_type_id,
+                        varietyName: crop.intercrop_variety_name,
+                        vegCategory: "",
+                        volume: crop.intercrop_estimated_volume,
+                        unit: secondaryUnit,
+                        kgPerSack: DEFAULT_KG_PER_SACK,
+                        kgPerBunch: DEFAULT_KG_PER_BUNCH,
+                      })
+                    : null;
+
+                const totalFarmgate =
+                  mainFarmgate || secondaryFarmgate
+                    ? {
+                        low:
+                          (mainFarmgate?.valueLow || 0) +
+                          (secondaryFarmgate?.valueLow || 0),
+                        high:
+                          (mainFarmgate?.valueHigh || 0) +
+                          (secondaryFarmgate?.valueHigh || 0),
+                      }
+                    : null;
 
                 return (
                   <div
@@ -1028,35 +1210,36 @@ const confirmDelete = async () => {
                       />
                       {/* Tenure */}
                       <Stat label="Tenure" value={crop.tenure_name || "N/A"} />
-                     <Stat
-  label="Map"
-  value={
-    <button
-      className="text-emerald-700 hover:underline"
-      onClick={() => {
-        const isHarvested =
-          crop.is_harvested === 1 ||
-          crop.is_harvested === "1" ||
-          crop.is_harvested === true;
+                      <Stat
+                        label="Map"
+                        value={
+                          <button
+                            className="text-emerald-700 hover:underline"
+                            onClick={() => {
+                              const isHarvested =
+                                crop.is_harvested === 1 ||
+                                crop.is_harvested === "1" ||
+                                crop.is_harvested === true;
 
-        navigate("/AdminCropMap", {
-          state: {
-            cropId: String(crop.id),
-            zoom: 17,
-            // ✅ ensure map shows the correct set immediately
-            harvestFilter: isHarvested ? "harvested" : "not_harvested",
-            // ✅ optional, but useful for styling/labeling
-            isHarvested: isHarvested ? 1 : 0,
-          },
-        });
-      }}
-      title="Open in Admin Map"
-    >
-      View location ↗
-    </button>
-  }
-/>
-
+                              navigate("/AdminCropMap", {
+                                state: {
+                                  cropId: String(crop.id),
+                                  zoom: 17,
+                                  // ✅ ensure map shows the correct set immediately
+                                  harvestFilter: isHarvested
+                                    ? "harvested"
+                                    : "not_harvested",
+                                  // ✅ optional, but useful for styling/labeling
+                                  isHarvested: isHarvested ? 1 : 0,
+                                },
+                              });
+                            }}
+                            title="Open in Admin Map"
+                          >
+                            View location ↗
+                          </button>
+                        }
+                      />
                     </div>
 
                     {/* Secondary crop (if any) */}
@@ -1088,6 +1271,51 @@ const confirmDelete = async () => {
                             {crop.intercrop_cropping_system}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* 🔹 Estimated farmgate value (PHP) in card */}
+                    {(mainFarmgate || secondaryFarmgate) && (
+                      <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2">
+                        <div className="text-[11px] uppercase tracking-wide text-emerald-700">
+                          Estimated farmgate value (PHP)
+                        </div>
+                        {totalFarmgate ? (
+                          <div className="text-[14px] font-semibold text-emerald-900">
+                            ₱{peso(totalFarmgate.low)} – ₱
+                            {peso(totalFarmgate.high)}
+                          </div>
+                        ) : (
+                          <div className="text-[13px] text-emerald-800">—</div>
+                        )}
+                        <div className="mt-1 space-y-0.5 text-[11px] text-emerald-800">
+                          {mainFarmgate && (
+                            <div>
+                              <span className="font-semibold">Main crop:</span>{" "}
+                              ₱{peso(mainFarmgate.valueLow)} – ₱
+                              {peso(mainFarmgate.valueHigh)}{" "}
+                              <span className="text-emerald-900/80">
+                                ({peso(mainFarmgate.kgTotal)} kg × ₱
+                                {mainFarmgate.priceLow}–₱
+                                {mainFarmgate.priceHigh}/kg)
+                              </span>
+                            </div>
+                          )}
+                          {secondaryFarmgate && (
+                            <div>
+                              <span className="font-semibold">
+                                Secondary crop:
+                              </span>{" "}
+                              ₱{peso(secondaryFarmgate.valueLow)} – ₱
+                              {peso(secondaryFarmgate.valueHigh)}{" "}
+                              <span className="text-emerald-900/80">
+                                ({peso(secondaryFarmgate.kgTotal)} kg × ₱
+                                {secondaryFarmgate.priceLow}–₱
+                                {secondaryFarmgate.priceHigh}/kg)
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -1195,7 +1423,7 @@ const confirmDelete = async () => {
 
       {editingCrop && (
         <div
-          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-3 md:p-4 lg:p-6 overflow-y-auto"
+          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-start md:items-center justifycenter p-3 md:p-4 lg:p-6 overflow-y-auto"
           onClick={() => setEditingCrop(null)}
         >
           <div
@@ -1881,9 +2109,16 @@ const Stat = ({ label, value }) => (
     <div className="text-[14px] text-slate-900">{value}</div>
   </div>
 );
+
 function getCurrentUserId() {
   try {
-    const keys = ["adminUser", "user", "authUser", "sessionUser", "loggedInUser"];
+    const keys = [
+      "adminUser",
+      "user",
+      "authUser",
+      "sessionUser",
+      "loggedInUser",
+    ];
     for (const k of keys) {
       const raw = localStorage.getItem(k);
       if (!raw) continue;

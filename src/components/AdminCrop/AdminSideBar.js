@@ -103,6 +103,145 @@ function isSoftDeletedCrop(crop) {
   return false;
 }
 
+/* ---------- Farmgate helpers (same logic as TagCropForm) ---------- */
+
+const DEFAULT_KG_PER_SACK = 50;
+const DEFAULT_KG_PER_BUNCH = 15;
+const KG_PER_TON = 1000;
+
+const peso = (n) => {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  return x.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
+
+function normalizeName(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Return { low, high, unit:"kg", note } OR null if unknown */
+function resolveFarmgateRangePerKg(cropTypeId, varietyNameRaw, vegCategoryRaw) {
+  const v = normalizeName(varietyNameRaw);
+  const veg = normalizeName(vegCategoryRaw);
+
+  // BANANA (Farmgate 2025)
+  if (String(cropTypeId) === "3") {
+    if (v.includes("tinigib"))
+      return { low: 20, high: 25, unit: "kg", note: "Banana Tinigib" };
+    if (v.includes("lagkitan") || v.includes("lakatan"))
+      return {
+        low: 38,
+        high: 45,
+        unit: "kg",
+        note: "Banana Lakatan/Lagkitan",
+      };
+    if (v.includes("saba"))
+      return { low: 22, high: 26, unit: "kg", note: "Banana Saba" };
+    if (v.includes("cavendish"))
+      return { low: 18, high: 22, unit: "kg", note: "Banana Cavendish" };
+    return { low: 20, high: 25, unit: "kg", note: "Banana (fallback range)" };
+  }
+
+  // RICE (Palay)
+  if (String(cropTypeId) === "1") {
+    if (v.includes("216"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 216" };
+    if (v.includes("222"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 222" };
+    if (v.includes("15"))
+      return { low: 17, high: 22, unit: "kg", note: "Rice Rc 15" };
+    if (v.includes("224"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 224" };
+    if (v.includes("188"))
+      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 188" };
+    return { low: 18, high: 23, unit: "kg", note: "Rice (fallback range)" };
+  }
+
+  // CORN
+  if (String(cropTypeId) === "2") {
+    if (v.includes("99-1793") || v.includes("99 1793"))
+      return { low: 18, high: 22, unit: "kg", note: "Corn Phil 99-1793" };
+    if (v.includes("2000-2569") || v.includes("2000 2569"))
+      return { low: 18, high: 22, unit: "kg", note: "Corn Phil 2000-2569" };
+    if (v.includes("co 0238") || v.includes("0238"))
+      return { low: 18, high: 22, unit: "kg", note: "Corn Co 0238" };
+    return { low: 18, high: 22, unit: "kg", note: "Corn (fallback range)" };
+  }
+
+  // CASSAVA
+  if (String(cropTypeId) === "5") {
+    if (v.includes("ku50") || v.includes("ku 50"))
+      return { low: 30, high: 35, unit: "kg", note: "Cassava KU50" };
+    if (v.includes("golden yellow"))
+      return { low: 30, high: 35, unit: "kg", note: "Cassava Golden Yellow" };
+    if (v.includes("rayong 5") || v.includes("rayong5"))
+      return { low: 30, high: 35, unit: "kg", note: "Cassava Rayong 5" };
+    return { low: 30, high: 35, unit: "kg", note: "Cassava (fallback range)" };
+  }
+
+  // SUGARCANE
+  if (String(cropTypeId) === "4") {
+    return { low: 1.8, high: 2.5, unit: "kg", note: "Sugarcane (all varieties)" };
+  }
+
+  // VEGETABLES
+  if (String(cropTypeId) === "6") {
+    if (veg === "leafy")
+      return { low: 40, high: 60, unit: "kg", note: "Vegetables (leafy)" };
+    if (veg === "fruiting")
+      return { low: 35, high: 80, unit: "kg", note: "Vegetables (fruiting)" };
+    if (veg === "gourd")
+      return { low: 30, high: 60, unit: "kg", note: "Vegetables (gourd crops)" };
+    return { low: 30, high: 80, unit: "kg", note: "Vegetables (general fallback)" };
+  }
+
+  return null;
+}
+
+/**
+ * Convert volume (in app unit) → kg, then apply price per kg.
+ * Returns { valueLow, valueHigh, kgTotal, priceLow, priceHigh, note } or null
+ */
+function computeFarmgateValueRange({
+  cropTypeId,
+  varietyName,
+  vegCategory,
+  volume,
+  unit,
+  kgPerSack,
+  kgPerBunch,
+}) {
+  const vol = Number(volume);
+  if (!Number.isFinite(vol) || vol <= 0) return null;
+
+  const range = resolveFarmgateRangePerKg(cropTypeId, varietyName, vegCategory);
+  if (!range) return null;
+
+  let kgFactor = 1;
+  if (unit === "kg") kgFactor = 1;
+  else if (unit === "tons") kgFactor = KG_PER_TON;
+  else if (unit === "sacks")
+    kgFactor = Math.max(1, Number(kgPerSack) || DEFAULT_KG_PER_SACK);
+  else if (unit === "bunches")
+    kgFactor = Math.max(1, Number(kgPerBunch) || DEFAULT_KG_PER_BUNCH);
+
+  const kgTotal = vol * kgFactor;
+  const valueLow = kgTotal * range.low;
+  const valueHigh = kgTotal * range.high;
+
+  return {
+    valueLow,
+    valueHigh,
+    kgTotal,
+    priceLow: range.low,
+    priceHigh: range.high,
+    note: range.note,
+  };
+}
+
 const AdminSideBar = ({
   visible,
   zoomToBarangay,
@@ -382,6 +521,63 @@ const AdminSideBar = ({
       ? `Tenure #${selectedCrop.tenure_id}`
       : null);
 
+  /* ---------- Farmgate estimation for selected field (sidebar view) ---------- */
+
+  const mainCropTypeId = selectedCrop ? selectedCrop.crop_type_id : null;
+  const mainVarietyName = selectedCrop ? selectedCrop.variety_name || "" : "";
+  const mainVolume = selectedCrop ? selectedCrop.estimated_volume : null;
+  const mainUnit = mainCropTypeId
+    ? yieldUnitMap[mainCropTypeId] || "units"
+    : null;
+
+  // If in the future you store veg categories per crop, read them here.
+  const vegCategoryMain = selectedCrop?.veg_category_main || "";
+  const vegCategorySecondary = selectedCrop?.veg_category_secondary || "";
+
+  const secondaryVarietyName = selectedCrop
+    ? selectedCrop.intercrop_variety_name || ""
+    : "";
+
+  const mainFarmgateSidebar =
+    selectedCrop && mainCropTypeId && mainVolume != null
+      ? computeFarmgateValueRange({
+          cropTypeId: mainCropTypeId,
+          varietyName: mainVarietyName,
+          vegCategory: vegCategoryMain,
+          volume: mainVolume,
+          unit: mainUnit,
+          kgPerSack: DEFAULT_KG_PER_SACK,
+          kgPerBunch: DEFAULT_KG_PER_BUNCH,
+        })
+      : null;
+
+  const secondaryFarmgateSidebar =
+    selectedCrop &&
+    secondaryCropTypeId &&
+    secondaryVolume != null
+      ? computeFarmgateValueRange({
+          cropTypeId: secondaryCropTypeId,
+          varietyName: secondaryVarietyName,
+          vegCategory: vegCategorySecondary,
+          volume: secondaryVolume,
+          unit: secondaryUnit,
+          kgPerSack: DEFAULT_KG_PER_SACK,
+          kgPerBunch: DEFAULT_KG_PER_BUNCH,
+        })
+      : null;
+
+  const totalFarmgateSidebar =
+    mainFarmgateSidebar || secondaryFarmgateSidebar
+      ? {
+          low:
+            (mainFarmgateSidebar?.valueLow || 0) +
+            (secondaryFarmgateSidebar?.valueLow || 0),
+          high:
+            (mainFarmgateSidebar?.valueHigh || 0) +
+            (secondaryFarmgateSidebar?.valueHigh || 0),
+        }
+      : null;
+
   // harvest-by-year stats (year vs year)
   const harvestedCropsForStats = Array.isArray(crops)
     ? crops.filter((c) => !isSoftDeletedCrop(c) && isCropHarvested(c))
@@ -450,7 +646,7 @@ const AdminSideBar = ({
     return today > est;
   }, [selectedCrop, isHarvested]);
 
-    const handleMarkHarvested = async () => {
+  const handleMarkHarvested = async () => {
     if (!selectedCrop) return;
 
     if (!canMarkHarvestedNow) {
@@ -488,7 +684,6 @@ const AdminSideBar = ({
       alert("Failed to mark this crop as harvested. Please try again.");
     }
   };
-
 
   // render
   return (
@@ -537,7 +732,7 @@ const AdminSideBar = ({
             className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             title="Go back to Manage Crops"
           >
-            ← Back 
+            ← Back
           </button>
         </div>
 
@@ -615,7 +810,7 @@ const AdminSideBar = ({
                       : "Not yet harvested"}
                   </p>
 
-                                   {!isHarvested && (
+                  {!isHarvested && (
                     <button
                       type="button"
                       onClick={handleMarkHarvested}
@@ -631,16 +826,15 @@ const AdminSideBar = ({
                     </button>
                   )}
 
-
-               {isHarvested && onStartNewSeason && (
-  <button
-    type="button"
-    onClick={() => onStartNewSeason(selectedCrop)} // ✅ Passes full crop object
-    className="mt-1 inline-flex items-center rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-  >
-    Reuse field (new season)
-  </button>
-)}
+                  {isHarvested && onStartNewSeason && (
+                    <button
+                      type="button"
+                      onClick={() => onStartNewSeason(selectedCrop)} // ✅ Passes full crop object
+                      className="mt-1 inline-flex items-center rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                    >
+                      Reuse field (new season)
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -743,6 +937,52 @@ const AdminSideBar = ({
                       <KV label="Land tenure" value={tenureDisplay} />
                     )}
                   </dl>
+                </div>
+              )}
+
+              {/* 🔹 Estimated farmgate value (PHP) – from TagCropForm logic */}
+              {(mainFarmgateSidebar || secondaryFarmgateSidebar) && (
+                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                    Estimated farmgate value (PHP)
+                  </p>
+
+                  {totalFarmgateSidebar ? (
+                    <p className="text-sm font-bold text-emerald-700">
+                      ₱{peso(totalFarmgateSidebar.low)} – ₱
+                      {peso(totalFarmgateSidebar.high)}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-gray-500">—</p>
+                  )}
+
+                  <div className="mt-2 space-y-1 text-[11px] text-gray-600">
+                    {mainFarmgateSidebar && (
+                      <p>
+                        <span className="font-semibold">Main crop:</span>{" "}
+                        ₱{peso(mainFarmgateSidebar.valueLow)} – ₱
+                        {peso(mainFarmgateSidebar.valueHigh)}{" "}
+                        <span className="text-gray-500">
+                          ({peso(mainFarmgateSidebar.kgTotal)} kg × ₱
+                          {mainFarmgateSidebar.priceLow}–₱
+                          {mainFarmgateSidebar.priceHigh}/kg)
+                        </span>
+                      </p>
+                    )}
+
+                    {secondaryFarmgateSidebar && (
+                      <p>
+                        <span className="font-semibold">Secondary crop:</span>{" "}
+                        ₱{peso(secondaryFarmgateSidebar.valueLow)} – ₱
+                        {peso(secondaryFarmgateSidebar.valueHigh)}{" "}
+                        <span className="text-gray-500">
+                          ({peso(secondaryFarmgateSidebar.kgTotal)} kg × ₱
+                          {secondaryFarmgateSidebar.priceLow}–₱
+                          {secondaryFarmgateSidebar.priceHigh}/kg)
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1306,4 +1546,3 @@ const AdminSideBar = ({
 };
 
 export default AdminSideBar;
-
