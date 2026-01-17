@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AgriGISLogo from "../../components/MapboxImages/AgriGIS.png";
 import Button from "./MapControls/Button";
@@ -72,13 +72,6 @@ function isSoftDeletedCrop(crop) {
     v === "yes" ||
     v === "y";
 
-  const no = (v) =>
-    v === 0 ||
-    v === "0" ||
-    v === false ||
-    v === "false" ||
-    v === "no";
-
   if (
     yes(crop.is_deleted) ||
     yes(crop.deleted) ||
@@ -103,11 +96,30 @@ function isSoftDeletedCrop(crop) {
   return false;
 }
 
-/* ---------- Farmgate helpers (same logic as TagCropForm) ---------- */
+// 🔹 helper to check harvested status
+function isCropHarvested(crop) {
+  if (!crop) return false;
+  const props = crop.properties || crop;
 
-const DEFAULT_KG_PER_SACK = 50;
-const DEFAULT_KG_PER_BUNCH = 15;
-const KG_PER_TON = 1000;
+  return (
+    Number(props.is_harvested) === 1 ||
+    props.is_harvested === true ||
+    props.is_harvested === "1" ||
+    !!props.harvested_date ||
+    !!props.date_harvested
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  ✅ SINGLE SOURCE OF TRUTH: Estimated Farmgate Value (PHP)          */
+/*  AdminSidebar MUST NOT recalculate farmgate value.                  */
+/*  It only displays what TagCropForm saved to DB/state.               */
+/*                                                                     */
+/*  Expected fields from backend (recommended):                        */
+/*   - est_farmgate_value_display (string, e.g. "₱139,590 – ₱164,970")  */
+/*   - est_farmgate_value_low (number)                                 */
+/*   - est_farmgate_value_high (number)                                */
+/* ------------------------------------------------------------------ */
 
 const peso = (n) => {
   const x = Number(n);
@@ -115,132 +127,51 @@ const peso = (n) => {
   return x.toLocaleString(undefined, { maximumFractionDigits: 0 });
 };
 
-function normalizeName(s) {
-  return String(s || "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
+function getEstFarmgateDisplay(crop) {
+  if (!crop) return null;
 
-/** Return { low, high, unit:"kg", note } OR null if unknown */
-function resolveFarmgateRangePerKg(cropTypeId, varietyNameRaw, vegCategoryRaw) {
-  const v = normalizeName(varietyNameRaw);
-  const veg = normalizeName(vegCategoryRaw);
+  const display =
+    crop.est_farmgate_value_display ??
+    crop.estFarmgateValueDisplay ??
+    crop.estimated_farmgate_value_display ??
+    crop.estimatedFarmgateValueDisplay ??
+    null;
 
-  // BANANA (Farmgate 2025)
-  if (String(cropTypeId) === "3") {
-    if (v.includes("tinigib"))
-      return { low: 20, high: 25, unit: "kg", note: "Banana Tinigib" };
-    if (v.includes("lagkitan") || v.includes("lakatan"))
-      return {
-        low: 38,
-        high: 45,
-        unit: "kg",
-        note: "Banana Lakatan/Lagkitan",
-      };
-    if (v.includes("saba"))
-      return { low: 22, high: 26, unit: "kg", note: "Banana Saba" };
-    if (v.includes("cavendish"))
-      return { low: 18, high: 22, unit: "kg", note: "Banana Cavendish" };
-    return { low: 20, high: 25, unit: "kg", note: "Banana (fallback range)" };
+  // If display is present but it's 0–0, treat as empty
+  if (typeof display === "string" && display.trim()) {
+    const d = display.trim();
+    if (d.includes("₱0") && d.includes("–") && d.includes("₱0")) return null;
+    return d;
   }
 
-  // RICE (Palay)
-  if (String(cropTypeId) === "1") {
-    if (v.includes("216"))
-      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 216" };
-    if (v.includes("222"))
-      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 222" };
-    if (v.includes("15"))
-      return { low: 17, high: 22, unit: "kg", note: "Rice Rc 15" };
-    if (v.includes("224"))
-      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 224" };
-    if (v.includes("188"))
-      return { low: 18, high: 23, unit: "kg", note: "Rice NSIC Rc 188" };
-    return { low: 18, high: 23, unit: "kg", note: "Rice (fallback range)" };
+  const low =
+    crop.est_farmgate_value_low ??
+    crop.estFarmgateValueLow ??
+    crop.estimated_farmgate_value_low ??
+    crop.estimatedFarmgateValueLow ??
+    null;
+
+  const high =
+    crop.est_farmgate_value_high ??
+    crop.estFarmgateValueHigh ??
+    crop.estimated_farmgate_value_high ??
+    crop.estimatedFarmgateValueHigh ??
+    null;
+
+  const lo = Number(low);
+  const hi = Number(high);
+
+  if (Number.isFinite(lo) && Number.isFinite(hi)) {
+    if (lo === 0 && hi === 0) return null; // ✅ ignore 0–0
+    return `₱${peso(lo)} – ₱${peso(hi)}`;
   }
 
-  // CORN
-  if (String(cropTypeId) === "2") {
-    if (v.includes("99-1793") || v.includes("99 1793"))
-      return { low: 18, high: 22, unit: "kg", note: "Corn Phil 99-1793" };
-    if (v.includes("2000-2569") || v.includes("2000 2569"))
-      return { low: 18, high: 22, unit: "kg", note: "Corn Phil 2000-2569" };
-    if (v.includes("co 0238") || v.includes("0238"))
-      return { low: 18, high: 22, unit: "kg", note: "Corn Co 0238" };
-    return { low: 18, high: 22, unit: "kg", note: "Corn (fallback range)" };
-  }
-
-  // CASSAVA
-  if (String(cropTypeId) === "5") {
-    if (v.includes("ku50") || v.includes("ku 50"))
-      return { low: 30, high: 35, unit: "kg", note: "Cassava KU50" };
-    if (v.includes("golden yellow"))
-      return { low: 30, high: 35, unit: "kg", note: "Cassava Golden Yellow" };
-    if (v.includes("rayong 5") || v.includes("rayong5"))
-      return { low: 30, high: 35, unit: "kg", note: "Cassava Rayong 5" };
-    return { low: 30, high: 35, unit: "kg", note: "Cassava (fallback range)" };
-  }
-
-  // SUGARCANE
-  if (String(cropTypeId) === "4") {
-    return { low: 1.8, high: 2.5, unit: "kg", note: "Sugarcane (all varieties)" };
-  }
-
-  // VEGETABLES
-  if (String(cropTypeId) === "6") {
-    if (veg === "leafy")
-      return { low: 40, high: 60, unit: "kg", note: "Vegetables (leafy)" };
-    if (veg === "fruiting")
-      return { low: 35, high: 80, unit: "kg", note: "Vegetables (fruiting)" };
-    if (veg === "gourd")
-      return { low: 30, high: 60, unit: "kg", note: "Vegetables (gourd crops)" };
-    return { low: 30, high: 80, unit: "kg", note: "Vegetables (general fallback)" };
-  }
+  if (Number.isFinite(lo) && lo !== 0) return `₱${peso(lo)}`;
+  if (Number.isFinite(hi) && hi !== 0) return `₱${peso(hi)}`;
 
   return null;
 }
 
-/**
- * Convert volume (in app unit) → kg, then apply price per kg.
- * Returns { valueLow, valueHigh, kgTotal, priceLow, priceHigh, note } or null
- */
-function computeFarmgateValueRange({
-  cropTypeId,
-  varietyName,
-  vegCategory,
-  volume,
-  unit,
-  kgPerSack,
-  kgPerBunch,
-}) {
-  const vol = Number(volume);
-  if (!Number.isFinite(vol) || vol <= 0) return null;
-
-  const range = resolveFarmgateRangePerKg(cropTypeId, varietyName, vegCategory);
-  if (!range) return null;
-
-  let kgFactor = 1;
-  if (unit === "kg") kgFactor = 1;
-  else if (unit === "tons") kgFactor = KG_PER_TON;
-  else if (unit === "sacks")
-    kgFactor = Math.max(1, Number(kgPerSack) || DEFAULT_KG_PER_SACK);
-  else if (unit === "bunches")
-    kgFactor = Math.max(1, Number(kgPerBunch) || DEFAULT_KG_PER_BUNCH);
-
-  const kgTotal = vol * kgFactor;
-  const valueLow = kgTotal * range.low;
-  const valueHigh = kgTotal * range.high;
-
-  return {
-    valueLow,
-    valueHigh,
-    kgTotal,
-    priceLow: range.low,
-    priceHigh: range.high,
-    note: range.note,
-  };
-}
 
 const AdminSideBar = ({
   visible,
@@ -265,13 +196,17 @@ const AdminSideBar = ({
   onStartNewSeason,
 
   cropHistory = [],
+  onMarkHarvested, // 🔹 callback from parent for marking harvested
+
+  // 🔹 field-history selection shared with parent
+  activeHistoryId,
+  onHistorySelect,
 }) => {
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [barangayDetails, setBarangayDetails] = useState(null);
-  const [showCropDropdown, setShowCropDropdown] = useState(false);
   const navigate = useNavigate();
 
-  // ✅ New: back button handler
+  // ✅ Back button handler
   const handleBackToCrops = () => {
     if (window.history.length > 1) {
       navigate(-1); // go back to previous page (e.g., /ManageCrops)
@@ -333,17 +268,6 @@ const AdminSideBar = ({
     Tinongan: { crops: ["Cassava", "Rice"] },
   };
 
-  // helpers
-  function isCropHarvested(crop) {
-    if (!crop) return false;
-    const props = crop.properties || crop;
-    return (
-      Number(props.is_harvested) === 1 ||
-      props.is_harvested === true ||
-      !!props.harvested_date
-    );
-  }
-
   const getHarvestYear = (crop) => {
     if (!crop) return null;
     const props = crop.properties || crop;
@@ -354,56 +278,38 @@ const AdminSideBar = ({
     return d.getFullYear();
   };
 
-  const normalizeCoordsKey = (crop) => {
-    if (!crop || !crop.coordinates) return null;
-    let coords = crop.coordinates;
-
-    if (typeof coords === "string") {
-      try {
-        coords = JSON.parse(coords);
-      } catch {
-        return null;
-      }
-    }
-
-    if (!Array.isArray(coords) || coords.length < 3) return null;
-
-    let ring = coords.map((pt) => {
-      const [lng, lat] = pt;
-      const nLng = Number.isFinite(Number(lng)) ? Number(lng) : 0;
-      const nLat = Number.isFinite(Number(lat)) ? Number(lat) : 0;
-      return [Number(nLng.toFixed(6)), Number(nLat.toFixed(6))];
-    });
-
-    if (ring.length >= 2) {
-      const first = ring[0];
-      const last = ring[ring.length - 1];
-      if (first[0] === last[0] && first[1] === last[1]) {
-        ring = ring.slice(0, -1);
-      }
-    }
-
-    return JSON.stringify(ring);
-  };
-
   // field history from backend: past seasons for this polygon
   const fieldHistory = useMemo(() => {
     if (!Array.isArray(cropHistory) || !cropHistory.length) return [];
 
-    return cropHistory
-      .slice()
-      .sort((a, b) => {
-        const da = new Date(
-          a.date_planted || a.planted_date || a.created_at || 0
-        );
-        const db = new Date(
-          b.date_planted || b.planted_date || b.created_at || 0
-        );
-        return db - da;
-      });
+    return cropHistory.slice().sort((a, b) => {
+      const da = new Date(a.date_planted || a.planted_date || a.created_at || 0);
+      const db = new Date(b.date_planted || b.planted_date || b.created_at || 0);
+      return db - da;
+    });
   }, [cropHistory]);
 
-  // harvest history (global)
+  // harvest-by-year stats (global)
+  const harvestedCropsForStats = Array.isArray(crops)
+    ? crops.filter((c) => !isSoftDeletedCrop(c) && isCropHarvested(c))
+    : [];
+
+  const yearStats = {};
+  for (const c of harvestedCropsForStats) {
+    const y = getHarvestYear(c);
+    if (!y) continue;
+    const key = String(y);
+    if (!yearStats[key]) {
+      yearStats[key] = { count: 0, area: 0, volume: 0 };
+    }
+    yearStats[key].count += 1;
+    yearStats[key].area += Number(c.estimated_hectares) || 0;
+    yearStats[key].volume += Number(c.estimated_volume) || 0;
+  }
+
+  const yearOptions = Object.keys(yearStats).sort();
+
+  // harvest history (time filter)
   const currentYear = new Date().getFullYear();
 
   const [historyYear, setHistoryYear] = useState(String(currentYear));
@@ -414,8 +320,7 @@ const AdminSideBar = ({
   const [compareYearA, setCompareYearA] = useState(String(currentYear - 1));
   const [compareYearB, setCompareYearB] = useState(String(currentYear));
 
-  const historyEnabled =
-    timelineMode === "harvest" && harvestFilter === "harvested";
+  const historyEnabled = timelineMode === "harvest" && harvestFilter === "harvested";
 
   const syncTimelineFromTo = (year, fromMonth, toMonth) => {
     if (!setTimelineFrom || !setTimelineTo) return;
@@ -470,6 +375,12 @@ const AdminSideBar = ({
     syncTimelineFromTo(year, 1, 12);
   };
 
+  const formatNum = (n, digits = 2) =>
+    Number(n || 0).toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+
   // derived secondary-crop info
   const secondaryCropTypeId = selectedCrop
     ? Number(selectedCrop.intercrop_crop_type_id) || null
@@ -499,8 +410,7 @@ const AdminSideBar = ({
 
   const isIntercroppedFlag =
     selectedCrop &&
-    (selectedCrop.is_intercropped === 1 ||
-      selectedCrop.is_intercropped === "1");
+    (selectedCrop.is_intercropped === 1 || selectedCrop.is_intercropped === "1");
 
   const hasSecondaryCrop =
     !!secondaryCropTypeId || !!secondaryVolume || !!isIntercroppedFlag;
@@ -521,143 +431,15 @@ const AdminSideBar = ({
       ? `Tenure #${selectedCrop.tenure_id}`
       : null);
 
-  /* ---------- Farmgate estimation for selected field (sidebar view) ---------- */
-
-  const mainCropTypeId = selectedCrop ? selectedCrop.crop_type_id : null;
-  const mainVarietyName = selectedCrop ? selectedCrop.variety_name || "" : "";
-  const mainVolume = selectedCrop ? selectedCrop.estimated_volume : null;
-  const mainUnit = mainCropTypeId
-    ? yieldUnitMap[mainCropTypeId] || "units"
-    : null;
-
-  // If in the future you store veg categories per crop, read them here.
-  const vegCategoryMain = selectedCrop?.veg_category_main || "";
-  const vegCategorySecondary = selectedCrop?.veg_category_secondary || "";
-
-  const secondaryVarietyName = selectedCrop
-    ? selectedCrop.intercrop_variety_name || ""
-    : "";
-
-  const mainFarmgateSidebar =
-    selectedCrop && mainCropTypeId && mainVolume != null
-      ? computeFarmgateValueRange({
-          cropTypeId: mainCropTypeId,
-          varietyName: mainVarietyName,
-          vegCategory: vegCategoryMain,
-          volume: mainVolume,
-          unit: mainUnit,
-          kgPerSack: DEFAULT_KG_PER_SACK,
-          kgPerBunch: DEFAULT_KG_PER_BUNCH,
-        })
-      : null;
-
-  const secondaryFarmgateSidebar =
-    selectedCrop &&
-    secondaryCropTypeId &&
-    secondaryVolume != null
-      ? computeFarmgateValueRange({
-          cropTypeId: secondaryCropTypeId,
-          varietyName: secondaryVarietyName,
-          vegCategory: vegCategorySecondary,
-          volume: secondaryVolume,
-          unit: secondaryUnit,
-          kgPerSack: DEFAULT_KG_PER_SACK,
-          kgPerBunch: DEFAULT_KG_PER_BUNCH,
-        })
-      : null;
-
-  const totalFarmgateSidebar =
-    mainFarmgateSidebar || secondaryFarmgateSidebar
-      ? {
-          low:
-            (mainFarmgateSidebar?.valueLow || 0) +
-            (secondaryFarmgateSidebar?.valueLow || 0),
-          high:
-            (mainFarmgateSidebar?.valueHigh || 0) +
-            (secondaryFarmgateSidebar?.valueHigh || 0),
-        }
-      : null;
-
-  // harvest-by-year stats (year vs year)
-  const harvestedCropsForStats = Array.isArray(crops)
-    ? crops.filter((c) => !isSoftDeletedCrop(c) && isCropHarvested(c))
-    : [];
-
-  const yearStats = {};
-  for (const c of harvestedCropsForStats) {
-    const y = getHarvestYear(c);
-    if (!y) continue;
-    const key = String(y);
-    if (!yearStats[key]) {
-      yearStats[key] = { count: 0, area: 0, volume: 0 };
-    }
-    yearStats[key].count += 1;
-    yearStats[key].area += Number(c.estimated_hectares) || 0;
-    yearStats[key].volume += Number(c.estimated_volume) || 0;
-  }
-
-  const yearOptions = Object.keys(yearStats).sort();
-
-  const statsA = yearStats[compareYearA] || { count: 0, area: 0, volume: 0 };
-  const statsB = yearStats[compareYearB] || { count: 0, area: 0, volume: 0 };
-
-  const maxArea = Math.max(statsA.area, statsB.area, 0.0001);
-  const maxVolume = Math.max(statsA.volume, statsB.volume, 0.0001);
-
-  const formatNum = (n, digits = 2) =>
-    Number(n || 0).toLocaleString(undefined, {
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits,
-    });
-
-  // handlers
-  const handleBarangayChange = (e) => {
-    const barangay = e.target.value;
-    setSelectedBarangay(barangay);
-
-    if (barangayCoordinates[barangay]) {
-      const coordinates = barangayCoordinates[barangay];
-      zoomToBarangay(coordinates);
-
-      const details = barangayInfo[barangay] || {};
-      setBarangayDetails({
-        name: barangay,
-        coordinates,
-        crops: details.crops || [],
-      });
-
-      onBarangaySelect({ name: barangay, coordinates });
-    }
-  };
-
   const isHarvested = isCropHarvested(selectedCrop);
 
   const canMarkHarvestedNow = useMemo(() => {
     if (!selectedCrop || isHarvested) return false;
-
-    const raw = selectedCrop.estimated_harvest;
-    // If there is no estimated date, allow marking anytime
-    if (!raw) return true;
-    const est = new Date(raw);
-    if (Number.isNaN(est.getTime())) return true;
-    const today = new Date();
-    est.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-    return today > est;
+    return true;
   }, [selectedCrop, isHarvested]);
 
   const handleMarkHarvested = async () => {
-    if (!selectedCrop) return;
-
-    if (!canMarkHarvestedNow) {
-      const msg = selectedCrop.estimated_harvest
-        ? `You can only mark this crop as harvested after ${fmtDate(
-            selectedCrop.estimated_harvest
-          )}.`
-        : "You cannot mark this crop as harvested yet.";
-      alert(msg);
-      return;
-    }
+    if (!selectedCrop || isHarvested) return;
 
     const ok = window.confirm(
       "Mark this crop as harvested? This will set it as harvested today."
@@ -665,6 +447,11 @@ const AdminSideBar = ({
     if (!ok) return;
 
     try {
+      if (onMarkHarvested) {
+        await onMarkHarvested(selectedCrop.id);
+        return;
+      }
+
       const res = await axios.patch(
         `http://localhost:5000/api/crops/${selectedCrop.id}/harvest`
       );
@@ -685,7 +472,31 @@ const AdminSideBar = ({
     }
   };
 
-  // render
+  // handlers
+  const handleBarangayChange = (e) => {
+    const barangay = e.target.value;
+    setSelectedBarangay(barangay);
+
+    if (barangayCoordinates[barangay]) {
+      const coordinates = barangayCoordinates[barangay];
+      zoomToBarangay(coordinates);
+
+      const details = barangayInfo[barangay] || {};
+      setBarangayDetails({
+        name: barangay,
+        coordinates,
+        crops: details.crops || [],
+      });
+
+      onBarangaySelect({ name: barangay, coordinates });
+    } else {
+      setBarangayDetails(null);
+      onBarangaySelect?.(null);
+    }
+  };
+
+  const estFarmgateDisplay = getEstFarmgateDisplay(selectedCrop);
+
   return (
     <div
       className={clsx(
@@ -693,12 +504,7 @@ const AdminSideBar = ({
         visible ? "w-[500px]" : "w-0 overflow-hidden"
       )}
     >
-      <div
-        className={clsx(
-          "transition-all",
-          visible ? "px-6 py-6" : "px-0 py-0"
-        )}
-      >
+      <div className={clsx("transition-all", visible ? "px-6 py-6" : "px-0 py-0")}>
         {/* hero image */}
         <div className="mb-4">
           <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50 aspect-[16/9]">
@@ -829,7 +635,7 @@ const AdminSideBar = ({
                   {isHarvested && onStartNewSeason && (
                     <button
                       type="button"
-                      onClick={() => onStartNewSeason(selectedCrop)} // ✅ Passes full crop object
+                      onClick={() => onStartNewSeason(selectedCrop)}
                       className="mt-1 inline-flex items-center rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
                     >
                       Reuse field (new season)
@@ -840,24 +646,27 @@ const AdminSideBar = ({
 
               <dl className="grid grid-cols-2 gap-3">
                 <KV label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
-                <KV label="Est. volume" value={fmt(selectedCrop.estimated_volume)} />
-                <KV label="Planted date" value={fmtDate(selectedCrop.planted_date)} />
                 <KV
-                  label="Est. harvest"
-                  value={fmtDate(selectedCrop.estimated_harvest)}
+                  label="Est. volume"
+                  value={
+                    selectedCrop.estimated_volume != null
+                      ? `${fmt(selectedCrop.estimated_volume)} ${
+                          yieldUnitMap[selectedCrop.crop_type_id] || ""
+                        }`.trim()
+                      : "—"
+                  }
                 />
+                <KV label="Planted date" value={fmtDate(selectedCrop.planted_date)} />
+                <KV label="Est. harvest" value={fmtDate(selectedCrop.estimated_harvest)} />
 
-                {/* 🔹 NEW: elevation display */}
                 {avgElevation != null && (
-                  <KV
-                    label="Avg elevation (m)"
-                    value={fmt(avgElevation)}
-                  />
+                  <KV label="Avg elevation (m)" value={fmt(avgElevation)} />
                 )}
 
                 {croppingSystemLabel && (
                   <KV label="Cropping system" value={croppingSystemLabel} />
                 )}
+
                 {hasSecondaryCrop && (
                   <KV
                     label="Secondary crop"
@@ -872,6 +681,7 @@ const AdminSideBar = ({
                     }
                   />
                 )}
+
                 {hasSecondaryCrop && secondaryVolume != null && (
                   <KV
                     label="Secondary volume"
@@ -920,71 +730,34 @@ const AdminSideBar = ({
                       <KV label="Mobile number" value={selectedCrop.farmer_mobile} />
                     )}
                     {selectedCrop.farmer_barangay && (
-                      <KV
-                        label="Farmer barangay"
-                        value={selectedCrop.farmer_barangay}
-                      />
+                      <KV label="Farmer barangay" value={selectedCrop.farmer_barangay} />
                     )}
                     {selectedCrop.farmer_address && (
-                      <KV
-                        label="Full address"
-                        value={selectedCrop.farmer_address}
-                      />
+                      <KV label="Full address" value={selectedCrop.farmer_address} />
                     )}
-
-                    {/* 🔹 NEW: Land tenure */}
-                    {tenureDisplay && (
-                      <KV label="Land tenure" value={tenureDisplay} />
-                    )}
+                    {tenureDisplay && <KV label="Land tenure" value={tenureDisplay} />}
                   </dl>
                 </div>
               )}
 
-              {/* 🔹 Estimated farmgate value (PHP) – from TagCropForm logic */}
-              {(mainFarmgateSidebar || secondaryFarmgateSidebar) && (
-                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
-                    Estimated farmgate value (PHP)
+              {/* ✅ Estimated Farmgate Value (PHP) — DISPLAY ONLY (no recalculation) */}
+              <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                  Estimated farmgate value (PHP)
+                </p>
+
+                {estFarmgateDisplay ? (
+                  <p className="text-sm font-bold text-emerald-700">
+                    {estFarmgateDisplay}
                   </p>
+                ) : (
+                  <p className="text-sm text-gray-500">—</p>
+                )}
 
-                  {totalFarmgateSidebar ? (
-                    <p className="text-sm font-bold text-emerald-700">
-                      ₱{peso(totalFarmgateSidebar.low)} – ₱
-                      {peso(totalFarmgateSidebar.high)}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-500">—</p>
-                  )}
-
-                  <div className="mt-2 space-y-1 text-[11px] text-gray-600">
-                    {mainFarmgateSidebar && (
-                      <p>
-                        <span className="font-semibold">Main crop:</span>{" "}
-                        ₱{peso(mainFarmgateSidebar.valueLow)} – ₱
-                        {peso(mainFarmgateSidebar.valueHigh)}{" "}
-                        <span className="text-gray-500">
-                          ({peso(mainFarmgateSidebar.kgTotal)} kg × ₱
-                          {mainFarmgateSidebar.priceLow}–₱
-                          {mainFarmgateSidebar.priceHigh}/kg)
-                        </span>
-                      </p>
-                    )}
-
-                    {secondaryFarmgateSidebar && (
-                      <p>
-                        <span className="font-semibold">Secondary crop:</span>{" "}
-                        ₱{peso(secondaryFarmgateSidebar.valueLow)} – ₱
-                        {peso(secondaryFarmgateSidebar.valueHigh)}{" "}
-                        <span className="text-gray-500">
-                          ({peso(secondaryFarmgateSidebar.kgTotal)} kg × ₱
-                          {secondaryFarmgateSidebar.priceLow}–₱
-                          {secondaryFarmgateSidebar.priceHigh}/kg)
-                        </span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Source: value saved from TagCropForm
+                </p>
+              </div>
             </div>
           </Section>
         )}
@@ -993,47 +766,77 @@ const AdminSideBar = ({
         {selectedCrop && fieldHistory.length > 0 && (
           <Section title="Field history for this area">
             <p className="mb-2 text-xs text-gray-500">
-              Past crops recorded on this same field (newest first).
+              Past crops recorded on this same field (newest first). Click a record to
+              update the “Crop overview” card on the map.
             </p>
             <ol className="space-y-2 text-xs">
-              {fieldHistory.map((h) => (
-                <li
-                  key={h.id}
-                  className="flex items-start justify-between rounded-lg border border-gray-100 bg-white px-3 py-2"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {h.crop_name || "Crop"}
-                      {h.variety_name ? ` · ${h.variety_name}` : ""}
-                    </p>
-                    <p className="text-[11px] text-gray-500">
-                      Planted: {fmtDate(h.date_planted || h.planted_date)}
-                      {(h.date_harvested ||
-                        h.harvested_date ||
-                        h.estimated_harvest) && (
-                        <>
-                          {" "}
-                          · Harvested:{" "}
-                          {fmtDate(
-                            h.date_harvested ||
-                              h.harvested_date ||
-                              h.estimated_harvest
+              {fieldHistory.map((h) => {
+                const unitHistory = yieldUnitMap[h.crop_type_id] || "units";
+                const isActive = activeHistoryId === h.id;
+                const hFarmgate = getEstFarmgateDisplay(h);
+
+                return (
+                  <li
+                    key={h.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() =>
+                      onHistorySelect && onHistorySelect(isActive ? null : h)
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        if (onHistorySelect) onHistorySelect(isActive ? null : h);
+                      }
+                    }}
+                    className={clsx(
+                      "rounded-lg border px-3 py-2 cursor-pointer transition-colors",
+                      isActive
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-gray-100 bg-white hover:bg-gray-50"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {h.crop_name || "Crop"}
+                          {h.variety_name ? ` · ${h.variety_name}` : ""}
+                        </p>
+                        <p className="text-[11px] text-gray-500">
+                          Planted: {fmtDate(h.date_planted || h.planted_date || h.created_at)}
+                          {(h.date_harvested || h.harvested_date || h.estimated_harvest) && (
+                            <>
+                              {" "}
+                              · Harvested:{" "}
+                              {fmtDate(h.date_harvested || h.harvested_date || h.estimated_harvest)}
+                            </>
                           )}
-                        </>
+                        </p>
+
+                        {hFarmgate && (
+                          <p className="mt-1 text-[11px] font-semibold text-emerald-700">
+                            Est. value: {hFarmgate}
+                          </p>
+                        )}
+                      </div>
+
+                      {h.estimated_volume != null && (
+                        <p className="ml-3 text-[11px] text-gray-700 whitespace-nowrap">
+                          <span className="font-semibold">{fmt(h.estimated_volume)}</span>{" "}
+                          {unitHistory}
+                        </p>
                       )}
-                    </p>
-                  </div>
-                  {h.estimated_volume != null && (
-                    <p className="ml-3 text-[11px] text-gray-700 whitespace-nowrap">
-                      <span className="font-semibold">
-                        {fmt(h.estimated_volume)}
-                      </span>{" "}
-                      {yieldUnitMap[h.crop_type_id] || "units"}
-                    </p>
-                  )}
-                </li>
-              ))}
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
+
+            <p className="mt-3 text-xs text-gray-500">
+              Tip: make sure your history endpoint returns{" "}
+              <span className="font-semibold">est_farmgate_value_display</span>{" "}
+              for each season so values stay consistent.
+            </p>
           </Section>
         )}
 
@@ -1168,206 +971,14 @@ const AdminSideBar = ({
             </div>
           ) : (
             <p className="mt-1 text-xs text-gray-500">
-              Turn on to limit the map to fields harvested within a specific year
-              and month range.
+              Turn on to limit the map to fields harvested within a specific year and
+              month range.
             </p>
           )}
         </Section>
 
         {/* year vs year analytics */}
-        <Section title="Harvest analytics (year vs year)">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-gray-800">
-              Compare harvested fields
-            </span>
-            {yearOptions.length > 0 && (
-              <span className="text-[10px] text-gray-500">
-                Based on harvested fields only
-              </span>
-            )}
-          </div>
-
-          {!yearOptions.length ? (
-            <p className="text-xs text-gray-500">
-              No harvested crops recorded yet for comparison.
-            </p>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="block mb-1 font-medium text-gray-600">
-                    Year A
-                  </label>
-                  <select
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                    value={compareYearA}
-                    onChange={(e) => setCompareYearA(e.target.value)}
-                  >
-                    {yearOptions.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block mb-1 font-medium text-gray-600">
-                    Year B
-                  </label>
-                  <select
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                    value={compareYearB}
-                    onChange={(e) => setCompareYearB(e.target.value)}
-                  >
-                    {yearOptions.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleApplyYearToMap(compareYearA)}
-                  className="flex-1 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Show {compareYearA} on map
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyYearToMap(compareYearB)}
-                  className="flex-1 inline-flex items-center justify-center rounded-md border border-emerald-500 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
-                >
-                  Show {compareYearB} on map
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-3 text-xs">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-700">
-                      Fields harvested
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-[11px] text-gray-500 mb-1">
-                        {compareYearA}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {statsA.count}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] text-gray-500 mb-1">
-                        {compareYearB}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {statsB.count}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-700">
-                      Total area harvested (ha)
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearA}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsA.area)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-emerald-500"
-                          style={{
-                            width: `${(statsA.area / maxArea) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearB}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsB.area)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-emerald-600"
-                          style={{
-                            width: `${(statsB.area / maxArea) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-700">
-                      Total estimated volume
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearA}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsA.volume)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-sky-500"
-                          style={{
-                            width: `${(statsA.volume / maxVolume) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearB}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsB.volume)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-sky-600"
-                          style={{
-                            width: `${(statsB.volume / maxVolume) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </Section>
-
+        
         {/* barangay overview */}
         {barangayDetails && (
           <Section title="Barangay overview">
@@ -1377,9 +988,7 @@ const AdminSideBar = ({
                 <span className="text-xs uppercase tracking-wide text-gray-500">
                   Common crops
                 </span>
-                <div className="text-sm">
-                  {barangayDetails.crops.join(", ") || "—"}
-                </div>
+                <div className="text-sm">{barangayDetails.crops.join(", ") || "—"}</div>
               </div>
             </div>
           </Section>
@@ -1437,9 +1046,7 @@ const AdminSideBar = ({
                     className="grid gap-2"
                     style={{
                       gridTemplateColumns:
-                        n === 2
-                          ? "repeat(2, 1fr)"
-                          : "repeat(auto-fill, minmax(110px, 1fr))",
+                        n === 2 ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(110px, 1fr))",
                     }}
                   >
                     {photoList.map((url, i) => (
@@ -1473,29 +1080,27 @@ const AdminSideBar = ({
                   if (isSoftDeletedCrop(crop)) return false;
 
                   const sameBrgy =
-                    crop.barangay?.toLowerCase() ===
-                    barangayDetails.name.toLowerCase();
+                    crop.barangay?.toLowerCase() === barangayDetails.name.toLowerCase();
 
                   if (!sameBrgy) return false;
 
-                  if (harvestFilter === "harvested") {
-                    return isCropHarvested(crop);
-                  }
-                  if (harvestFilter === "not_harvested") {
-                    return !isCropHarvested(crop);
-                  }
+                  if (harvestFilter === "harvested") return isCropHarvested(crop);
+                  if (harvestFilter === "not_harvested") return !isCropHarvested(crop);
                   return true;
                 })
                 .flatMap((crop, idx) => {
-                  const photoArray = crop.photos ? JSON.parse(crop.photos) : [];
+                  let photoArray = [];
+                  try {
+                    photoArray = crop.photos ? JSON.parse(crop.photos) : [];
+                  } catch {
+                    photoArray = [];
+                  }
                   return photoArray.map((url, i) => (
                     <button
                       type="button"
                       key={`${idx}-${i}`}
                       className="group relative overflow-hidden rounded-lg border border-gray-200"
-                      onClick={() =>
-                        setEnlargedImage(`http://localhost:5000${url}`)
-                      }
+                      onClick={() => setEnlargedImage(`http://localhost:5000${url}`)}
                       title="View larger"
                     >
                       <img
@@ -1517,28 +1122,26 @@ const AdminSideBar = ({
               Show colors
             </summary>
             <ul className="mt-2 space-y-1">
-              {Object.entries({
-                ...CROP_COLORS,
-                "Harvested field": "#9CA3AF",
-              }).map(([label, color]) => (
-                <li key={label} className="flex items-center">
-                  <span
-                    className="inline-block w-3.5 h-3.5 rounded-full mr-2"
-                    style={{ backgroundColor: color }}
-                  />
-                  {label}
-                </li>
-              ))}
+              {Object.entries({ ...CROP_COLORS, "Harvested field": "#9CA3AF" }).map(
+                ([label, color]) => (
+                  <li key={label} className="flex items-center">
+                    <span
+                      className="inline-block w-3.5 h-3.5 rounded-full mr-2"
+                      style={{ backgroundColor: color }}
+                    />
+                    {label}
+                  </li>
+                )
+              )}
             </ul>
           </details>
         </Section>
 
-        {/* home & back buttons */}
+        {/* home button */}
         <div className="mt-5 flex gap-2">
           <Button to="/AdminLanding" variant="outline" size="md">
             Home
           </Button>
-          {/* Optional second back button using your Button component */}
         </div>
       </div>
     </div>

@@ -136,7 +136,6 @@ function formatUnitPrice(low, high, unit) {
   return `₱${lo.toFixed(0)}–₱${hi.toFixed(0)}/${unit}`;
 }
 
-
 /**
  * Return { low, high, unit:"kg"|"ton", note } OR null if unknown.
  * Prices updated per your provided bases (2025 estimate).
@@ -911,12 +910,12 @@ const TagCropForm = ({
     return parts.join(", ");
   }, [needsKgPerSack, needsKgPerBunch, needsKgPerTon, kgPerSack, kgPerBunch]);
 
-  // Convert single desired price to internal range (±10%)
+  // Convert single desired price to internal range (±0% because you want exact desired)
   const mainPriceRange = useMemo(() => singlePriceToRange(mainPrice, 0), [mainPrice]);
-const secondaryPriceRange = useMemo(
-  () => singlePriceToRange(secondaryPrice, 0),
-  [secondaryPrice]
-);
+  const secondaryPriceRange = useMemo(
+    () => singlePriceToRange(secondaryPrice, 0),
+    [secondaryPrice]
+  );
 
   const mainFarmgate = useMemo(() => {
     if (!selectedCropType) return null;
@@ -1052,7 +1051,7 @@ const secondaryPriceRange = useMemo(
       }
     }
 
-  setErrors((prev) => ({ ...prev, ...newErr }));
+    setErrors((prev) => ({ ...prev, ...newErr }));
     return Object.keys(newErr).length === 0;
   };
 
@@ -1230,14 +1229,13 @@ const secondaryPriceRange = useMemo(
     formData.append("main_desired_price", String(mainPrice || ""));
     formData.append("secondary_desired_price", String(secondaryPrice || ""));
 
- // Use exact desired price (no ±%) for stored low/high
-const mRange = singlePriceToRange(mainPrice, 0);
-const sRange = singlePriceToRange(secondaryPrice, 0);
-formData.append("main_price_low", mRange?.low ? String(mRange.low) : "");
-formData.append("main_price_high", mRange?.high ? String(mRange.high) : "");
-formData.append("secondary_price_low", sRange?.low ? String(sRange.low) : "");
-formData.append("secondary_price_high", sRange?.high ? String(sRange.high) : "");
-
+    // keep your existing fields
+    const mRange = singlePriceToRange(mainPrice, 0);
+    const sRange = singlePriceToRange(secondaryPrice, 0);
+    formData.append("main_price_low", mRange?.low ? String(mRange.low) : "");
+    formData.append("main_price_high", mRange?.high ? String(mRange.high) : "");
+    formData.append("secondary_price_low", sRange?.low ? String(sRange.low) : "");
+    formData.append("secondary_price_high", sRange?.high ? String(sRange.high) : "");
 
     formData.append("coordinates", JSON.stringify(farmCoords));
 
@@ -1259,6 +1257,21 @@ formData.append("secondary_price_high", sRange?.high ? String(sRange.high) : "")
     formData.append("avg_elevation_m", avgElevation || "");
 
     if (adminId) formData.append("admin_id", String(adminId));
+
+    // ✅ STORE ONLY THIS IN DB: tbl_crop.est_farmgate_value_display
+    // - If low==high (desired price), store single: "₱110,250"
+    // - Else store range: "₱99,225 – ₱121,275"
+    let totalDisplay = "";
+    if (displayFarmgate?.low != null && displayFarmgate?.high != null) {
+      const lo = Number(displayFarmgate.low);
+      const hi = Number(displayFarmgate.high);
+      if (Number.isFinite(lo) && Number.isFinite(hi) && !(lo === 0 && hi === 0)) {
+        totalDisplay = almostEqual(lo, hi)
+          ? `₱${peso(lo)}`
+          : `₱${peso(lo)} – ₱${peso(hi)}`;
+      }
+    }
+    formData.append("est_farmgate_value_display", totalDisplay);
 
     // Farmer privacy
     formData.append("is_anonymous_farmer", isAnonymousFarmer ? "1" : "0");
