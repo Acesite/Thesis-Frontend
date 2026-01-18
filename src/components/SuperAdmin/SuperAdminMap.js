@@ -516,7 +516,6 @@ const SuperAdminMap = () => {
   const hasDeepLinkedRef = useRef(false);
   const savedMarkersRef = useRef([]);
 
-
   const [mapStyle, setMapStyle] = useState(
     "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
   );
@@ -548,6 +547,9 @@ const SuperAdminMap = () => {
 
   // per-field past season history from backend
   const [selectedCropHistory, setSelectedCropHistory] = useState([]);
+
+  // ✅ clicked season in sidebar to drive Crop Overview (like AdminCropMap)
+  const [overviewSeasonId, setOverviewSeasonId] = useState(null);
 
   // GPS / heading
   const userMarkerRef = useRef(null);
@@ -600,64 +602,113 @@ const SuperAdminMap = () => {
     return JSON.stringify(ring);
   }, []);
 
-  // history: all older seasons for this field from backend
-  const fieldHistory = useMemo(() => {
-    if (!Array.isArray(selectedCropHistory)) return [];
-    return selectedCropHistory
-      .slice()
-      .sort((a, b) => {
-        const da = new Date(
-          a.date_planted || a.planted_date || a.created_at || 0
-        );
-        const db = new Date(
-          b.date_planted || b.planted_date || b.created_at || 0
-        );
-        return da - db;
-      });
-  }, [selectedCropHistory]);
+  // ✅ Reset clicked overview season when selecting a different crop
+  useEffect(() => {
+    setOverviewSeasonId(null);
+  }, [selectedCrop?.id]);
 
-  const lastSeason = fieldHistory.length
-    ? fieldHistory[fieldHistory.length - 1]
-    : null;
+  // ✅ Build full seasons timeline (selectedCrop + all history), then pick Current/Previous based on click
+  const seasonsTimeline = useMemo(() => {
+    const list = [];
 
-  const hasPastSeason = !!lastSeason;
+    if (selectedCrop) list.push(selectedCrop);
 
-  // current season
+    if (Array.isArray(selectedCropHistory)) {
+      for (const r of selectedCropHistory) list.push(r);
+    }
+
+    // de-dup by id
+    const byId = new Map();
+    for (const r of list) {
+      if (!r?.id) continue;
+      byId.set(String(r.id), r);
+    }
+
+    const arr = Array.from(byId.values());
+
+    // sort by planted/created (oldest -> newest)
+    arr.sort((a, b) => {
+      const da = new Date(a.date_planted || a.planted_date || a.created_at || 0);
+      const db = new Date(b.date_planted || b.planted_date || b.created_at || 0);
+      return da - db;
+    });
+
+    return arr;
+  }, [selectedCrop, selectedCropHistory]);
+
+  const overviewCurrent = useMemo(() => {
+    if (!overviewSeasonId) return selectedCrop;
+    return (
+      seasonsTimeline.find((s) => String(s.id) === String(overviewSeasonId)) ||
+      selectedCrop
+    );
+  }, [overviewSeasonId, seasonsTimeline, selectedCrop]);
+
+  const overviewPrevious = useMemo(() => {
+    if (!overviewCurrent?.id) return null;
+    const idx = seasonsTimeline.findIndex(
+      (s) => String(s.id) === String(overviewCurrent.id)
+    );
+    if (idx <= 0) return null;
+    return seasonsTimeline[idx - 1];
+  }, [overviewCurrent, seasonsTimeline]);
+
+  const hasPastSeason = !!overviewPrevious;
+
+  // current season in card
+  const currentForCard = overviewCurrent || selectedCrop;
+  const previousForCard = overviewPrevious;
+
   const croppingSystemLabel =
-    selectedCrop?.cropping_system_label || selectedCrop?.cropping_system || null;
+    currentForCard?.cropping_system_label || currentForCard?.cropping_system || null;
 
-  const primaryCropName = selectedCrop?.crop_name || "";
-  const primaryVarietyName = selectedCrop?.variety_name || null;
-  const primaryVolume = selectedCrop?.estimated_volume ?? null;
-  const primaryUnit = selectedCrop?.yield_unit || "units";
+  const primaryCropName = currentForCard?.crop_name || "";
+  const primaryVarietyName = currentForCard?.variety_name || null;
+  const primaryVolume = currentForCard?.estimated_volume ?? null;
+  const primaryUnit = currentForCard?.yield_unit || "units";
   const primaryHectares =
-    selectedCrop?.estimated_hectares ?? selectedCrop?.hectares ?? null;
-  const primaryPlantedDate = selectedCrop?.planted_date || null;
+    currentForCard?.estimated_hectares ?? currentForCard?.hectares ?? null;
+  const primaryPlantedDate =
+    currentForCard?.planted_date || currentForCard?.date_planted || null;
   const primaryHarvestOrEst =
-    selectedCrop?.harvested_date || selectedCrop?.estimated_harvest || null;
+    currentForCard?.harvested_date ||
+    currentForCard?.estimated_harvest ||
+    currentForCard?.date_harvested ||
+    null;
 
-  // past season (most recent)
-  const pastCropName = lastSeason?.crop_name || null;
-  const pastVarietyName = lastSeason?.variety_name || null;
+  // ✅ est crop value display from backend
+  const primaryEstValue =
+    currentForCard?.est_farmgate_value_display ||
+    currentForCard?.est_crop_value_display ||
+    null;
+
+  // past season
+  const pastCropName = previousForCard?.crop_name || null;
+  const pastVarietyName = previousForCard?.variety_name || null;
   const pastVolume =
-    lastSeason?.estimated_volume != null ? lastSeason.estimated_volume : null;
-  const pastUnit = lastSeason?.yield_unit || "units";
+    previousForCard?.estimated_volume != null ? previousForCard.estimated_volume : null;
+  const pastUnit = previousForCard?.yield_unit || "units";
   const pastHectares =
-    lastSeason?.hectares ?? lastSeason?.estimated_hectares ?? null;
+    previousForCard?.hectares ?? previousForCard?.estimated_hectares ?? null;
   const pastPlantedDate =
-    lastSeason?.date_planted || lastSeason?.planted_date || null;
+    previousForCard?.date_planted || previousForCard?.planted_date || null;
   const pastHarvestDate =
-    lastSeason?.date_harvested ||
-    lastSeason?.harvested_date ||
-    lastSeason?.estimated_harvest ||
+    previousForCard?.date_harvested ||
+    previousForCard?.harvested_date ||
+    previousForCard?.estimated_harvest ||
+    null;
+
+  const pastEstValue =
+    previousForCard?.est_farmgate_value_display ||
+    previousForCard?.est_crop_value_display ||
     null;
 
   const hasBothVolumes = primaryVolume != null && pastVolume != null;
-  const volumeDelta = hasBothVolumes ? primaryVolume - pastVolume : null;
   const volumeDeltaPct =
     hasBothVolumes && pastVolume !== 0
       ? ((primaryVolume - pastVolume) / Math.abs(pastVolume)) * 100
       : null;
+
   const volumeDeltaPctLabel =
     volumeDeltaPct != null
       ? `${volumeDeltaPct > 0 ? "+" : ""}${volumeDeltaPct.toFixed(0)}%`
@@ -970,12 +1021,10 @@ const SuperAdminMap = () => {
     const m = map.current;
     if (!BARANGAYS_FC?.features?.length) return;
 
-    // source
     if (!m.getSource("barangays-src")) {
       m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
     }
 
-    // boundary line
     if (!m.getLayer("barangays-line")) {
       m.addLayer({
         id: "barangays-line",
@@ -989,7 +1038,6 @@ const SuperAdminMap = () => {
       });
     }
 
-    // 🔹 name labels (works on all styles, incl. Satellite)
     if (!m.getLayer("barangays-labels")) {
       m.addLayer({
         id: "barangays-labels",
@@ -2012,6 +2060,7 @@ const SuperAdminMap = () => {
       {/* Map */}
       <div ref={mapContainer} className="h-full w-full" />
 
+      {/* ✅ Crop overview card */}
       {selectedCrop && !hideCompareCard && (
         <div className="absolute right-4 top-24 z-40 w-[290px] md:w-[320px]">
           <div className="relative rounded-xl border border-emerald-100 bg-white/95 backdrop-blur px-4 py-3 shadow-md">
@@ -2090,10 +2139,18 @@ const SuperAdminMap = () => {
                       : "—"}
                   </span>
                 </div>
+
+                {/* ✅ Est value */}
+                <div className="flex justify-between">
+                  <span>Est. crop value</span>
+                  <span className="font-semibold text-rose-600">
+                    {primaryEstValue ?? "—"}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* past season */}
+            {/* previous season */}
             <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
               <p className="text-[11px] font-semibold text-gray-800">
                 Previous season
@@ -2141,6 +2198,14 @@ const SuperAdminMap = () => {
                         {pastHarvestDate
                           ? new Date(pastHarvestDate).toLocaleDateString()
                           : "—"}
+                      </span>
+                    </div>
+
+                    {/* ✅ Est value */}
+                    <div className="flex justify-between">
+                      <span>Est. crop value</span>
+                      <span className="font-semibold text-emerald-700">
+                        {pastEstValue ?? "—"}
                       </span>
                     </div>
                   </div>
@@ -2348,6 +2413,12 @@ const SuperAdminMap = () => {
               renderSavedMarkers();
             }}
             cropHistory={selectedCropHistory}
+            // ✅ the connection: clicking history updates the map overview
+            onSelectHistoryForCompare={(h) => {
+              setOverviewSeasonId((prev) =>
+                String(prev) === String(h?.id) ? null : String(h?.id)
+              );
+            }}
           />
         )}
       </div>
