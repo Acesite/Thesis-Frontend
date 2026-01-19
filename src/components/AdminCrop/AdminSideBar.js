@@ -897,7 +897,7 @@ const AdminSideBar = ({
         </Section>
 
         {/* harvest history (time filter) */}
-        <Section title="Harvest history on map">
+        {/* <Section title="Harvest history on map">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-700">
               Filter map by harvested date
@@ -975,7 +975,7 @@ const AdminSideBar = ({
               month range.
             </p>
           )}
-        </Section>
+        </Section> */}
 
         {/* year vs year analytics */}
         
