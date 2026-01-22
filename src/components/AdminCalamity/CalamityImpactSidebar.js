@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+// src/components/AdminCrop/CalamityImpactSidebar.jsx
+import React, { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import AgriGISLogo from "../../components/MapboxImages/AgriGIS.png";
 import Button from "./MapControls/Button";
@@ -71,13 +72,6 @@ function isSoftDeletedCrop(crop) {
     v === "true" ||
     v === "yes" ||
     v === "y";
-
-  const no = (v) =>
-    v === 0 ||
-    v === "0" ||
-    v === false ||
-    v === "false" ||
-    v === "no";
 
   if (
     yes(crop.is_deleted) ||
@@ -242,7 +236,19 @@ function computeFarmgateValueRange({
   };
 }
 
-const AdminSideBar = ({
+// 🔹 Optional colors for calamity severity text
+const severityColorClass = (severity) => {
+  if (!severity) return "text-gray-700";
+  const s = String(severity).toLowerCase();
+  if (s.includes("severe")) return "text-red-700";
+  if (s.includes("high")) return "text-orange-700";
+  if (s.includes("moderate")) return "text-amber-700";
+  if (s.includes("low")) return "text-yellow-700";
+  if (s.includes("outside")) return "text-gray-500";
+  return "text-gray-700";
+};
+
+const CalamityImpactSidebar = ({
   visible,
   zoomToBarangay,
   onBarangaySelect,
@@ -255,7 +261,6 @@ const AdminSideBar = ({
   onCropUpdated,
   harvestFilter,
   setHarvestFilter,
-
   timelineMode,
   setTimelineMode,
   timelineFrom,
@@ -263,22 +268,41 @@ const AdminSideBar = ({
   timelineTo,
   setTimelineTo,
   onStartNewSeason,
-
+  calamityHistory = [],
   cropHistory = [],
+  selectedCropDamage,
+  activeCalamityId,
+
+  // 👉 add these two from parent
+  onResolveCalamityImpact,
+  resolvingImpact,
 }) => {
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [barangayDetails, setBarangayDetails] = useState(null);
-  const [showCropDropdown, setShowCropDropdown] = useState(false);
+  const [showCropDropdown, setShowCropDropdown] = useState(false); // (kept in case you use later)
   const navigate = useNavigate();
 
-  // ✅ New: back button handler
+  // NEW: calamity damage photos for this crop + calamity
+  const [damagePhotos, setDamagePhotos] = useState([]);
+  const [loadingDamagePhotos, setLoadingDamagePhotos] = useState(false);
+
+  // back button handler
   const handleBackToCrops = () => {
     if (window.history.length > 1) {
-      navigate(-1); // go back to previous page (e.g., /ManageCrops)
+      navigate(-1);
     } else {
-      navigate("/AdminManageCrop"); // fallback if opened directly
+      navigate("/AdminManageCrop");
     }
   };
+
+  const isCropOutsideRadius =
+    !selectedCropDamage ||
+    selectedCropDamage.level === "outside" ||
+    (typeof selectedCropDamage.severity === "string" &&
+      selectedCropDamage.severity.toLowerCase().includes("outside")) ||
+    (selectedCropDamage.percent != null && Number(selectedCropDamage.percent) <= 0) ||
+    (selectedCropDamage.damagedAreaHa != null &&
+      Number(selectedCropDamage.damagedAreaHa) <= 0);
 
   // barangay data
   const barangayCoordinates = {
@@ -393,12 +417,8 @@ const AdminSideBar = ({
     return cropHistory
       .slice()
       .sort((a, b) => {
-        const da = new Date(
-          a.date_planted || a.planted_date || a.created_at || 0
-        );
-        const db = new Date(
-          b.date_planted || b.planted_date || b.created_at || 0
-        );
+        const da = new Date(a.date_planted || a.planted_date || a.created_at || 0);
+        const db = new Date(b.date_planted || b.planted_date || b.created_at || 0);
         return db - da;
       });
   }, [cropHistory]);
@@ -414,8 +434,7 @@ const AdminSideBar = ({
   const [compareYearA, setCompareYearA] = useState(String(currentYear - 1));
   const [compareYearB, setCompareYearB] = useState(String(currentYear));
 
-  const historyEnabled =
-    timelineMode === "harvest" && harvestFilter === "harvested";
+  const historyEnabled = timelineMode === "harvest" && harvestFilter === "harvested";
 
   const syncTimelineFromTo = (year, fromMonth, toMonth) => {
     if (!setTimelineFrom || !setTimelineTo) return;
@@ -498,14 +517,11 @@ const AdminSideBar = ({
     : null;
 
   const isIntercroppedFlag =
-    selectedCrop &&
-    (selectedCrop.is_intercropped === 1 ||
-      selectedCrop.is_intercropped === "1");
+    selectedCrop && (selectedCrop.is_intercropped === 1 || selectedCrop.is_intercropped === "1");
 
-  const hasSecondaryCrop =
-    !!secondaryCropTypeId || !!secondaryVolume || !!isIntercroppedFlag;
+  const hasSecondaryCrop = !!secondaryCropTypeId || !!secondaryVolume || !!isIntercroppedFlag;
 
-  // 🔹 ELEVATION VALUE (uses any available field name)
+  // ELEVATION VALUE
   const avgElevation =
     selectedCrop &&
     (selectedCrop.avg_elevation ??
@@ -514,7 +530,7 @@ const AdminSideBar = ({
       selectedCrop.elevation ??
       null);
 
-  // 🔹 TENURE display text
+  // TENURE display text
   const tenureDisplay =
     (selectedCrop && selectedCrop.tenure_name) ||
     (selectedCrop && selectedCrop.tenure_id != null
@@ -526,17 +542,13 @@ const AdminSideBar = ({
   const mainCropTypeId = selectedCrop ? selectedCrop.crop_type_id : null;
   const mainVarietyName = selectedCrop ? selectedCrop.variety_name || "" : "";
   const mainVolume = selectedCrop ? selectedCrop.estimated_volume : null;
-  const mainUnit = mainCropTypeId
-    ? yieldUnitMap[mainCropTypeId] || "units"
-    : null;
+  const mainUnit = mainCropTypeId ? yieldUnitMap[mainCropTypeId] || "units" : null;
 
   // If in the future you store veg categories per crop, read them here.
   const vegCategoryMain = selectedCrop?.veg_category_main || "";
   const vegCategorySecondary = selectedCrop?.veg_category_secondary || "";
 
-  const secondaryVarietyName = selectedCrop
-    ? selectedCrop.intercrop_variety_name || ""
-    : "";
+  const secondaryVarietyName = selectedCrop ? selectedCrop.intercrop_variety_name || "" : "";
 
   const mainFarmgateSidebar =
     selectedCrop && mainCropTypeId && mainVolume != null
@@ -552,9 +564,7 @@ const AdminSideBar = ({
       : null;
 
   const secondaryFarmgateSidebar =
-    selectedCrop &&
-    secondaryCropTypeId &&
-    secondaryVolume != null
+    selectedCrop && secondaryCropTypeId && secondaryVolume != null
       ? computeFarmgateValueRange({
           cropTypeId: secondaryCropTypeId,
           varietyName: secondaryVarietyName,
@@ -569,12 +579,8 @@ const AdminSideBar = ({
   const totalFarmgateSidebar =
     mainFarmgateSidebar || secondaryFarmgateSidebar
       ? {
-          low:
-            (mainFarmgateSidebar?.valueLow || 0) +
-            (secondaryFarmgateSidebar?.valueLow || 0),
-          high:
-            (mainFarmgateSidebar?.valueHigh || 0) +
-            (secondaryFarmgateSidebar?.valueHigh || 0),
+          low: (mainFarmgateSidebar?.valueLow || 0) + (secondaryFarmgateSidebar?.valueLow || 0),
+          high: (mainFarmgateSidebar?.valueHigh || 0) + (secondaryFarmgateSidebar?.valueHigh || 0),
         }
       : null;
 
@@ -651,26 +657,19 @@ const AdminSideBar = ({
 
     if (!canMarkHarvestedNow) {
       const msg = selectedCrop.estimated_harvest
-        ? `You can only mark this crop as harvested after ${fmtDate(
-            selectedCrop.estimated_harvest
-          )}.`
+        ? `You can only mark this crop as harvested after ${fmtDate(selectedCrop.estimated_harvest)}.`
         : "You cannot mark this crop as harvested yet.";
       alert(msg);
       return;
     }
 
-    const ok = window.confirm(
-      "Mark this crop as harvested? This will set it as harvested today."
-    );
+    const ok = window.confirm("Mark this crop as harvested? This will set it as harvested today.");
     if (!ok) return;
 
     try {
-      const res = await axios.patch(
-        `http://localhost:5000/api/crops/${selectedCrop.id}/harvest`
-      );
+      const res = await axios.patch(`http://localhost:5000/api/crops/${selectedCrop.id}/harvest`);
 
-      const harvested_date =
-        res.data.harvested_date || new Date().toISOString().slice(0, 10);
+      const harvested_date = res.data.harvested_date || new Date().toISOString().slice(0, 10);
 
       const updated = {
         ...selectedCrop,
@@ -685,6 +684,50 @@ const AdminSideBar = ({
     }
   };
 
+  // 🔹 Fetch calamity damage photos when calamity or crop changes
+  useEffect(() => {
+    if (!activeCalamityId || !selectedCrop || !selectedCrop.id) {
+      setDamagePhotos([]);
+      return;
+    }
+
+    const fetchDamagePhotos = async () => {
+      try {
+        setLoadingDamagePhotos(true);
+        const res = await axios.get(
+          `http://localhost:5000/api/calamityradius/${activeCalamityId}/photos`,
+          {
+            params: { crop_id: selectedCrop.id },
+          }
+        );
+        setDamagePhotos(res.data || []);
+      } catch (err) {
+        console.error("Failed to fetch damage photos:", err);
+        setDamagePhotos([]);
+      } finally {
+        setLoadingDamagePhotos(false);
+      }
+    };
+
+    fetchDamagePhotos();
+  }, [activeCalamityId, selectedCrop]);
+
+  // 🔹 Resolve handler (calls parent; disabled if outside radius / missing ids)
+  const canResolveImpact =
+    !!onResolveCalamityImpact &&
+    !!activeCalamityId &&
+    !!selectedCrop?.id &&
+    !isCropOutsideRadius &&
+    !resolvingImpact;
+
+  const handleResolveImpact = () => {
+    if (!onResolveCalamityImpact) return;
+    onResolveCalamityImpact({
+      calamityId: activeCalamityId,
+      cropId: selectedCrop?.id,
+    });
+  };
+
   // render
   return (
     <div
@@ -693,12 +736,7 @@ const AdminSideBar = ({
         visible ? "w-[500px]" : "w-0 overflow-hidden"
       )}
     >
-      <div
-        className={clsx(
-          "transition-all",
-          visible ? "px-6 py-6" : "px-0 py-0"
-        )}
-      >
+      <div className={clsx("transition-all", visible ? "px-6 py-6" : "px-0 py-0")}>
         {/* hero image */}
         <div className="mb-4">
           <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50 aspect-[16/9]">
@@ -749,6 +787,7 @@ const AdminSideBar = ({
         {selectedCrop && (
           <Section title="Selected field">
             <div className="space-y-4">
+              {/* --- Field header + tags + harvest controls (same as before) --- */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-gray-900">
@@ -794,246 +833,289 @@ const AdminSideBar = ({
                     )}
                   </div>
                 </div>
-
-                <div className="flex flex-col items-end gap-1">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500">
-                    Harvest status
-                  </p>
-                  <p
-                    className={clsx(
-                      "text-xs font-semibold",
-                      isHarvested ? "text-emerald-700" : "text-amber-700"
-                    )}
-                  >
-                    {isHarvested
-                      ? `Harvested (${fmtDate(selectedCrop.harvested_date)})`
-                      : "Not yet harvested"}
-                  </p>
-
-                  {!isHarvested && (
-                    <button
-                      type="button"
-                      onClick={handleMarkHarvested}
-                      disabled={!canMarkHarvestedNow}
-                      className={clsx(
-                        "mt-1 inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium",
-                        canMarkHarvestedNow
-                          ? "border-green-600 text-green-700 hover:bg-green-50"
-                          : "border-gray-300 text-gray-400 cursor-not-allowed bg-gray-50"
-                      )}
-                    >
-                      Mark as harvested
-                    </button>
-                  )}
-
-                  {isHarvested && onStartNewSeason && (
-                    <button
-                      type="button"
-                      onClick={() => onStartNewSeason(selectedCrop)} // ✅ Passes full crop object
-                      className="mt-1 inline-flex items-center rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-                    >
-                      Reuse field (new season)
-                    </button>
-                  )}
-                </div>
               </div>
 
-              <dl className="grid grid-cols-2 gap-3">
-                <KV label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
-                <KV label="Est. volume" value={fmt(selectedCrop.estimated_volume)} />
-                <KV label="Planted date" value={fmtDate(selectedCrop.planted_date)} />
-                <KV
-                  label="Est. harvest"
-                  value={fmtDate(selectedCrop.estimated_harvest)}
-                />
+              {/* --- 1. CALAMITY IMPACT (put this very near the top) --- */}
+              {selectedCropDamage && (
+                <div className="mt-1 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-red-700">
+                      Calamity impact (current radius)
+                    </p>
+                    {selectedCropDamage.percent != null && (
+                      <p className="text-xs font-semibold text-red-700">
+                        {selectedCropDamage.percent}% damaged
+                      </p>
+                    )}
+                  </div>
 
-                {/* 🔹 NEW: elevation display */}
-                {avgElevation != null && (
-                  <KV
-                    label="Avg elevation (m)"
-                    value={fmt(avgElevation)}
-                  />
-                )}
-
-                {croppingSystemLabel && (
-                  <KV label="Cropping system" value={croppingSystemLabel} />
-                )}
-                {hasSecondaryCrop && (
-                  <KV
-                    label="Secondary crop"
-                    value={
-                      secondaryCropName
-                        ? `${secondaryCropName}${
-                            selectedCrop.intercrop_variety_name
-                              ? " · " + selectedCrop.intercrop_variety_name
-                              : ""
-                          }`
-                        : "—"
+                  {/* 🔹 Resolve button */}
+                  <button
+                    type="button"
+                    onClick={handleResolveImpact}
+                    disabled={!canResolveImpact}
+                    className={clsx(
+                      "mt-2 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                      "border-red-300 text-red-700 bg-white/80 hover:bg-white",
+                      (!canResolveImpact || resolvingImpact) &&
+                        "opacity-60 cursor-not-allowed"
+                    )}
+                    title={
+                      isCropOutsideRadius
+                        ? "This field is outside the active radius (no impact to resolve)."
+                        : "Mark this field as resolved for this calamity"
                     }
-                  />
-                )}
-                {hasSecondaryCrop && secondaryVolume != null && (
-                  <KV
-                    label="Secondary volume"
-                    value={
-                      secondaryUnit
-                        ? `${fmt(secondaryVolume)} ${secondaryUnit}`
-                        : fmt(secondaryVolume)
-                    }
-                  />
-                )}
+                  >
+                    {resolvingImpact ? "Resolving..." : "Resolve impact"}
+                  </button>
 
-                <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
-                <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
-              </dl>
+                  <dl className="mt-2 grid grid-cols-2 gap-3 text-sm">
+                    <KV
+                      label="Impact level"
+                      value={
+                        <span
+                          className={clsx(
+                            "font-semibold",
+                            severityColorClass(selectedCropDamage.severity)
+                          )}
+                        >
+                          {selectedCropDamage.severity || "—"}
+                        </span>
+                      }
+                    />
+                    <KV
+                      label="Damaged area (ha)"
+                      value={
+                        selectedCropDamage.damagedAreaHa != null
+                          ? fmt(Number(selectedCropDamage.damagedAreaHa).toFixed(2))
+                          : "—"
+                      }
+                    />
+                    <KV
+                      label="Damaged volume"
+                      value={
+                        selectedCropDamage.damagedVolume != null
+                          ? `${fmt(selectedCropDamage.damagedVolume)}${
+                              mainUnit ? ` ${mainUnit}` : ""
+                            }`
+                          : "—"
+                      }
+                    />
+                    <KV
+                      label="Est. loss value"
+                      value={selectedCropDamage?.lossRange?.label || "—"}
+                    />
+                    <KV
+                      label="Distance from center"
+                      value={
+                        !isCropOutsideRadius && selectedCropDamage.distanceMeters != null
+                          ? `${fmt(Number(selectedCropDamage.distanceMeters).toFixed(2))} m`
+                          : "—"
+                      }
+                    />
+                  </dl>
 
-              {selectedCrop.note?.trim() && (
-                <div className="pt-2 border-t border-gray-100">
-                  <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
-                    Note
-                  </dt>
-                  <dd className="text-sm text-gray-900">
-                    {selectedCrop.note.trim()}
-                  </dd>
+                  <p className="mt-2 text-[11px] text-red-700/80">
+                    Values are based on the currently active calamity radius on the map.
+                  </p>
                 </div>
               )}
 
+              {/* --- 2. FIELD DETAILS (collapsible) --- */}
+              <details open className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <summary className="flex cursor-pointer items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  <span>Field details</span>
+                  <span className="text-[12px] text-gray-400 leading-none">▾</span>
+                </summary>
+
+                <div className="mt-3">
+                  <dl className="grid grid-cols-2 gap-3">
+                    <KV label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
+                    <KV label="Est. volume" value={fmt(selectedCrop.estimated_volume)} />
+                    <KV label="Planted date" value={fmtDate(selectedCrop.planted_date)} />
+                    <KV label="Est. harvest" value={fmtDate(selectedCrop.estimated_harvest)} />
+                    {avgElevation != null && <KV label="Avg elevation (m)" value={fmt(avgElevation)} />}
+                    {croppingSystemLabel && (
+                      <KV label="Cropping system" value={croppingSystemLabel} />
+                    )}
+                    {hasSecondaryCrop && (
+                      <KV
+                        label="Secondary crop"
+                        value={
+                          secondaryCropName
+                            ? `${secondaryCropName}${
+                                selectedCrop.intercrop_variety_name
+                                  ? " · " + selectedCrop.intercrop_variety_name
+                                  : ""
+                              }`
+                            : "—"
+                        }
+                      />
+                    )}
+                    {hasSecondaryCrop && secondaryVolume != null && (
+                      <KV
+                        label="Secondary volume"
+                        value={
+                          secondaryUnit
+                            ? `${fmt(secondaryVolume)} ${secondaryUnit}`
+                            : fmt(secondaryVolume)
+                        }
+                      />
+                    )}
+                    <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
+                    <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
+                  </dl>
+
+                  {selectedCrop.note?.trim() && (
+                    <div className="pt-3 border-t border-gray-100 mt-3">
+                      <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                        Note
+                      </dt>
+                      <dd className="text-sm text-gray-900">{selectedCrop.note.trim()}</dd>
+                    </div>
+                  )}
+                </div>
+              </details>
+
+              {/* --- 3. FARMER & TENURE (collapsible) --- */}
               {(selectedCrop.farmer_first_name ||
                 selectedCrop.farmer_barangay ||
                 selectedCrop.farmer_mobile ||
                 selectedCrop.farmer_address ||
                 tenureDisplay) && (
-                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">
-                    Farmer details
-                  </p>
-                  <dl className="grid grid-cols-2 gap-3 text-sm">
-                    {selectedCrop.farmer_first_name && (
-                      <KV
-                        label="Farmer name"
-                        value={`${selectedCrop.farmer_first_name} ${
-                          selectedCrop.farmer_last_name || ""
-                        }`.trim()}
-                      />
-                    )}
-                    {selectedCrop.farmer_mobile && (
-                      <KV label="Mobile number" value={selectedCrop.farmer_mobile} />
-                    )}
-                    {selectedCrop.farmer_barangay && (
-                      <KV
-                        label="Farmer barangay"
-                        value={selectedCrop.farmer_barangay}
-                      />
-                    )}
-                    {selectedCrop.farmer_address && (
-                      <KV
-                        label="Full address"
-                        value={selectedCrop.farmer_address}
-                      />
-                    )}
+                <details className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                  <summary className="flex cursor-pointer items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <span>Farmer &amp; land tenure</span>
+                    <span className="text-[12px] text-gray-400 leading-none">▾</span>
+                  </summary>
 
-                    {/* 🔹 NEW: Land tenure */}
-                    {tenureDisplay && (
-                      <KV label="Land tenure" value={tenureDisplay} />
-                    )}
-                  </dl>
-                </div>
+                  <div className="mt-3">
+                    <dl className="grid grid-cols-2 gap-3 text-sm">
+                      {selectedCrop.farmer_first_name && (
+                        <KV
+                          label="Farmer name"
+                          value={`${selectedCrop.farmer_first_name} ${
+                            selectedCrop.farmer_last_name || ""
+                          }`.trim()}
+                        />
+                      )}
+                      {selectedCrop.farmer_mobile && (
+                        <KV label="Mobile number" value={selectedCrop.farmer_mobile} />
+                      )}
+                      {selectedCrop.farmer_barangay && (
+                        <KV label="Farmer barangay" value={selectedCrop.farmer_barangay} />
+                      )}
+                      {selectedCrop.farmer_address && (
+                        <KV label="Full address" value={selectedCrop.farmer_address} />
+                      )}
+                      {tenureDisplay && <KV label="Land tenure" value={tenureDisplay} />}
+                    </dl>
+                  </div>
+                </details>
               )}
 
-              {/* 🔹 Estimated farmgate value (PHP) – from TagCropForm logic */}
-              {(mainFarmgateSidebar || secondaryFarmgateSidebar) && (
-                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
-                    Estimated farmgate value (PHP)
-                  </p>
+              {/* --- 5. CALAMITY DAMAGE PHOTOS (collapsible) --- */}
+              {activeCalamityId && (
+                <details className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                  <summary className="flex cursor-pointer items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <span>Calamity damage photos</span>
+                    <span className="flex items-center gap-1 text-[12px] text-gray-400 leading-none">
+                      {damagePhotos?.length ? `(${damagePhotos.length})` : null}
+                      <span>▾</span>
+                    </span>
+                  </summary>
 
-                  {totalFarmgateSidebar ? (
-                    <p className="text-sm font-bold text-emerald-700">
-                      ₱{peso(totalFarmgateSidebar.low)} – ₱
-                      {peso(totalFarmgateSidebar.high)}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-gray-500">—</p>
-                  )}
-
-                  <div className="mt-2 space-y-1 text-[11px] text-gray-600">
-                    {mainFarmgateSidebar && (
-                      <p>
-                        <span className="font-semibold">Main crop:</span>{" "}
-                        ₱{peso(mainFarmgateSidebar.valueLow)} – ₱
-                        {peso(mainFarmgateSidebar.valueHigh)}{" "}
-                        <span className="text-gray-500">
-                          ({peso(mainFarmgateSidebar.kgTotal)} kg × ₱
-                          {mainFarmgateSidebar.priceLow}–₱
-                          {mainFarmgateSidebar.priceHigh}/kg)
-                        </span>
+                  <div className="mt-3">
+                    {loadingDamagePhotos ? (
+                      <p className="text-xs text-gray-500">Loading photos…</p>
+                    ) : !damagePhotos.length ? (
+                      <p className="text-xs text-gray-500">
+                        No damage photos uploaded yet for this field in this calamity.
                       </p>
-                    )}
-
-                    {secondaryFarmgateSidebar && (
-                      <p>
-                        <span className="font-semibold">Secondary crop:</span>{" "}
-                        ₱{peso(secondaryFarmgateSidebar.valueLow)} – ₱
-                        {peso(secondaryFarmgateSidebar.valueHigh)}{" "}
-                        <span className="text-gray-500">
-                          ({peso(secondaryFarmgateSidebar.kgTotal)} kg × ₱
-                          {secondaryFarmgateSidebar.priceLow}–₱
-                          {secondaryFarmgateSidebar.priceHigh}/kg)
-                        </span>
-                      </p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {damagePhotos.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-[4/3]"
+                            onClick={() => setEnlargedImage(p.photo_url)}
+                            title={p.caption || "View damage photo"}
+                          >
+                            <img
+                              src={p.photo_url}
+                              alt={p.caption || "Damage photo"}
+                              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                              loading="lazy"
+                            />
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
-                </div>
+                </details>
               )}
             </div>
           </Section>
         )}
 
-        {/* field history for this polygon */}
-        {selectedCrop && fieldHistory.length > 0 && (
-          <Section title="Field history for this area">
-            <p className="mb-2 text-xs text-gray-500">
-              Past crops recorded on this same field (newest first).
-            </p>
-            <ol className="space-y-2 text-xs">
-              {fieldHistory.map((h) => (
-                <li
-                  key={h.id}
-                  className="flex items-start justify-between rounded-lg border border-gray-100 bg-white px-3 py-2"
+        {calamityHistory.length > 0 && (
+          <Section title="Calamity history for this field">
+            <div className="space-y-2 text-sm">
+              {calamityHistory.map((h) => (
+                <div
+                  key={`${h.calamity_id}-${h.created_at}`}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2"
                 >
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {h.crop_name || "Crop"}
-                      {h.variety_name ? ` · ${h.variety_name}` : ""}
-                    </p>
-                    <p className="text-[11px] text-gray-500">
-                      Planted: {fmtDate(h.date_planted || h.planted_date)}
-                      {(h.date_harvested ||
-                        h.harvested_date ||
-                        h.estimated_harvest) && (
-                        <>
-                          {" "}
-                          · Harvested:{" "}
-                          {fmtDate(
-                            h.date_harvested ||
-                              h.harvested_date ||
-                              h.estimated_harvest
-                          )}
-                        </>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-900">
+                        {h.calamity_name || `Calamity #${h.calamity_id}`}
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        {h.calamity_type || "— type"} ·{" "}
+                        {h.started_at
+                          ? new Date(h.started_at).toLocaleDateString()
+                          : "no start date"}
+                      </p>
+                    </div>
+
+                    <span
+                      className={clsx(
+                        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        h.is_resolved
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : "bg-red-50 text-red-700 border border-red-200"
                       )}
-                    </p>
+                    >
+                      {h.is_resolved ? "Resolved" : "Active / Affected"}
+                    </span>
                   </div>
-                  {h.estimated_volume != null && (
-                    <p className="ml-3 text-[11px] text-gray-700 whitespace-nowrap">
-                      <span className="font-semibold">
-                        {fmt(h.estimated_volume)}
-                      </span>{" "}
-                      {yieldUnitMap[h.crop_type_id] || "units"}
-                    </p>
-                  )}
-                </li>
+
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                    <KV label="Severity" value={h.severity || "—"} />
+                    <KV
+                      label="Damage area (ha)"
+                      value={h.damaged_area_ha != null ? Number(h.damaged_area_ha).toFixed(2) : "—"}
+                    />
+                    <KV
+                      label="Damage volume"
+                      value={
+                        h.damaged_volume != null
+                          ? `${h.damaged_volume}${h.base_unit ? ` ${h.base_unit}` : ""}`
+                          : "—"
+                      }
+                    />
+                    <KV
+                      label="Est. loss value"
+                      value={
+                        h.loss_value_php != null ? `₱${Number(h.loss_value_php).toLocaleString()}` : "—"
+                      }
+                    />
+                  </div>
+                </div>
               ))}
-            </ol>
+            </div>
           </Section>
         )}
 
@@ -1093,281 +1175,6 @@ const AdminSideBar = ({
           </div>
         </Section>
 
-        {/* harvest history (time filter) */}
-        <Section title="Harvest history on map">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-gray-700">
-              Filter map by harvested date
-            </span>
-            <label className="inline-flex items-center gap-1 text-xs text-gray-600">
-              <input
-                type="checkbox"
-                className="h-3.5 w-3.5 rounded border-gray-300"
-                checked={historyEnabled}
-                onChange={(e) => handleHistoryToggle(e.target.checked)}
-              />
-              <span>{historyEnabled ? "On" : "Off"}</span>
-            </label>
-          </div>
-
-          {historyEnabled ? (
-            <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-              <div className="col-span-3">
-                <label className="mb-1 block text-[11px] font-medium text-gray-600">
-                  Year
-                </label>
-                <select
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                  value={historyYear}
-                  onChange={(e) => handleHistoryYearChange(e.target.value)}
-                >
-                  {Array.from({ length: 6 }).map((_, i) => {
-                    const y = currentYear - i;
-                    return (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-gray-600">
-                  From
-                </label>
-                <select
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                  value={historyMonthFrom}
-                  onChange={(e) => handleHistoryMonthFromChange(e.target.value)}
-                >
-                  {Array.from({ length: 12 }).map((_, i) => (
-                    <option key={i + 1} value={String(i + 1)}>
-                      {i + 1}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-gray-600">
-                  To
-                </label>
-                <select
-                  className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                  value={historyMonthTo}
-                  onChange={(e) => handleHistoryMonthToChange(e.target.value)}
-                >
-                  {Array.from({ length: 12 }).map((_, i) => (
-                    <option key={i + 1} value={String(i + 1)}>
-                      {i + 1}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          ) : (
-            <p className="mt-1 text-xs text-gray-500">
-              Turn on to limit the map to fields harvested within a specific year
-              and month range.
-            </p>
-          )}
-        </Section>
-
-        {/* year vs year analytics */}
-        <Section title="Harvest analytics (year vs year)">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-gray-800">
-              Compare harvested fields
-            </span>
-            {yearOptions.length > 0 && (
-              <span className="text-[10px] text-gray-500">
-                Based on harvested fields only
-              </span>
-            )}
-          </div>
-
-          {!yearOptions.length ? (
-            <p className="text-xs text-gray-500">
-              No harvested crops recorded yet for comparison.
-            </p>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="block mb-1 font-medium text-gray-600">
-                    Year A
-                  </label>
-                  <select
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                    value={compareYearA}
-                    onChange={(e) => setCompareYearA(e.target.value)}
-                  >
-                    {yearOptions.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block mb-1 font-medium text-gray-600">
-                    Year B
-                  </label>
-                  <select
-                    className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5"
-                    value={compareYearB}
-                    onChange={(e) => setCompareYearB(e.target.value)}
-                  >
-                    {yearOptions.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleApplyYearToMap(compareYearA)}
-                  className="flex-1 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-2 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Show {compareYearA} on map
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyYearToMap(compareYearB)}
-                  className="flex-1 inline-flex items-center justify-center rounded-md border border-emerald-500 bg-emerald-50 px-2 py-1.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100"
-                >
-                  Show {compareYearB} on map
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-3 text-xs">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-700">
-                      Fields harvested
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-[11px] text-gray-500 mb-1">
-                        {compareYearA}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {statsA.count}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] text-gray-500 mb-1">
-                        {compareYearB}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900">
-                        {statsB.count}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-700">
-                      Total area harvested (ha)
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearA}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsA.area)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-emerald-500"
-                          style={{
-                            width: `${(statsA.area / maxArea) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearB}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsB.area)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-emerald-600"
-                          style={{
-                            width: `${(statsB.area / maxArea) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-700">
-                      Total estimated volume
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearA}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsA.volume)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-sky-500"
-                          style={{
-                            width: `${(statsA.volume / maxVolume) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-gray-500">
-                          {compareYearB}
-                        </span>
-                        <span className="text-[11px] font-semibold text-gray-900">
-                          {formatNum(statsB.volume)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-sky-600"
-                          style={{
-                            width: `${(statsB.volume / maxVolume) * 100}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </Section>
-
         {/* barangay overview */}
         {barangayDetails && (
           <Section title="Barangay overview">
@@ -1377,92 +1184,11 @@ const AdminSideBar = ({
                 <span className="text-xs uppercase tracking-wide text-gray-500">
                   Common crops
                 </span>
-                <div className="text-sm">
-                  {barangayDetails.crops.join(", ") || "—"}
-                </div>
+                <div className="text-sm">{barangayDetails.crops.join(", ") || "—"}</div>
               </div>
             </div>
           </Section>
         )}
-
-        {/* photos of selected crop */}
-        {selectedCrop?.photos &&
-          (() => {
-            const toArray = (inp) => {
-              if (Array.isArray(inp)) return inp;
-              if (typeof inp !== "string") return [];
-              const s = inp.trim();
-              if (!s) return [];
-              try {
-                const parsed = JSON.parse(s);
-                if (Array.isArray(parsed)) return parsed;
-              } catch {}
-              return s.includes(",")
-                ? s
-                    .split(",")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
-                : [s];
-            };
-
-            const makeUrl = (u) =>
-              /^https?:\/\//i.test(u)
-                ? u
-                : `http://localhost:5000${u.startsWith("/") ? "" : "/"}${u}`;
-
-            const photoList = toArray(selectedCrop.photos).map(makeUrl);
-            const n = photoList.length;
-            if (n === 0) return null;
-
-            const isSingle = n === 1;
-
-            return (
-              <Section title={`Photos of ${selectedCrop.crop_name || "Crop"}`}>
-                {isSingle ? (
-                  <button
-                    type="button"
-                    className="group relative block overflow-hidden rounded-lg border border-gray-200 bg-gray-50 aspect-[16/9] w-full"
-                    onClick={() => setEnlargedImage(photoList[0])}
-                    title="View photo"
-                  >
-                    <img
-                      src={photoList[0]}
-                      alt="Photo 1"
-                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
-                      loading="lazy"
-                    />
-                  </button>
-                ) : (
-                  <div
-                    className="grid gap-2"
-                    style={{
-                      gridTemplateColumns:
-                        n === 2
-                          ? "repeat(2, 1fr)"
-                          : "repeat(auto-fill, minmax(110px, 1fr))",
-                    }}
-                  >
-                    {photoList.map((url, i) => (
-                      <button
-                        type="button"
-                        key={i}
-                        className="group relative overflow-hidden rounded-md border border-gray-200 bg-gray-50 aspect-square"
-                        onClick={() => setEnlargedImage(url)}
-                        title={`View photo ${i + 1}`}
-                      >
-                        <img
-                          src={url}
-                          alt={`Photo ${i + 1}`}
-                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                          loading="lazy"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </Section>
-            );
-          })()}
 
         {/* photos by barangay (respect harvestFilter & ignore deleted) */}
         {barangayDetails && crops.length > 0 && (
@@ -1473,8 +1199,7 @@ const AdminSideBar = ({
                   if (isSoftDeletedCrop(crop)) return false;
 
                   const sameBrgy =
-                    crop.barangay?.toLowerCase() ===
-                    barangayDetails.name.toLowerCase();
+                    crop.barangay?.toLowerCase() === barangayDetails.name.toLowerCase();
 
                   if (!sameBrgy) return false;
 
@@ -1493,9 +1218,7 @@ const AdminSideBar = ({
                       type="button"
                       key={`${idx}-${i}`}
                       className="group relative overflow-hidden rounded-lg border border-gray-200"
-                      onClick={() =>
-                        setEnlargedImage(`http://localhost:5000${url}`)
-                      }
+                      onClick={() => setEnlargedImage(`http://localhost:5000${url}`)}
                       title="View larger"
                     >
                       <img
@@ -1511,38 +1234,43 @@ const AdminSideBar = ({
         )}
 
         {/* legend */}
-        <Section title="Legend">
-          <details className="text-sm">
-            <summary className="cursor-pointer select-none text-gray-900">
-              Show colors
-            </summary>
-            <ul className="mt-2 space-y-1">
-              {Object.entries({
-                ...CROP_COLORS,
-                "Harvested field": "#9CA3AF",
-              }).map(([label, color]) => (
-                <li key={label} className="flex items-center">
-                  <span
-                    className="inline-block w-3.5 h-3.5 rounded-full mr-2"
-                    style={{ backgroundColor: color }}
-                  />
-                  {label}
-                </li>
-              ))}
+        <Section title="Calamity severity (by distance)">
+          <div className="text-xs text-gray-700">
+            <ul className="space-y-1">
+              <li className="flex items-center gap-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" />
+                <span>Severe (≈90% damage): 0–25% of radius</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-500" />
+                <span>High (≈60% damage): 25–50% of radius</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                <span>Moderate (≈35% damage): 50–75% of radius</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="inline-block h-2.5 w-2.5 rounded-full bg-yellow-200" />
+                <span>Low (≈15% damage): 75–100% of radius</span>
+              </li>
             </ul>
-          </details>
+
+            <p className="mt-2 text-[11px] text-gray-500">
+              Each field&apos;s severity is based on distance from the calamity center
+              inside this radius.
+            </p>
+          </div>
         </Section>
 
-        {/* home & back buttons */}
+        {/* home button */}
         <div className="mt-5 flex gap-2">
           <Button to="/AdminLanding" variant="outline" size="md">
             Home
           </Button>
-          {/* Optional second back button using your Button component */}
         </div>
       </div>
     </div>
   );
 };
 
-export default AdminSideBar;
+export default CalamityImpactSidebar;

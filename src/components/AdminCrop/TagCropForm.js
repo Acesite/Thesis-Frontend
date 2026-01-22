@@ -18,7 +18,7 @@ const STANDARD_MATURITY_DAYS = {
   4: 365, // sugarcane
   5: 300, // cassava
   6: 60, // vegetables
-};
+};;
 
 const yieldUnitMap = {
   1: "sacks",

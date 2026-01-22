@@ -454,7 +454,7 @@ const UnifiedAgriMap = () => {
             </button>
 
             {/* BOTH (NEW) */}
-            <button
+            {/* <button
               type="button"
               onClick={() => setActiveTab("both")}
               className={`inline-flex items-center gap-1 px-3.5 py-[6px] rounded-full transition text-xs font-medium ${
@@ -465,7 +465,7 @@ const UnifiedAgriMap = () => {
             >
               <Layers className="w-3.5 h-3.5" />
               Both
-            </button>
+            </button> */}
           </div>
         </div>
       </header>

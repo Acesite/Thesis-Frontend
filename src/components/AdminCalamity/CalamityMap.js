@@ -14,7 +14,7 @@ import * as turf from "@turf/turf";
 import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import AdminSidebar from "../AdminCrop/AdminSideBar";
+import CalamityImpactSidebar from "../AdminCalamity/CalamityImpactSidebar";
 import DefaultThumbnail from "../MapboxImages/map-default.png";
 import SatelliteThumbnail from "../MapboxImages/map-satellite.png";
 import DarkThumbnail from "../MapboxImages/map-dark.png";
@@ -32,11 +32,217 @@ const BAGO_CITY_BOUNDS = [
   [123.5, 10.6333],
 ];
 
+// Severity band metadata for the calamity radius
+const RADIUS_BAND_META = {
+  severe: {
+    label: "Severe zone",
+    radiusRange: "0–25% of radius",
+    damagePct: 90,
+  },
+  high: {
+    label: "High zone",
+    radiusRange: "25–50% of radius",
+    damagePct: 60,
+  },
+  moderate: {
+    label: "Moderate zone",
+    radiusRange: "50–75% of radius",
+    damagePct: 35,
+  },
+  low: {
+    label: "Low zone",
+    radiusRange: "75–100% of radius",
+    damagePct: 15,
+  },
+};
+
+
+/* ---------- Shared farmgate helpers (copied from TagCropForm) ---------- */
+
+const CALAMITY_DEFAULT_KG_PER_SACK = 50;
+const CALAMITY_DEFAULT_KG_PER_BUNCH = 15;
+const CALAMITY_KG_PER_TON = 1000;
+
+function calamityNormalizeName(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function calamityPeso(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  return x.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+/**
+ * Same price logic as TagCropForm.resolveFarmgateRange
+ */
+function calamityResolveFarmgateRange(
+  cropTypeId,
+  varietyNameRaw,
+  vegCategoryRaw
+) {
+  const v = calamityNormalizeName(varietyNameRaw);
+  const veg = calamityNormalizeName(vegCategoryRaw);
+
+  // BANANA
+  if (String(cropTypeId) === "3") {
+    if (v.includes("tinigib"))
+      return { low: 70, high: 90, unit: "kg", note: "Banana Tinigib" };
+    if (v.includes("lagkitan") || v.includes("lakatan"))
+      return {
+        low: v.includes("lagkitan") ? 80 : 90,
+        high: v.includes("lagkitan") ? 100 : 110,
+        unit: "kg",
+        note: v.includes("lagkitan") ? "Banana Lagkitan" : "Banana Lakatan",
+      };
+    if (v.includes("saba"))
+      return { low: 45, high: 55, unit: "kg", note: "Banana Saba" };
+    if (v.includes("cavendish"))
+      return { low: 120, high: 150, unit: "kg", note: "Banana Cavendish" };
+    return { low: 70, high: 110, unit: "kg", note: "Banana (fallback range)" };
+  }
+
+  // RICE (Palay)
+  if (String(cropTypeId) === "1") {
+    if (v.includes("216"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice NSIC Rc 216" };
+    if (v.includes("222"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice Rc 222" };
+    if (v.includes("15"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice Rc 15" };
+    if (v.includes("224"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice NSIC Rc 224" };
+    if (v.includes("188"))
+      return { low: 18, high: 22, unit: "kg", note: "Rice NSIC Rc 188" };
+    return { low: 18, high: 22, unit: "kg", note: "Rice (fallback range)" };
+  }
+
+  // CORN
+  if (String(cropTypeId) === "2") {
+    return { low: 18, high: 22, unit: "kg", note: "Corn (fallback range)" };
+  }
+
+  // SUGARCANE (₱ per ton)
+  if (String(cropTypeId) === "4") {
+    return { low: 2200, high: 2700, unit: "ton", note: "Sugarcane (₱/ton)" };
+  }
+
+  // CASSAVA (₱ per kg)
+  if (String(cropTypeId) === "5") {
+    if (v.includes("ku50") || v.includes("ku 50"))
+      return { low: 8, high: 12, unit: "kg", note: "Cassava KU50" };
+    if (v.includes("golden yellow"))
+      return { low: 8, high: 12, unit: "kg", note: "Cassava Golden Yellow" };
+    if (v.includes("rayong 5") || v.includes("rayong5"))
+      return { low: 8, high: 12, unit: "kg", note: "Cassava Rayong 5" };
+    return { low: 8, high: 12, unit: "kg", note: "Cassava (fallback range)" };
+  }
+
+  // VEGETABLES
+  if (String(cropTypeId) === "6") {
+    if (veg === "leafy")
+      return { low: 40, high: 60, unit: "kg", note: "Vegetables (leafy)" };
+    if (veg === "fruiting")
+      return { low: 35, high: 80, unit: "kg", note: "Vegetables (fruiting)" };
+    if (veg === "gourd")
+      return { low: 30, high: 60, unit: "kg", note: "Vegetables (gourd crops)" };
+    return {
+      low: 30,
+      high: 80,
+      unit: "kg",
+      note: "Vegetables (general fallback)",
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Same as TagCropForm.computeFarmgateValueRange, but with damaged volume.
+ */
+function calamityComputeFarmgateValueRange({
+  cropTypeId,
+  varietyName,
+  vegCategory,
+  volume, // DAMAGED volume
+  unit, // "kg" | "tons" | "sacks" | "bunches"
+  kgPerSack,
+  kgPerBunch,
+  userPriceLow,
+  userPriceHigh,
+}) {
+  const vol = Number(volume);
+  if (!Number.isFinite(vol) || vol <= 0) return null;
+
+  const baseRange = calamityResolveFarmgateRange(
+    cropTypeId,
+    varietyName,
+    vegCategory
+  );
+  if (!baseRange) return null;
+
+  const priceLow = Number(userPriceLow);
+  const priceHigh = Number(userPriceHigh);
+
+  const finalPriceLow =
+    Number.isFinite(priceLow) && priceLow > 0 ? priceLow : baseRange.low;
+  const finalPriceHigh =
+    Number.isFinite(priceHigh) && priceHigh > 0 ? priceHigh : baseRange.high;
+
+  const priceUnit = baseRange.unit; // "kg" or "ton"
+
+  // convert damaged volume -> kg
+  let kgFactor = 1;
+  if (unit === "kg") kgFactor = 1;
+  else if (unit === "tons") kgFactor = CALAMITY_KG_PER_TON;
+  else if (unit === "sacks")
+    kgFactor = Math.max(1, Number(kgPerSack) || CALAMITY_DEFAULT_KG_PER_SACK);
+  else if (unit === "bunches")
+    kgFactor = Math.max(1, Number(kgPerBunch) || CALAMITY_DEFAULT_KG_PER_BUNCH);
+
+  const kgTotal = vol * kgFactor;
+
+  let qty = kgTotal;
+  let qtyUnit = "kg";
+  if (priceUnit === "ton") {
+    qty = kgTotal / CALAMITY_KG_PER_TON;
+    qtyUnit = "ton";
+  }
+
+  const valueLow = qty * finalPriceLow;
+  const valueHigh = qty * finalPriceHigh;
+
+  return {
+    valueLow,
+    valueHigh,
+    qty,
+    qtyUnit,
+    priceLow: finalPriceLow,
+    priceHigh: finalPriceHigh,
+    priceUnit,
+  };
+}
+
+/**
+ * Same yield units as TagCropForm.yieldUnitMap
+ * (if your DB already has a unit column, you can just use that instead)
+ */
+const CALAMITY_YIELD_UNIT_MAP = {
+  1: "sacks", // rice
+  2: "sacks", // corn
+  3: "bunches", // banana
+  4: "tons", // sugarcane
+  5: "tons", // cassava
+  6: "kg", // vegetables
+};
+
 // --- Approximate PH farmgate prices (Php per kg) ---
-// Crop + variety aware. _default is used when variety is not specified.
 const FARMGATE_PRICE_PER_KG_PHP = {
   Rice: {
-    _default: 22, // generic palay
+    _default: 22,
     "NSIC Rc 216": 22,
     "Rc 222": 22,
     "Rc 15": 22,
@@ -58,7 +264,7 @@ const FARMGATE_PRICE_PER_KG_PHP = {
     Cavendish: 18,
   },
   Sugarcane: {
-    _default: 2.5, // ≈ ₱2,500 per ton
+    _default: 2.5,
   },
   Cassava: {
     _default: 6,
@@ -67,11 +273,10 @@ const FARMGATE_PRICE_PER_KG_PHP = {
     "Rayong 5": 6,
   },
   Vegetables: {
-    _default: 30, // generic vegetables
+    _default: 30,
   },
 };
 
-// Convert your volume unit to kilograms so we can apply farmgate price per kg.
 const UNIT_TO_KG_FACTOR = {
   kg: 1,
   kilo: 1,
@@ -79,7 +284,7 @@ const UNIT_TO_KG_FACTOR = {
   kilogram: 1,
   kilograms: 1,
   sack: 50,
-  sacks: 50, // typical 50-kg cavan
+  sacks: 50,
   cavan: 50,
   cavans: 50,
   ton: 1000,
@@ -95,7 +300,152 @@ const UNIT_TO_KG_FACTOR = {
   units: 1,
 };
 
-// Helper: get farmgate price per kg, prioritizing variety if available.
+/* ======================================================================
+   ✅ EMBEDDED TagCropForm-style PRICE RANGE (LOW-HIGH)
+   ====================================================================== */
+const TAGCROP_PRICE_RANGE_PHP = {
+  Rice: {
+    unit: "kg",
+    _default: { low: 22, high: 24 },
+    "NSIC Rc 216": { low: 22, high: 24 },
+    "Rc 222": { low: 22, high: 24 },
+    "Rc 15": { low: 22, high: 24 },
+    "Rc 224": { low: 22, high: 24 },
+    "Rc 188": { low: 22, high: 24 },
+    "Phil 99-1793": { low: 22, high: 24 },
+    "Phil 2000-2569": { low: 22, high: 24 },
+    "Co 0238": { low: 22, high: 24 },
+  },
+
+  Corn: {
+    unit: "kg",
+    _default: { low: 15, high: 17 },
+    Tinigib: { low: 15, high: 17 },
+    Lagkitan: { low: 16, high: 18 },
+  },
+
+  Banana: {
+    unit: "kg",
+    _default: { low: 18, high: 22 },
+    Lakatan: { low: 20, high: 24 },
+    Saba: { low: 12, high: 15 },
+    Cavendish: { low: 16, high: 19 },
+  },
+
+  // IMPORTANT: Sugarcane usually Php per TON in forms
+  Sugarcane: {
+    unit: "ton",
+    _default: { low: 2000, high: 2600 },
+  },
+
+  Cassava: {
+    unit: "kg",
+    _default: { low: 6, high: 8 },
+    KU50: { low: 6, high: 8 },
+    "Golden Yellow": { low: 6.5, high: 9 },
+    "Rayong 5": { low: 6, high: 8 },
+  },
+
+  Vegetables: {
+    unit: "kg",
+    _default: { low: 25, high: 35 },
+  },
+};
+
+const KG_PER_TON = 1000;
+const DEFAULT_KG_PER_SACK = 50;
+const DEFAULT_KG_PER_BUNCH = 15;
+
+function getPriceRangeEmbedded(cropName, varietyName) {
+  if (!cropName) return null;
+
+  const cropKey = String(cropName).trim();
+  const varietyKey = varietyName ? String(varietyName).trim() : "";
+
+  const entry = TAGCROP_PRICE_RANGE_PHP[cropKey];
+  if (!entry) return null;
+
+  const unit = entry.unit || "kg";
+
+  const pick = (obj) => {
+    if (!obj) return null;
+    const low = Number(obj.low);
+    const high = Number(obj.high);
+    if (!Number.isFinite(low) || low <= 0) return null;
+    if (!Number.isFinite(high) || high <= 0) return { low, high: low, unit };
+    return { low, high, unit };
+  };
+
+  if (varietyKey && entry[varietyKey]) {
+    const r = pick(entry[varietyKey]);
+    if (r) return r;
+  }
+
+  if (entry._default) {
+    const r = pick(entry._default);
+    if (r) return r;
+  }
+
+  return null;
+}
+
+function volumeToKg(damagedVolume, yieldUnit, cropName) {
+  const v = Number(damagedVolume);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+
+  let unitKey = String(yieldUnit || "units").toLowerCase();
+
+  let factor = UNIT_TO_KG_FACTOR[unitKey];
+  if (factor == null) factor = 1;
+
+  if (
+    unitKey === "sack" ||
+    unitKey === "sacks" ||
+    unitKey === "cavan" ||
+    unitKey === "cavans"
+  ) {
+    factor = DEFAULT_KG_PER_SACK;
+  }
+  if (unitKey === "bunch" || unitKey === "bunches") {
+    factor = DEFAULT_KG_PER_BUNCH;
+  }
+
+  return v * Number(factor);
+}
+
+function formatCurrencyRangePHP(low, high) {
+  const lo = Number(low);
+  const hi = Number(high);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return "—";
+
+  const fmt = (n) =>
+    "₱" +
+    n.toLocaleString("en-PH", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+
+  if (Math.abs(lo - hi) < 0.01) return fmt(lo);
+  return `${fmt(lo)} – ${fmt(hi)}`;
+}
+
+function computeLossRangePHP({ cropName, varietyName, damagedVolume, yieldUnit }) {
+  const range = getPriceRangeEmbedded(cropName, varietyName);
+  if (!range) return null;
+
+  const kg = volumeToKg(damagedVolume, yieldUnit, cropName);
+  if (!kg || kg <= 0) return null;
+
+  const qty = range.unit === "ton" ? kg / KG_PER_TON : kg;
+  const low = qty * range.low;
+  const high = qty * range.high;
+
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return null;
+
+  return { low, high };
+}
+/* ====================================================================== */
+
 function getFarmgatePricePerKg(cropName, varietyName) {
   if (!cropName) return null;
 
@@ -105,15 +455,12 @@ function getFarmgatePricePerKg(cropName, varietyName) {
   const entry = FARMGATE_PRICE_PER_KG_PHP[cropKey];
   if (!entry) return null;
 
-  // Backwards-compat: if entry is a plain number, treat it as per-kg
   if (typeof entry === "number") return entry;
 
-  // 1) exact variety price, if defined
   if (varietyKey && entry[varietyKey] != null) {
     return entry[varietyKey];
   }
 
-  // 2) crop-level default
   if (entry._default != null) return entry._default;
 
   return null;
@@ -134,7 +481,6 @@ const addPulseStylesOnce = () => {
   .pulse-ring { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; border-radius: 9999px; background: rgba(16,185,129,0.35); box-shadow: 0 0 0 2px rgba(16,185,129,0.55) inset; animation: pulseRing 1.8s ease-out infinite; }
   .chip { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; font-size: 12px; font-weight: 600; padding: 4px 8px; background: #111827; color: #fff; border-radius: 9999px; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transform: translate(-50%, -8px); white-space: nowrap; }
 
-  /* transparent shell for hover preview popup */
   .mapboxgl-popup.crop-hover-preview { pointer-events: none !important; }
   .mapboxgl-popup.crop-hover-preview .mapboxgl-popup-content {
     background: transparent !important;
@@ -153,7 +499,12 @@ function isSoftDeletedCrop(crop) {
   if (!crop) return false;
 
   const yes = (v) =>
-    v === 1 || v === "1" || v === true || v === "true" || v === "yes" || v === "y";
+    v === 1 ||
+    v === "1" ||
+    v === true ||
+    v === "true" ||
+    v === "yes" ||
+    v === "y";
 
   const no = (v) =>
     v === 0 || v === "0" || v === false || v === "false" || v === "no";
@@ -177,12 +528,13 @@ function isSoftDeletedCrop(crop) {
     return ["deleted", "archived", "inactive", "removed"].includes(s);
   };
 
-  if (checkStatusStr(crop.status) || checkStatusStr(crop.record_status)) return true;
+  if (checkStatusStr(crop.status) || checkStatusStr(crop.record_status))
+    return true;
 
   return false;
 }
 
-/* ---------- hover preview helpers (image + card HTML) ---------- */
+/* ---------- hover preview helpers ---------- */
 function resolveCropImageURL(crop) {
   let raw =
     crop?.thumbnail_url ||
@@ -203,7 +555,11 @@ function resolveCropImageURL(crop) {
 
   if (!raw) return null;
 
-  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:"))
+  if (
+    /^(https?:)?\/\//i.test(raw) ||
+    raw.startsWith("data:") ||
+    raw.startsWith("blob:")
+  )
     return raw;
 
   if (raw.startsWith("/")) return `http://localhost:5000${raw}`;
@@ -225,7 +581,9 @@ function buildCropPreviewHTML(c) {
   const name = c.crop_name || "Crop";
   const variety = c.variety_name || "";
   const barangay = c.barangay || c.farmer_barangay || "";
-  const planted = c.planted_date ? new Date(c.planted_date).toLocaleDateString() : "";
+  const planted = c.planted_date
+    ? new Date(c.planted_date).toLocaleDateString()
+    : "";
   const harvest = c.estimated_harvest
     ? new Date(c.estimated_harvest).toLocaleDateString()
     : "";
@@ -276,7 +634,11 @@ function buildCropPreviewHTML(c) {
               : ""
           }
           <div style="font-size:12px;color:#4b5563;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
-            ${hectares != null ? `<span>Area: <strong>${hectares}</strong> ha</span>` : ""}
+            ${
+              hectares != null
+                ? `<span>Area: <strong>${hectares}</strong> ha</span>`
+                : ""
+            }
             ${
               volume != null
                 ? `<span>Est. volume: <strong>${volume}</strong></span>`
@@ -286,9 +648,15 @@ function buildCropPreviewHTML(c) {
           ${
             planted || harvest
               ? `<div style="font-size:12px;color:#6b7280;margin-top:6px;">
-                   ${planted ? `<span>Planted: <strong>${planted}</strong></span>` : ""}
+                   ${
+                     planted
+                       ? `<span>Planted: <strong>${planted}</strong></span>`
+                       : ""
+                   }
                    ${planted && harvest ? " · " : ""}${
-                   harvest ? `<span>Harvest: <strong>${harvest}</strong></span>` : ""
+                   harvest
+                     ? `<span>Harvest: <strong>${harvest}</strong></span>`
+                     : ""
                  }
                  </div>`
               : ""
@@ -299,7 +667,7 @@ function buildCropPreviewHTML(c) {
   `;
 }
 
-/* ---------- timeline helper (global month range filter) ---------- */
+/* ---------- timeline helper ---------- */
 function passesTimelineFilter(obj, mode, from, to) {
   const hasFilter = !!from || !!to;
   if (!hasFilter) return true;
@@ -315,22 +683,18 @@ function passesTimelineFilter(obj, mode, from, to) {
 
   if (!raw) return false;
 
-  const value = String(raw).slice(0, 7); // keep YYYY-MM
+  const value = String(raw).slice(0, 7);
   if (from && value < from) return false;
   if (to && value > to) return false;
   return true;
 }
 
 /* ---------- coordinates normalization ---------- */
-// Normalizes whatever shape the backend gives us into a single polygon ring
-// Always returns: [ [lng, lat], ... ]  OR null if it can't.
 function getCropRing(crop) {
   if (!crop) return null;
 
-  // 1) Full geometry object
   let geom = crop.geometry || crop.geojson || crop.polygon || null;
 
-  // Some backends store the geometry JSON string inside "coordinates"
   if (!geom && crop.coordinates && !Array.isArray(crop.coordinates)) {
     geom = crop.coordinates;
   }
@@ -359,7 +723,6 @@ function getCropRing(crop) {
     }
   }
 
-  // 2) Fallback: simple "coordinates"/"coords" ring
   let coords = crop.coordinates || crop.coords || null;
   if (!coords) return null;
 
@@ -371,7 +734,6 @@ function getCropRing(crop) {
     }
   }
 
-  // If it's [[[lng,lat]...]] (Polygon coords), take the first ring
   if (
     Array.isArray(coords) &&
     coords.length > 0 &&
@@ -392,7 +754,6 @@ function buildPolygonsFromCrops(crops = []) {
     const ring = getCropRing(crop);
     if (!ring) continue;
 
-    // Ensure closed ring
     let coords = ring;
     const first = ring[0];
     const last = ring[ring.length - 1];
@@ -614,12 +975,9 @@ function estimateAverageElevation(geom, mapInstance) {
     const feat = { type: "Feature", geometry: geom, properties: {} };
     const center = turf.centroid(feat);
     const [lng, lat] = center.geometry.coordinates;
-    const raw = m.queryTerrainElevation(
-      { lng, lat },
-      { exaggerated: false }
-    );
+    const raw = m.queryTerrainElevation({ lng, lat }, { exaggerated: false });
     if (typeof raw === "number" && Number.isFinite(raw)) {
-      return Number(raw.toFixed(1)); // meters
+      return Number(raw.toFixed(1));
     }
   } catch (err) {
     console.warn("estimateAverageElevation failed:", err);
@@ -658,9 +1016,9 @@ const CalamityMap = () => {
   const selectedLabelRef = useRef(null);
   const selectedHaloRef = useRef(null);
 
-  // hover popup refs
   const hoverPopupRef = useRef(null);
   const hoverLeaveTimerRef = useRef(null);
+  const radiusHoverPopupRef = useRef(null);
 
   const HILITE_SRC = "selected-crop-highlight-src";
   const HILITE_FILL = "selected-crop-highlight-fill";
@@ -675,21 +1033,20 @@ const CalamityMap = () => {
   );
   const [showLayers, setShowLayers] = useState(false);
   const [isSwitcherVisible, setIsSwitcherVisible] = useState(false);
-
   const [selectedBarangay, setSelectedBarangay] = useState(null);
-
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isDirectionsVisible] = useState(true);
   const [newTagLocation, setNewTagLocation] = useState(null);
   const [isTagging, setIsTagging] = useState(false);
   const [taggedData] = useState([]);
-
   const [sidebarCrops, setSidebarCrops] = useState([]);
   const [selectedCrop, setSelectedCrop] = useState(null);
   const [selectedCropType, setSelectedCropType] = useState("All");
   const [cropTypes, setCropTypes] = useState([]);
   const [areMarkersVisible, setAreMarkersVisible] = useState(true);
   const [enlargedImage, setEnlargedImage] = useState(null);
+    const [resolvingImpact, setResolvingImpact] = useState(false);
+    const [calamityHistory, setCalamityHistory] = useState([]);
 
   const initialHarvestFilter =
     locationState.harvestFilter ??
@@ -700,11 +1057,36 @@ const CalamityMap = () => {
 
   // radius drawing state
   const [isDrawingRadius, setIsDrawingRadius] = useState(false);
-  const [radiusMeters, setRadiusMeters] = useState(null);
-  const [radiusCenter, setRadiusCenter] = useState(null);
+
+  // state + refs so map click handler always has latest radius
+  const [radiusMetersState, _setRadiusMeters] = useState(null);
+  const [radiusCenterState, _setRadiusCenter] = useState(null);
+  const radiusMetersRef = useRef(null);
+  const radiusCenterRef = useRef(null);
+
+  const radiusMeters = radiusMetersState;
+  const radiusCenter = radiusCenterState;
+
+  const setRadiusMeters = useCallback((val) => {
+    radiusMetersRef.current = val;
+    _setRadiusMeters(val);
+  }, []);
+
+  const setRadiusCenter = useCallback((val) => {
+    radiusCenterRef.current = val;
+    _setRadiusCenter(val);
+  }, []);
+
   const isDrawingRadiusRef = useRef(false);
   const dragCenterRef = useRef(null);
   const dragActiveRef = useRef(false);
+
+  // 🔴 active calamity and saving states
+  const [activeCalamityId, setActiveCalamityId] = useState(null);
+  // full metadata of the currently active calamity radius
+  const [activeCalamity, setActiveCalamity] = useState(null);
+  const [isUploadingDamagePhoto, setIsUploadingDamagePhoto] = useState(false);
+  const [isSavingImpact, setIsSavingImpact] = useState(false);
 
   // calamity radius meta to save
   const [calamityName, setCalamityName] = useState("");
@@ -716,12 +1098,11 @@ const CalamityMap = () => {
   const [showCalamityForm, setShowCalamityForm] = useState(false);
 
   // timeline filter (global)
-  const [timelineMode, setTimelineMode] = useState("planted"); // "planted" | "harvest"
-  const [timelineFrom, setTimelineFrom] = useState(""); // "YYYY-MM"
-  const [timelineTo, setTimelineTo] = useState(""); // "YYYY-MM"
+  const [timelineMode, setTimelineMode] = useState("planted");
+  const [timelineFrom, setTimelineFrom] = useState("");
+  const [timelineTo, setTimelineTo] = useState("");
   const [hideCompareCard, setHideCompareCard] = useState(false);
 
-  // per-field past season history from backend
   const [selectedCropHistory, setSelectedCropHistory] = useState([]);
 
   // GPS / heading
@@ -741,14 +1122,12 @@ const CalamityMap = () => {
   const SIDEBAR_WIDTH = 500;
   const PEEK = 1;
 
-  // --- helper: normalize coordinates to match same field across seasons ---
   const normalizeCoordsKey = useCallback((crop) => {
     const ringRaw = getCropRing(crop);
     if (!ringRaw) return null;
 
     let ring = ringRaw;
 
-    // For the key, we prefer the ring without the closing duplicate vertex
     if (ring.length >= 2) {
       const first = ring[0];
       const last = ring[ring.length - 1];
@@ -766,8 +1145,42 @@ const CalamityMap = () => {
 
     return JSON.stringify(ring);
   }, []);
+// ✅ Find the impact record for the *selected crop* under the *active calamity*
+const activeImpactRecord = useMemo(() => {
+  if (!activeCalamityId || !Array.isArray(calamityHistory)) return null;
 
-  // history: all older seasons for this field from backend
+  return calamityHistory.find((row) => {
+    const rid =
+      row.calamity_radius_id ??
+      row.calamityRadiusId ??
+      row.radius_id ??
+      row.calamity_id ??
+      row.calamityId ??
+      row.calamityradius_id;
+
+    return String(rid) === String(activeCalamityId);
+  });
+}, [activeCalamityId, calamityHistory]);
+
+// ✅ Determine if that saved impact is already resolved
+const activeImpactIsResolved = useMemo(() => {
+  const r = activeImpactRecord;
+  if (!r) return false;
+
+  const status = String(r.status || "").toLowerCase();
+  const resolvedFlag =
+    r.is_resolved === 1 ||
+    r.is_resolved === "1" ||
+    r.is_resolved === true ||
+    r.resolved === 1 ||
+    r.resolved === "1" ||
+    r.resolved === true;
+
+  const resolvedDate = !!(r.resolved_at || r.resolvedAt);
+
+  return resolvedFlag || resolvedDate || status === "resolved";
+}, [activeImpactRecord]);
+
   const fieldHistory = useMemo(() => {
     if (!Array.isArray(selectedCropHistory)) return [];
     return selectedCropHistory
@@ -789,7 +1202,6 @@ const CalamityMap = () => {
 
   const hasPastSeason = !!lastSeason;
 
-  // current season
   const croppingSystemLabel =
     selectedCrop?.cropping_system_label || selectedCrop?.cropping_system || null;
 
@@ -803,7 +1215,6 @@ const CalamityMap = () => {
   const primaryHarvestOrEst =
     selectedCrop?.harvested_date || selectedCrop?.estimated_harvest || null;
 
-  // farm-gate PHP price per volume unit (crop + variety aware)
   const primaryPricePerUnit = useMemo(() => {
     if (!primaryCropName) return null;
 
@@ -814,11 +1225,9 @@ const CalamityMap = () => {
     const factorKg =
       UNIT_TO_KG_FACTOR[unitKey] != null ? UNIT_TO_KG_FACTOR[unitKey] : 1;
 
-    // PHP per volume unit (e.g. per sack, per ton, per bunch)
     return perKg * factorKg;
   }, [primaryCropName, primaryVarietyName, primaryUnit]);
 
-  // past season (most recent)
   const pastCropName = lastSeason?.crop_name || null;
   const pastVarietyName = lastSeason?.variety_name || null;
   const pastVolume =
@@ -840,12 +1249,12 @@ const CalamityMap = () => {
     hasBothVolumes && pastVolume !== 0
       ? ((primaryVolume - pastVolume) / Math.abs(pastVolume)) * 100
       : null;
+
   const volumeDeltaPctLabel =
     volumeDeltaPct != null
       ? `${volumeDeltaPct > 0 ? "+" : ""}${volumeDeltaPct.toFixed(0)}%`
       : null;
-
-  // ---------- damage estimation for selected crop within current radius ----------
+    
   const selectedCropDamage = useMemo(() => {
     if (!selectedCrop || !radiusCenter || !radiusMeters) return null;
 
@@ -854,22 +1263,14 @@ const CalamityMap = () => {
 
     const dKm = turf.distance(center, radiusCenter, { units: "kilometers" });
     const dMeters = dKm * 1000;
-
-    if (!Number.isFinite(dMeters)) return null;
     const r = Number(radiusMeters);
-    if (!Number.isFinite(r) || r <= 0) return null;
 
-    let severity;
-    let level;
-    let damageFraction;
+    let severity = "Outside calamity radius";
+    let level = "outside";
+    let damageFraction = 0;
 
-    // If crop is OUTSIDE the circle, show "Outside calamity radius"
-    if (dMeters > r) {
-      severity = "Outside calamity radius";
-      level = "outside";
-      damageFraction = 0;
-    } else {
-      const ratio = dMeters / r; // 0 at center, 1 at edge
+    if (dMeters <= r) {
+      const ratio = dMeters / r;
 
       if (ratio <= 0.25) {
         severity = "Severe";
@@ -890,36 +1291,93 @@ const CalamityMap = () => {
       }
     }
 
+    const primaryHectaresLocal = Number(
+      selectedCrop.estimated_hectares || selectedCrop.estimatedHectares || 0
+    );
+    const primaryVolumeLocal = Number(
+      selectedCrop.estimated_volume || selectedCrop.estimatedVolume || 0
+    );
+
     const damagedAreaHa =
-      primaryHectares != null ? primaryHectares * damageFraction : null;
+      primaryHectaresLocal > 0 ? primaryHectaresLocal * damageFraction : null;
     const damagedVolume =
-      primaryVolume != null ? primaryVolume * damageFraction : null;
+      primaryVolumeLocal > 0 ? primaryVolumeLocal * damageFraction : null;
 
-    const lossValue =
-      damagedVolume != null && primaryPricePerUnit != null
-        ? damagedVolume * primaryPricePerUnit
-        : null;
+    const cropTypeId = selectedCrop.crop_type_id || selectedCrop.cropTypeId;
+    const varietyName =
+      selectedCrop.variety_name || selectedCrop.varietyName || "";
+    const vegCategory =
+      selectedCrop.veg_category_main ||
+      selectedCrop.veg_category ||
+      "";
 
-    const percent = Math.round(damageFraction * 100);
+    const unit =
+      selectedCrop.yield_unit ||
+      CALAMITY_YIELD_UNIT_MAP[cropTypeId] ||
+      "kg";
+
+    const kgPerSack =
+      selectedCrop.kg_per_sack ||
+      selectedCrop.kgPerSack ||
+      CALAMITY_DEFAULT_KG_PER_SACK;
+
+    const kgPerBunch =
+      selectedCrop.kg_per_bunch ||
+      selectedCrop.kgPerBunch ||
+      CALAMITY_DEFAULT_KG_PER_BUNCH;
+
+    const userPriceLow =
+      selectedCrop.main_price_low || selectedCrop.mainPriceLow || undefined;
+    const userPriceHigh =
+      selectedCrop.main_price_high || selectedCrop.mainPriceHigh || undefined;
+
+    let lossRange = null;
+    let lossValueMid = null;
+
+    if (damagedVolume && cropTypeId) {
+      const range = calamityComputeFarmgateValueRange({
+        cropTypeId,
+        varietyName,
+        vegCategory,
+        volume: damagedVolume,
+        unit,
+        kgPerSack,
+        kgPerBunch,
+        userPriceLow,
+        userPriceHigh,
+      });
+
+      if (range) {
+        lossRange = {
+          low: range.valueLow,
+          high: range.valueHigh,
+          label: `₱${calamityPeso(range.valueLow)} – ₱${calamityPeso(
+            range.valueHigh
+          )}`,
+        };
+        lossValueMid = (range.valueLow + range.valueHigh) / 2;
+      }
+    }
 
     return {
       severity,
       level,
-      distanceMeters: Math.round(dMeters),
+      distanceMeters: dMeters,
+      radiusMeters: r,
       damageFraction,
-      percent,
+      percent: damageFraction * 100,
+
       damagedAreaHa,
       damagedVolume,
-      lossValue,
+
+      lossRange,
+      lossValueMid,
     };
-  }, [
-    selectedCrop,
-    radiusCenter,
-    radiusMeters,
-    primaryHectares,
-    primaryVolume,
-    primaryPricePerUnit,
-  ]);
+  }, [selectedCrop, radiusCenter, radiusMeters]);
+  const isCropOutsideRadius =
+  !selectedCropDamage ||
+  selectedCropDamage.level === "outside" ||
+  selectedCropDamage.damageFraction <= 0;
 
   const mapStyles = {
     Default: {
@@ -1002,6 +1460,63 @@ const CalamityMap = () => {
     }
   }, []);
 
+   const handleResolveCalamityImpact = async () => {
+  if (!selectedCrop || !selectedCrop.id) {
+    toast.info("Select a crop first.");
+    return;
+  }
+
+  if (!activeCalamityId) {
+    toast.info("Select an active calamity radius first (click an orange circle).");
+    return;
+  }
+
+  // ✅ IMPORTANT: “Resolve” is only valid if an impact record already exists
+  if (!activeImpactRecord) {
+    toast.info("No saved impact found for this crop under the active calamity. Click “Save impact” first.");
+    return;
+  }
+
+  // ✅ If already resolved, don’t allow re-resolve
+  if (activeImpactIsResolved) {
+    toast.info("This impact is already resolved.");
+    return;
+  }
+
+  const ok = window.confirm(
+    "Mark this field as resolved for this calamity? This means the damage has been processed or cleared."
+  );
+  if (!ok) return;
+
+  try {
+    setResolvingImpact(true);
+
+    await axios.patch(
+      `http://localhost:5000/api/calamityradius/${activeCalamityId}/impact/resolve`,
+      { crop_id: selectedCrop.id }
+    );
+
+    toast.success("Calamity impact marked as resolved.");
+
+    // ✅ Refresh calamity history so UI updates immediately
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/calamityradius/crop/${selectedCrop.id}/history`
+      );
+      setCalamityHistory(res.data || []);
+    } catch (e) {
+      console.warn("Resolve ok, but failed to refresh history:", e);
+    }
+  } catch (err) {
+    console.error("Failed to resolve calamity impact:", err);
+    toast.error(err?.response?.data?.message || "Failed to resolve impact. Please try again.");
+  } finally {
+    setResolvingImpact(false);
+  }
+};
+
+
+
   const refreshMapData = useCallback(async () => {
     try {
       await loadPolygons();
@@ -1015,7 +1530,10 @@ const CalamityMap = () => {
     async (cropId, harvestedDate = null) => {
       try {
         const body = harvestedDate ? { harvested_date: harvestedDate } : {};
-        await axios.patch(`http://localhost:5000/api/crops/${cropId}/harvest`, body);
+        await axios.patch(
+          `http://localhost:5000/api/crops/${cropId}/harvest`,
+          body
+        );
         toast.success("Marked as harvested");
         await refreshMapData();
         setSelectedCrop((prev) =>
@@ -1023,7 +1541,8 @@ const CalamityMap = () => {
             ? {
                 ...prev,
                 is_harvested: 1,
-                harvested_date: harvestedDate || new Date().toISOString().slice(0, 10),
+                harvested_date:
+                  harvestedDate || new Date().toISOString().slice(0, 10),
               }
             : prev
         );
@@ -1054,13 +1573,11 @@ const CalamityMap = () => {
     try {
       const response = await axios.get("http://localhost:5000/api/crops");
 
-      // filter: hide soft-deleted/inactive crops
       const allRows = response.data || [];
       const crops = allRows.filter((c) => !isSoftDeletedCrop(c));
 
       setSidebarCrops(crops);
 
-      // clear previous markers & hover popup
       savedMarkersRef.current.forEach((marker) => marker.remove());
       savedMarkersRef.current = [];
       cropMarkerMapRef.current.clear();
@@ -1071,13 +1588,11 @@ const CalamityMap = () => {
         hoverPopupRef.current = null;
       }
 
-      // filter by crop type
       const filteredByType =
         selectedCropType === "All"
           ? crops
           : crops.filter((c) => c.crop_name === selectedCropType);
 
-      // filter by harvest status
       let filtered = filteredByType;
       if (harvestFilter === "harvested") {
         filtered = filtered.filter((c) => isCropHarvested(c));
@@ -1085,7 +1600,6 @@ const CalamityMap = () => {
         filtered = filtered.filter((c) => !isCropHarvested(c));
       }
 
-      // global timeline (month range)
       filtered = filtered.filter((c) =>
         passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
       );
@@ -1117,14 +1631,12 @@ const CalamityMap = () => {
           .setPopup(popup)
           .addTo(map.current);
 
-        // click = select crop
         marker.getElement().addEventListener("click", () => {
           setSelectedCrop(crop);
           highlightSelection(crop);
           setIsSidebarVisible(true);
         });
 
-        // hover → fancy preview
         marker.getElement().addEventListener("mouseenter", () => {
           if (hoverLeaveTimerRef.current) {
             clearTimeout(hoverLeaveTimerRef.current);
@@ -1221,14 +1733,14 @@ const CalamityMap = () => {
         "#60a5fa",
         "Vegetables",
         "#f472b6",
-        /* other */ "#10B981",
+        "#10B981",
       ];
 
       const paintStyle = {
         "fill-color": [
           "case",
           ["==", ["get", "is_harvested"], 1],
-          "#9CA3AF", // gray for harvested
+          "#9CA3AF",
           baseColorByCrop,
         ],
         "fill-opacity": 0.4,
@@ -1260,7 +1772,7 @@ const CalamityMap = () => {
         });
       }
     },
-    [] // eslint-disable-line react-hooks/exhaustive-deps
+    []
   );
 
   const ensureBarangayLayers = useCallback(() => {
@@ -1473,74 +1985,72 @@ const CalamityMap = () => {
     [lockToBago, setUserMarker]
   );
 
-  const openTagFormForExistingCrop = useCallback((crop) => {
-    if (!crop) return;
+  const openTagFormForExistingCrop = useCallback(
+    (crop) => {
+      if (!crop) return;
 
-    const ring = getCropRing(crop);
-    if (!ring) return;
+      const ring = getCropRing(crop);
+      if (!ring) return;
 
-    let coords = ring;
-    const first = ring[0];
-    const last = ring[ring.length - 1];
-    if (first[0] !== last[0] || first[1] !== last[1]) {
-      coords = [...ring, first];
-    }
+      let coords = ring;
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        coords = [...ring, first];
+      }
 
-    const farmGeometry = {
-      type: "Polygon",
-      coordinates: [coords],
-    };
+      const farmGeometry = {
+        type: "Polygon",
+        coordinates: [coords],
+      };
 
-    const center = getCropCenter({ ...crop, coordinates: coords }) || coords[0];
+      const center =
+        getCropCenter({ ...crop, coordinates: coords }) || coords[0];
 
-    // Try to reuse saved elevation; if not present, estimate again
-    let avgElevationM =
-      crop.avg_elevation_m ??
-      crop.avgElevationM ??
-      crop.avg_elevation ??
-      crop.elevation ??
-      null;
+      let avgElevationM =
+        crop.avg_elevation_m ??
+        crop.avgElevationM ??
+        crop.avg_elevation ??
+        crop.elevation ??
+        null;
 
-    if (avgElevationM == null) {
-      const approx = estimateAverageElevation(farmGeometry, map.current);
-      if (approx != null) avgElevationM = approx;
-    }
+      if (avgElevationM == null) {
+        const approx = estimateAverageElevation(farmGeometry, map.current);
+        if (approx != null) avgElevationM = approx;
+      }
 
-    // Figure out barangay defaults (for farmer + location)
-    const barangayName =
-      crop.farmer_barangay ||
-      crop.barangay ||
-      (selectedBarangay?.name ?? "");
+      const barangayName =
+        crop.farmer_barangay ||
+        crop.barangay ||
+        (selectedBarangay?.name ?? "");
 
-    setSelectedBarangay((prev) => ({
-      ...(prev || {}),
-      name: barangayName || prev?.name || "",
-      coordinates: center,
-    }));
+      setSelectedBarangay((prev) => ({
+        ...(prev || {}),
+        name: barangayName || prev?.name || "",
+        coordinates: center,
+      }));
 
-    // Pack everything to pass into TagCropForm via defaultLocation
-    setNewTagLocation({
-      coordinates: coords,
-      hectares: crop.estimated_hectares,
-      farmGeometry,
-      avgElevationM,
+      setNewTagLocation({
+        coordinates: coords,
+        hectares: crop.estimated_hectares,
+        farmGeometry,
+        avgElevationM,
+        farmerFirstName: crop.farmer_first_name || "",
+        farmerLastName: crop.farmer_last_name || "",
+        farmerMobile: crop.farmer_mobile || "",
+        farmerBarangay: barangayName || "",
+        farmerAddress: crop.farmer_address || "",
+        tenureId: crop.tenure_id ?? crop.tenure ?? "",
+        isAnonymousFarmer:
+          crop.is_anonymous_farmer === 1 ||
+          crop.is_anonymous_farmer === "1" ||
+          crop.is_anonymous_farmer === true,
+      });
 
-      // Farmer defaults (for auto-fill)
-      farmerFirstName: crop.farmer_first_name || "",
-      farmerLastName: crop.farmer_last_name || "",
-      farmerMobile: crop.farmer_mobile || "",
-      farmerBarangay: barangayName || "",
-      farmerAddress: crop.farmer_address || "",
-      tenureId: crop.tenure_id ?? crop.tenure ?? "",
-
-      isAnonymousFarmer:
-        crop.is_anonymous_farmer === 1 ||
-        crop.is_anonymous_farmer === "1" ||
-        crop.is_anonymous_farmer === true,
-    });
-
-    setIsTagging(true);
-  }, [selectedBarangay]); // eslint-disable-line react-hooks/exhaustive-deps
+      setIsTagging(true);
+    },
+    [selectedBarangay]
+  );
 
   const clearSelection = useCallback(() => {
     if (!map.current) return;
@@ -1631,84 +2141,81 @@ const CalamityMap = () => {
     m.on("styledata", onStyle);
   };
 
-  const highlightPolygon = useCallback(
-    (crop) => {
-      if (!map.current || !crop) return;
+  const highlightPolygon = useCallback((crop) => {
+    if (!map.current || !crop) return;
 
-      const harvested = isCropHarvested(crop);
-      const color = harvested ? "#9CA3AF" : "#10B981";
+    const harvested = isCropHarvested(crop);
+    const color = harvested ? "#9CA3AF" : "#10B981";
 
-      runWhenStyleReady(() => {
-        const ring = getCropRing(crop);
-        if (!ring) return;
+    runWhenStyleReady(() => {
+      const ring = getCropRing(crop);
+      if (!ring) return;
 
-        let coords = ring;
-        const first = ring[0];
-        const last = ring[ring.length - 1];
-        if (first[0] !== last[0] || first[1] !== last[1]) {
-          coords = [...ring, first];
-        }
+      let coords = ring;
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        coords = [...ring, first];
+      }
 
-        const feature = turf.polygon([coords], {
-          id: crop.id,
-          crop_name: crop.crop_name,
-        });
-        const m = map.current;
-
-        if (!m.getSource(HILITE_SRC)) {
-          m.addSource(HILITE_SRC, {
-            type: "geojson",
-            data: { type: "FeatureCollection", features: [feature] },
-          });
-
-          m.addLayer({
-            id: HILITE_FILL,
-            type: "fill",
-            source: HILITE_SRC,
-            paint: { "fill-color": color, "fill-opacity": 0.18 },
-          });
-
-          m.addLayer({
-            id: HILITE_LINE,
-            type: "line",
-            source: HILITE_SRC,
-            paint: {
-              "line-color": color,
-              "line-width": 1.5,
-              "line-opacity": 1,
-            },
-          });
-        } else {
-          m.getSource(HILITE_SRC).setData({
-            type: "FeatureCollection",
-            features: [feature],
-          });
-
-          try {
-            m.setPaintProperty(HILITE_FILL, "fill-color", color);
-            m.setPaintProperty(HILITE_LINE, "line-color", color);
-          } catch {}
-        }
-
-        if (HILITE_ANIM_REF.current) {
-          clearInterval(HILITE_ANIM_REF.current);
-          HILITE_ANIM_REF.current = null;
-        }
-        let w = 2;
-        let dir = +0.4;
-        HILITE_ANIM_REF.current = setInterval(() => {
-          if (!m.getLayer(HILITE_LINE)) return;
-          w += dir;
-          if (w >= 4) dir = -0.3;
-          if (w <= 1) dir = +0.3;
-          try {
-            m.setPaintProperty(HILITE_LINE, "line-width", w);
-          } catch {}
-        }, 80);
+      const feature = turf.polygon([coords], {
+        id: crop.id,
+        crop_name: crop.crop_name,
       });
-    },
-    [] // eslint-disable-line react-hooks/exhaustive-deps
-  );
+      const m = map.current;
+
+      if (!m.getSource("selected-crop-highlight-src")) {
+        m.addSource("selected-crop-highlight-src", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [feature] },
+        });
+
+        m.addLayer({
+          id: "selected-crop-highlight-fill",
+          type: "fill",
+          source: "selected-crop-highlight-src",
+          paint: { "fill-color": color, "fill-opacity": 0.18 },
+        });
+
+        m.addLayer({
+          id: "selected-crop-highlight-line",
+          type: "line",
+          source: "selected-crop-highlight-src",
+          paint: {
+            "line-color": color,
+            "line-width": 1.5,
+            "line-opacity": 1,
+          },
+        });
+      } else {
+        m.getSource("selected-crop-highlight-src").setData({
+          type: "FeatureCollection",
+          features: [feature],
+        });
+
+        try {
+          m.setPaintProperty("selected-crop-highlight-fill", "fill-color", color);
+          m.setPaintProperty("selected-crop-highlight-line", "line-color", color);
+        } catch {}
+      }
+
+      if (HILITE_ANIM_REF.current) {
+        clearInterval(HILITE_ANIM_REF.current);
+        HILITE_ANIM_REF.current = null;
+      }
+      let w = 2;
+      let dir = +0.4;
+      HILITE_ANIM_REF.current = setInterval(() => {
+        if (!m.getLayer("selected-crop-highlight-line")) return;
+        w += dir;
+        if (w >= 4) dir = -0.3;
+        if (w <= 1) dir = +0.3;
+        try {
+          m.setPaintProperty("selected-crop-highlight-line", "line-width", w);
+        } catch {}
+      }, 80);
+    });
+  }, []);
 
   const highlightSelection = useCallback(
     (crop) => {
@@ -1744,9 +2251,7 @@ const CalamityMap = () => {
     if (!target.cropId) return;
     if (!sidebarCrops.length) return;
 
-    const hit = sidebarCrops.find(
-      (c) => String(c.id) === String(target.cropId)
-    );
+    const hit = sidebarCrops.find((c) => String(c.id) === String(target.cropId));
     if (!hit) return;
 
     setSelectedCrop(hit);
@@ -1773,81 +2278,174 @@ const CalamityMap = () => {
   const SAVED_CALAMITY_SRC = "saved-calamity-radius-src";
   const SAVED_CALAMITY_FILL = "saved-calamity-radius-fill";
   const SAVED_CALAMITY_OUTLINE = "saved-calamity-radius-outline";
+    // Concentric severity bands inside the radius
+  const RADIUS_BANDS_SRC = "calamity-radius-bands-src";
+  const RADIUS_BANDS_FILL = "calamity-radius-bands-fill";
 
-  const ensureRadiusLayers = useCallback(() => {
-    if (!map.current) return;
-    const m = map.current;
 
-    if (!m.getSource(RADIUS_SRC)) {
-      m.addSource(RADIUS_SRC, {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
+ const ensureRadiusLayers = useCallback(() => {
+  if (!map.current) return;
+  const m = map.current;
+
+  // GeoJSON source for the "active" radius
+  if (!m.getSource(RADIUS_SRC)) {
+    m.addSource(RADIUS_SRC, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+
+  // Soft translucent fill
+  if (!m.getLayer(RADIUS_FILL)) {
+    m.addLayer({
+      id: RADIUS_FILL,
+      type: "fill",
+      source: RADIUS_SRC,
+      paint: {
+        // very soft red, we keep opacity at 1 because alpha is in the rgba()
+        "fill-color": "rgba(239,68,68,0.08)", // red-500 @ 8%
+        "fill-outline-color": "rgba(248,113,113,0.9)", // red-400 outline
+        "fill-opacity": 1,
+      },
+    });
+  }
+
+  // Clean dashed outline
+  if (!m.getLayer(RADIUS_OUTLINE)) {
+    m.addLayer({
+      id: RADIUS_OUTLINE,
+      type: "line",
+      source: RADIUS_SRC,
+      paint: {
+        "line-color": "rgba(248,113,113,0.95)", // red-400
+        "line-width": 2.5,
+        "line-dasharray": [2, 1.5],             // dashed ring
+        "line-blur": 0.2,
+      },
+    });
+  }
+}, []);
+
+
+const ensureSavedCalamityLayers = useCallback(() => {
+  if (!map.current) return;
+  const m = map.current;
+
+  if (!m.getSource(SAVED_CALAMITY_SRC)) {
+    m.addSource(SAVED_CALAMITY_SRC, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+
+  // Subtle orange disks for saved calamities
+  if (!m.getLayer(SAVED_CALAMITY_FILL)) {
+    m.addLayer({
+      id: SAVED_CALAMITY_FILL,
+      type: "fill",
+      source: SAVED_CALAMITY_SRC,
+      paint: {
+        "fill-color": "rgba(249,115,22,0.10)",   // orange-500 @ 10%
+        "fill-outline-color": "rgba(249,115,22,0.9)",
+        "fill-opacity": 1,
+      },
+    });
+  }
+
+  // Orange dashed outline so saved radii are distinguishable
+  if (!m.getLayer(SAVED_CALAMITY_OUTLINE)) {
+    m.addLayer({
+      id: SAVED_CALAMITY_OUTLINE,
+      type: "line",
+      source: SAVED_CALAMITY_SRC,
+      paint: {
+        "line-color": "rgba(249,115,22,0.95)",   // orange-500
+        "line-width": 2,
+        "line-dasharray": [3, 2],
+        "line-opacity": 0.9,
+      },
+    });
+  }
+}, []);
+
+
+    const ensureRadiusBandsLayers = useCallback(() => {
+  if (!map.current) return;
+  const m = map.current;
+
+  if (!m.getSource(RADIUS_BANDS_SRC)) {
+    m.addSource(RADIUS_BANDS_SRC, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+
+  if (!m.getLayer(RADIUS_BANDS_FILL)) {
+    m.addLayer({
+      id: RADIUS_BANDS_FILL,
+      type: "fill",
+      source: RADIUS_BANDS_SRC,
+      paint: {
+        // Pastel, semi-transparent rings from center → outside
+        "fill-color": [
+          "match",
+          ["get", "band"],
+          "severe",
+          "rgba(239,68,68,0.35)",   // red-500
+          "high",
+          "rgba(249,115,22,0.28)",  // orange-500
+          "moderate",
+          "rgba(250,204,21,0.22)",  // yellow-400
+          "low",
+          "rgba(187,247,208,0.18)", // green-100
+          "rgba(0,0,0,0)",
+        ],
+        "fill-opacity": 0.6,
+      },
+    });
+  }
+}, []);
+
+const setActiveCalamityFromFeature = useCallback(
+  (feature) => {
+    if (!feature) return;
+    const props = feature.properties || {};
+
+    const center = [Number(props.center_lng), Number(props.center_lat)];
+    const rMeters = Number(props.radius_meters);
+    if (
+      !Number.isFinite(center[0]) ||
+      !Number.isFinite(center[1]) ||
+      !Number.isFinite(rMeters)
+    ) {
+      return;
     }
 
-    if (!m.getLayer(RADIUS_FILL)) {
-      m.addLayer({
-        id: RADIUS_FILL,
-        type: "fill",
-        source: RADIUS_SRC,
-        paint: {
-          "fill-color": "#ef4444",
-          "fill-opacity": 0.18,
-        },
-      });
-    }
+    const idNum = Number(props.id);
 
-    if (!m.getLayer(RADIUS_OUTLINE)) {
-      m.addLayer({
-        id: RADIUS_OUTLINE,
-        type: "line",
-        source: RADIUS_SRC,
-        paint: {
-          "line-color": "#ef4444",
-          "line-width": 2,
-        },
-      });
-    }
-  }, []);
+    setActiveCalamityId(idNum);
+    setActiveCalamity(props);
+    setRadiusCenter(center);
+    setRadiusMeters(rMeters);
 
-  // ensure layers for saved calamities
-  const ensureSavedCalamityLayers = useCallback(() => {
-    if (!map.current) return;
-    const m = map.current;
+    // 🔴 NEW: clear selectedCrop if it’s outside this radius
+    setSelectedCrop((prev) => {
+      if (!prev) return prev;
+      const cCenter = getCropCenter(prev);
+      if (!cCenter) return null;
 
-    if (!m.getSource(SAVED_CALAMITY_SRC)) {
-      m.addSource(SAVED_CALAMITY_SRC, {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-    }
+      const dKm = turf.distance(cCenter, center, { units: "kilometers" });
+      const dMeters = dKm * 1000;
+      if (dMeters > rMeters) {
+        return null; // outside → deselect
+      }
+      return prev; // still inside → keep
+    });
+  },
+  [setRadiusCenter, setRadiusMeters]
+);
 
-    if (!m.getLayer(SAVED_CALAMITY_FILL)) {
-      m.addLayer({
-        id: SAVED_CALAMITY_FILL,
-        type: "fill",
-        source: SAVED_CALAMITY_SRC,
-        paint: {
-          "fill-color": "#f97316",
-          "fill-opacity": 0.18,
-        },
-      });
-    }
 
-    if (!m.getLayer(SAVED_CALAMITY_OUTLINE)) {
-      m.addLayer({
-        id: SAVED_CALAMITY_OUTLINE,
-        type: "line",
-        source: SAVED_CALAMITY_SRC,
-        paint: {
-          "line-color": "#f97316",
-          "line-width": 2,
-        },
-      });
-    }
-  }, []);
-
-  // load all saved calamity radii from backend and draw them
   const loadSavedCalamityRadii = useCallback(async () => {
     if (!map.current) return;
 
@@ -1893,56 +2491,165 @@ const CalamityMap = () => {
         features,
       };
 
-      map.current.getSource(SAVED_CALAMITY_SRC).setData(fc);
+     // after you build `features` and `fc`:
+map.current.getSource(SAVED_CALAMITY_SRC).setData(fc);
+
+// choose one feature as the default active calamity
+if (features.length) {
+  // example: pick highest id as latest; adjust if your API already sorts
+  const latest = features.reduce((best, f) => {
+    const id = Number(f.properties?.id) || 0;
+    const bestId = Number(best?.properties?.id) || 0;
+    return id > bestId ? f : best;
+  }, features[0]);
+
+  setActiveCalamityFromFeature(latest);
+}
+
+
     } catch (err) {
       console.error("Failed to load calamity radii:", err);
       toast.error("Failed to load saved calamity areas");
     }
-  }, [ensureSavedCalamityLayers]);
+  }, [ensureSavedCalamityLayers, setRadiusCenter, setRadiusMeters, setActiveCalamityFromFeature,]);
 
-  const updateRadiusCircle = useCallback(
-    (centerLngLat, radiusM) => {
-      if (!map.current || !centerLngLat || !radiusM) return;
-      ensureRadiusLayers();
-      const radiusKm = radiusM / 1000;
-      const circle = turf.circle(centerLngLat, radiusKm, {
+
+// FINAL radius: dashed outline + 4 severity bands (no extra solid fill)
+const updateRadiusCircle = useCallback(
+  (centerLngLat, radiusM) => {
+    if (!map.current || !centerLngLat || !radiusM) return;
+
+    const m = map.current;
+    const radiusKm = radiusM / 1000;
+
+    ensureRadiusLayers();
+    ensureRadiusBandsLayers();
+
+    // update outline circle source
+    const circle = turf.circle(centerLngLat, radiusKm, {
+      steps: 80,
+      units: "kilometers",
+    });
+
+    m.getSource(RADIUS_SRC).setData({
+      type: "FeatureCollection",
+      features: [circle],
+    });
+
+    // hide the base fill – we only want the dashed outline + bands
+    try {
+      m.setPaintProperty(RADIUS_FILL, "fill-color", "rgba(0,0,0,0)");
+      m.setPaintProperty(RADIUS_FILL, "fill-opacity", 0);
+    } catch {}
+
+    const r = radiusKm;
+    if (!Number.isFinite(r) || r <= 0) {
+      m.getSource(RADIUS_BANDS_SRC).setData({
+        type: "FeatureCollection",
+        features: [],
+      });
+      return;
+    }
+
+    const makeBand = (outerKm, bandName) => {
+      const outer = turf.circle(centerLngLat, outerKm, {
         steps: 80,
         units: "kilometers",
       });
-      map.current
-        .getSource(RADIUS_SRC)
-        .setData({ type: "FeatureCollection", features: [circle] });
-    },
-    [ensureRadiusLayers]
-  );
+      outer.properties = { band: bandName };
+      return outer;
+    };
 
-  const handleRadiusMouseDown = useCallback(
-    (e) => {
-      if (!isDrawingRadiusRef.current || !map.current) return;
-      e.preventDefault();
-      const center = [e.lngLat.lng, e.lngLat.lat];
-      dragActiveRef.current = true;
-      dragCenterRef.current = center;
-      setRadiusCenter(center);
-      setRadiusMeters(0);
-      updateRadiusCircle(center, 1);
-    },
-    [updateRadiusCircle]
-  );
+    // outer → inner bands
+    const low = makeBand(r, "low");
+    const moderate = makeBand(r * 0.75, "moderate");
+    const high = makeBand(r * 0.5, "high");
+    const severe = makeBand(r * 0.25, "severe");
 
-  const handleRadiusMouseMove = useCallback(
-    (e) => {
-      if (!dragActiveRef.current || !dragCenterRef.current || !map.current)
-        return;
-      const center = dragCenterRef.current;
-      const current = [e.lngLat.lng, e.lngLat.lat];
-      const distKm = turf.distance(center, current, { units: "kilometers" });
-      const meters = distKm * 1000;
-      setRadiusMeters(meters);
-      updateRadiusCircle(center, meters);
-    },
-    [updateRadiusCircle]
-  );
+    m.getSource(RADIUS_BANDS_SRC).setData({
+      type: "FeatureCollection",
+      features: [low, moderate, high, severe],
+    });
+  },
+  [ensureRadiusLayers, ensureRadiusBandsLayers]
+);
+
+
+// Plain circle used ONLY while drawing (no severity bands yet)
+const updatePlainRadiusCircle = useCallback(
+  (centerLngLat, radiusM) => {
+    if (!map.current || !centerLngLat || !radiusM) return;
+
+    const m = map.current;
+    const radiusKm = radiusM / 1000;
+
+    // ensure main radius layers exist
+    ensureRadiusLayers();
+
+    const circle = turf.circle(centerLngLat, radiusKm, {
+      steps: 80,
+      units: "kilometers",
+    });
+
+    // update main radius source
+    m.getSource(RADIUS_SRC).setData({
+      type: "FeatureCollection",
+      features: [circle],
+    });
+
+    // show soft red fill while drawing
+    try {
+      m.setPaintProperty(
+        RADIUS_FILL,
+        "fill-color",
+        "rgba(239,68,68,0.15)" // red-500 @ 15%
+      );
+      m.setPaintProperty(RADIUS_FILL, "fill-opacity", 1);
+    } catch {}
+
+    // clear severity bands while drawing
+    if (m.getSource(RADIUS_BANDS_SRC)) {
+      m.getSource(RADIUS_BANDS_SRC).setData({
+        type: "FeatureCollection",
+        features: [],
+      });
+    }
+  },
+  [ensureRadiusLayers]
+);
+
+
+ const handleRadiusMouseDown = useCallback(
+  (e) => {
+    if (!isDrawingRadiusRef.current || !map.current) return;
+    e.preventDefault();
+    const center = [e.lngLat.lng, e.lngLat.lat];
+    dragActiveRef.current = true;
+    dragCenterRef.current = center;
+    setRadiusCenter(center);
+    setRadiusMeters(0);
+
+    // plain circle while starting the drag
+    updatePlainRadiusCircle(center, 1);
+  },
+  [updatePlainRadiusCircle, setRadiusCenter, setRadiusMeters]
+);
+
+ const handleRadiusMouseMove = useCallback(
+  (e) => {
+    if (!dragActiveRef.current || !dragCenterRef.current || !map.current)
+      return;
+    const center = dragCenterRef.current;
+    const current = [e.lngLat.lng, e.lngLat.lat];
+    const distKm = turf.distance(center, current, { units: "kilometers" });
+    const meters = distKm * 1000;
+    setRadiusMeters(meters);
+
+    // still drawing → plain circle only
+    updatePlainRadiusCircle(center, meters);
+  },
+  [updatePlainRadiusCircle, setRadiusMeters]
+);
 
   const handleRadiusMouseUp = useCallback(() => {
     if (!dragActiveRef.current) return;
@@ -1950,11 +2657,50 @@ const CalamityMap = () => {
     isDrawingRadiusRef.current = false;
     setIsDrawingRadius(false);
 
-    // when user finishes drawing, show the calamity form
     setShowCalamityForm(true);
   }, []);
+  const handleDeleteActiveCalamity = useCallback(async () => {
+    if (!activeCalamityId) {
+      toast.error("No active calamity radius selected.");
+      return;
+    }
 
-  const handleSaveCalamityRadius = useCallback(async () => {
+    const confirmed = window.confirm(
+      "Delete this calamity radius and all linked damage records/photos?"
+    );
+    if (!confirmed) return;
+
+    try {
+      await axios.delete(
+        `http://localhost:5000/api/calamityradius/${activeCalamityId}`
+      );
+
+      toast.success("Calamity radius deleted.");
+
+      // clear active state + drawn circle
+      setActiveCalamityId(null);
+      setActiveCalamity(null);
+      setRadiusCenter(null);
+      setRadiusMeters(null);
+
+      // reload remaining orange circles (if any)
+      await loadSavedCalamityRadii();
+    } catch (err) {
+      console.error("Failed to delete calamity radius:", err);
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to delete calamity radius.";
+      toast.error(msg);
+    }
+  }, [
+    activeCalamityId,
+    loadSavedCalamityRadii,
+    setRadiusCenter,
+    setRadiusMeters,
+  ]);
+
+   const handleSaveCalamityRadius = useCallback(async () => {
     try {
       if (!radiusCenter || !radiusMeters) {
         toast.error("Draw a radius first.");
@@ -1967,7 +2713,7 @@ const CalamityMap = () => {
 
       const adminId = localStorage.getItem("user_id");
 
-      await axios.post("http://localhost:5000/api/calamityradius", {
+      const res = await axios.post("http://localhost:5000/api/calamityradius", {
         name: calamityName.trim(),
         type: calamityType.trim() || null,
         description: calamityDescription.trim() || null,
@@ -1980,24 +2726,37 @@ const CalamityMap = () => {
 
       toast.success("Calamity radius saved.");
 
-      // refresh saved calamity circles from DB
+      // reload all saved calamities (orange circles)
       await loadSavedCalamityRadii();
 
-      // reset form + circle
+      // mark the just-saved calamity as active
+      if (res.data?.id) {
+        const idNum = Number(res.data.id);
+        setActiveCalamityId(idNum);
+        setActiveCalamity({
+          id: idNum,
+          name: calamityName.trim(),
+          type: calamityType.trim() || null,
+          description: calamityDescription.trim() || null,
+          center_lng: radiusCenter[0],
+          center_lat: radiusCenter[1],
+          radius_meters: Math.round(radiusMeters),
+          started_at: calamityDate || null,
+        });
+      }
+
+      // reset form fields only
       setCalamityName("");
       setCalamityType("");
       setCalamityDescription("");
       setCalamityDate(new Date().toISOString().slice(0, 10));
       setShowCalamityForm(false);
 
-      if (map.current && map.current.getSource(RADIUS_SRC)) {
-        map.current.getSource(RADIUS_SRC).setData({
-          type: "FeatureCollection",
-          features: [],
-        });
-      }
-      setRadiusCenter(null);
-      setRadiusMeters(null);
+      // IMPORTANT:
+      // do NOT clear radiusCenter / radiusMeters or the RADIUS_SRC source.
+      // We stay in "view" mode so the multi-band circle remains on the map.
+      isDrawingRadiusRef.current = false;
+      setIsDrawingRadius(false);
     } catch (err) {
       console.error("Failed to save calamity radius:", err);
       const msg =
@@ -2016,6 +2775,148 @@ const CalamityMap = () => {
     calamityDate,
     loadSavedCalamityRadii,
   ]);
+  // 🔴 photo upload handler (crop + calamity)
+  const handleDamagePhotoUpload = useCallback(
+    async (file) => {
+      if (!file) return;
+      if (!selectedCrop) {
+        toast.error("Select a crop first.");
+        return;
+      }
+      if (!activeCalamityId) {
+        toast.error("Click an orange calamity circle first.");
+        return;
+      }
+      if (
+      !selectedCropDamage ||
+      selectedCropDamage.level === "outside" ||
+      selectedCropDamage.damageFraction <= 0
+    ) {
+      toast.error("This field is outside the active calamity radius.");
+      return;
+    }
+
+      try {
+        setIsUploadingDamagePhoto(true);
+
+        const formData = new FormData();
+        formData.append("photo", file);
+        formData.append("crop_id", selectedCrop.id);
+        formData.append(
+          "caption",
+          `Damage proof for ${selectedCrop.crop_name || "crop"}`
+        );
+
+        await axios.post(
+          `http://localhost:5000/api/calamityradius/${activeCalamityId}/photo`,
+          formData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+          }
+        );
+
+        toast.success("Damage photo uploaded.");
+      } catch (err) {
+        console.error(err);
+        toast.error(
+          err?.response?.data?.message || "Failed to upload damage photo."
+        );
+      } finally {
+        setIsUploadingDamagePhoto(false);
+      }
+    },
+    [selectedCrop, activeCalamityId]
+  );
+
+  // 🔴 save impact handler (crop + calamity)
+  const handleSaveDamageImpact = useCallback(async () => {
+    if (!selectedCrop) {
+      toast.error("Select a crop first.");
+      return;
+    }
+    if (!activeCalamityId) {
+      toast.error("Click an orange calamity circle first.");
+      return;
+    }
+    if (!selectedCropDamage) {
+      toast.error("No damage data to save.");
+      return;
+    }
+ if (
+    !selectedCropDamage ||
+    selectedCropDamage.level === "outside" ||
+    selectedCropDamage.damageFraction <= 0
+  ) {
+    toast.error("This field is outside the active calamity radius.");
+    return;
+  }
+    try {
+      setIsSavingImpact(true);
+
+      await axios.post(
+        `http://localhost:5000/api/calamityradius/${activeCalamityId}/impact`,
+        {
+          crop_id: selectedCrop.id,
+          severity: selectedCropDamage.severity,
+          level: selectedCropDamage.level,
+          distance_meters: selectedCropDamage.distanceMeters,
+          damage_fraction: selectedCropDamage.damageFraction,
+          damaged_area_ha: selectedCropDamage.damagedAreaHa,
+          damaged_volume: selectedCropDamage.damagedVolume,
+          loss_value_php: selectedCropDamage.lossValueMid,
+          base_area_ha: primaryHectares,
+          base_volume: primaryVolume,
+          base_unit: primaryUnit,
+        }
+      );
+
+      toast.success("Damage assessment saved.");
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message || "Failed to save damage assessment."
+      );
+    } finally {
+      setIsSavingImpact(false);
+    }
+  }, [
+    selectedCrop,
+    activeCalamityId,
+    selectedCropDamage,
+    primaryHectares,
+    primaryVolume,
+    primaryUnit,
+  ]);
+
+  useEffect(() => {
+  if (!map.current) return;
+
+  // While dragging, we only want the plain circle (no bands yet)
+  if (isDrawingRadiusRef.current) return;
+
+  const m = map.current;
+
+  if (!radiusCenter || !radiusMeters) {
+    // clear drawn circle + bands when radius is cleared
+    if (m.getSource(RADIUS_SRC)) {
+      m.getSource(RADIUS_SRC).setData({
+        type: "FeatureCollection",
+        features: [],
+      });
+    }
+    if (m.getSource(RADIUS_BANDS_SRC)) {
+      m.getSource(RADIUS_BANDS_SRC).setData({
+        type: "FeatureCollection",
+        features: [],
+      });
+    }
+    return;
+  }
+
+  // Finished drawing → circle + severity bands
+  updateRadiusCircle(radiusCenter, radiusMeters);
+}, [radiusCenter, radiusMeters, updateRadiusCircle]);
+
 
   // fetch backend crop history for selected crop
   useEffect(() => {
@@ -2064,18 +2965,16 @@ const CalamityMap = () => {
         .get("http://localhost:5000/api/crops/types")
         .then((res) => setCropTypes(res.data));
 
-      // Nav controls
       m.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-      // radius drawing mouse handlers
       m.on("mousedown", handleRadiusMouseDown);
       m.on("mousemove", handleRadiusMouseMove);
       m.on("mouseup", handleRadiusMouseUp);
       m.on("mouseleave", handleRadiusMouseUp);
 
-      // directions control
+     
+
       m.on("load", async () => {
-        // enable terrain / DEM
         ensureTerrain();
 
         if (!directionsRef.current && isDirectionsVisible) {
@@ -2105,6 +3004,33 @@ const CalamityMap = () => {
         ensureSavedCalamityLayers();
         await renderSavedMarkers();
         await loadSavedCalamityRadii();
+        // Clicking any orange calamity circle should make it active
+m.on("click", SAVED_CALAMITY_FILL, (e) => {
+  const feat = e.features && e.features[0];
+  if (!feat) return;
+  setActiveCalamityFromFeature(feat);
+});
+
+m.on("click", SAVED_CALAMITY_OUTLINE, (e) => {
+  const feat = e.features && e.features[0];
+  if (!feat) return;
+  setActiveCalamityFromFeature(feat);
+});
+
+// Optional: show pointer cursor on hover
+m.on("mouseenter", SAVED_CALAMITY_FILL, () => {
+  m.getCanvas().style.cursor = "pointer";
+});
+m.on("mouseleave", SAVED_CALAMITY_FILL, () => {
+  m.getCanvas().style.cursor = "";
+});
+m.on("mouseenter", SAVED_CALAMITY_OUTLINE, () => {
+  m.getCanvas().style.cursor = "pointer";
+});
+m.on("mouseleave", SAVED_CALAMITY_OUTLINE, () => {
+  m.getCanvas().style.cursor = "";
+});
+
 
         if (!hasDeepLinkedRef.current) {
           let focus = null;
@@ -2154,72 +3080,17 @@ const CalamityMap = () => {
         }
       });
 
-      // click handler for saved calamity circles
-      m.on("click", SAVED_CALAMITY_FILL, (e) => {
-        if (!e.features || !e.features.length) return;
-        const f = e.features[0];
-        const p = f.properties || {};
-        const center =
-          f.geometry?.type === "Polygon"
-            ? turf.centerOfMass(f).geometry.coordinates
-            : [Number(p.center_lng), Number(p.center_lat)];
-
-        const radiusM = p.radius_meters ? Number(p.radius_meters) : null;
-        const radiusKm = radiusM != null ? (radiusM / 1000).toFixed(2) : null;
-
-        // Make this saved calamity the “active” radius for damage computation
-        if (center && radiusM != null && Number.isFinite(radiusM)) {
-          setRadiusCenter(center);
-          setRadiusMeters(radiusM);
-        }
-
-        const started = p.started_at
-          ? new Date(p.started_at).toLocaleDateString()
-          : null;
-        const ended = p.ended_at
-          ? new Date(p.ended_at).toLocaleDateString()
-          : null;
-
-        new mapboxgl.Popup({ offset: 12 })
-          .setLngLat(center)
-          .setHTML(`
-          <div class="text-sm">
-            <h3 class="font-bold text-orange-600 text-base">${
-              p.name || "Calamity area"
-            }</h3>
-            ${p.type ? `<p><strong>Type:</strong> ${p.type}</p>` : ""}
-            ${
-              radiusKm
-                ? `<p><strong>Radius:</strong> ${radiusKm} km</p>`
-                : ""
-            }
-            ${
-              started || ended
-                ? `<p><strong>Period:</strong> ${
-                    started || "?"
-                  } ${ended ? `– ${ended}` : ""}</p>`
-                : ""
-            }
-            ${
-              p.description
-                ? `<p style="margin-top:4px;">${p.description}</p>`
-                : ""
-            }
-          </div>
-        `)
-          .addTo(map.current);
-      });
+     
     } else {
-      // style change branch
       map.current.setStyle(mapStyle);
       map.current.once("style.load", async () => {
-        // re-enable terrain each time style changes
         ensureTerrain();
 
         ensureUserAccuracyLayers();
         ensureBarangayLayers();
         ensureRadiusLayers();
         ensureSavedCalamityLayers();
+          ensureRadiusBandsLayers();
 
         if (userLoc) {
           updateUserAccuracyCircle(userLoc.lng, userLoc.lat, userLoc.acc);
@@ -2268,7 +3139,6 @@ const CalamityMap = () => {
         ensureDeepLinkSelection();
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     mapStyle,
     lockToBago,
@@ -2286,12 +3156,199 @@ const CalamityMap = () => {
     loadSavedCalamityRadii,
   ]);
 
-  // deep link once crops loaded
+   useEffect(() => {
+  if (!map.current) return;
+  if (!radiusCenter || !radiusMeters) return;
+
+  const m = map.current;
+  const canvas = m.getCanvas();
+  if (!canvas) return;
+
+  const handleCanvasClick = (evt) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = evt.clientX - rect.left;
+    const y = evt.clientY - rect.top;
+    const point = [x, y];
+
+    // Distance of click from calamity center
+    const lngLat = m.unproject(point);
+    const clickCoord = [lngLat.lng, lngLat.lat];
+
+    const dKm = turf.distance(radiusCenter, clickCoord, {
+      units: "kilometers",
+    });
+    const dMeters = dKm * 1000;
+
+    // Outside the radius → let Mapbox / Directions behave normally.
+    if (dMeters > radiusMeters) {
+      return;
+    }
+    // Inside the radius: we only care about crop polygons.
+    const features = m.queryRenderedFeatures(point, {
+      layers: ["crop-polygons-layer"],
+    });
+
+    // No crop polygon under click → swallow the click.
+    if (!features.length) {
+      evt.stopPropagation();
+      evt.preventDefault();
+      return;
+    }
+
+    const cropFeat = features[0];
+    const cropId = cropFeat.properties && cropFeat.properties.id;
+    if (!cropId) {
+      evt.stopPropagation();
+      evt.preventDefault();
+      return;
+    }
+
+    const cropData = sidebarCrops.find(
+      (c) => String(c.id) === String(cropId)
+    );
+
+    if (cropData && !isSoftDeletedCrop(cropData)) {
+      evt.stopPropagation();
+      evt.preventDefault();
+      setSelectedCrop(cropData);
+      highlightSelection(cropData);
+      setIsSidebarVisible(true);
+    } else {
+      evt.stopPropagation();
+      evt.preventDefault();
+    }
+  };
+
+  // capture phase so we run before Mapbox/Directions
+  canvas.addEventListener("click", handleCanvasClick, true);
+
+  return () => {
+    canvas.removeEventListener("click", handleCanvasClick, true);
+  };
+}, [
+  radiusCenter,
+  radiusMeters,
+  sidebarCrops,
+  highlightSelection,
+  setIsSidebarVisible,
+]);
+
+useEffect(() => {
+  if (!selectedCrop || !selectedCrop.id) {
+    setCalamityHistory([]);
+    return;
+  }
+
+  const fetchHistory = async () => {
+    try {
+      const res = await axios.get(
+        `http://localhost:5000/api/calamityradius/crop/${selectedCrop.id}/history`
+      );
+      setCalamityHistory(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch calamity history:", err);
+      setCalamityHistory([]);
+    }
+  };
+
+  fetchHistory();
+}, [selectedCrop]);
+
+useEffect(() => {
+  if (!map.current) return;
+  const m = map.current;
+
+  const handleMove = (e) => {
+    // No active radius → no tooltip
+    if (!radiusCenterRef.current || !radiusMetersRef.current) {
+      if (radiusHoverPopupRef.current) {
+        try {
+          radiusHoverPopupRef.current.remove();
+        } catch {}
+        radiusHoverPopupRef.current = null;
+      }
+      m.getCanvas().style.cursor = "";
+      return;
+    }
+
+    // Check what we are hovering – only care about the bands layer
+    const features = m.queryRenderedFeatures(e.point, {
+      layers: [RADIUS_BANDS_FILL],
+    });
+
+    if (!features.length) {
+      if (radiusHoverPopupRef.current) {
+        try {
+          radiusHoverPopupRef.current.remove();
+        } catch {}
+        radiusHoverPopupRef.current = null;
+      }
+      m.getCanvas().style.cursor = "";
+      return;
+    }
+
+    const band = features[0].properties?.band;
+    const meta = band && RADIUS_BAND_META[band];
+    if (!meta) return;
+
+    m.getCanvas().style.cursor = "pointer";
+
+    // Create popup if needed
+    if (!radiusHoverPopupRef.current) {
+      radiusHoverPopupRef.current = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 18,
+        className: "radius-band-hover-popup",
+      }).addTo(m);
+    }
+
+    const html = `
+      <div style="
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        font-size: 11px;
+      ">
+        <div style="font-weight:600;margin-bottom:2px;">${meta.label}</div>
+        <div style="color:#4b5563;">${meta.radiusRange}</div>
+        <div style="color:#b91c1c;font-weight:600;margin-top:2px;">
+          ≈ ${meta.damagePct}% estimated damage
+        </div>
+      </div>
+    `;
+
+    radiusHoverPopupRef.current.setLngLat(e.lngLat).setHTML(html);
+  };
+
+  const handleLeave = () => {
+    if (radiusHoverPopupRef.current) {
+      try {
+        radiusHoverPopupRef.current.remove();
+      } catch {}
+      radiusHoverPopupRef.current = null;
+    }
+    m.getCanvas().style.cursor = "";
+  };
+
+  m.on("mousemove", handleMove);
+  m.on("mouseleave", handleLeave);
+
+  return () => {
+    m.off("mousemove", handleMove);
+    m.off("mouseleave", handleLeave);
+    if (radiusHoverPopupRef.current) {
+      try {
+        radiusHoverPopupRef.current.remove();
+      } catch {}
+      radiusHoverPopupRef.current = null;
+    }
+  };
+}, []);
+
+
   useEffect(() => {
     if (!hasDeepLinkedRef.current) ensureDeepLinkSelection();
   }, [ensureDeepLinkSelection]);
 
-  // markers should follow crop + harvest + timeline filters
   useEffect(() => {
     if (!map.current) return;
     if (!areMarkersVisible) return;
@@ -2306,7 +3363,6 @@ const CalamityMap = () => {
     renderSavedMarkers,
   ]);
 
-  // lock toggle
   useEffect(() => {
     if (!map.current) return;
     if (lockToBago) {
@@ -2316,7 +3372,6 @@ const CalamityMap = () => {
     }
   }, [lockToBago]);
 
-  // filter polygons based on crop type + harvest + timeline
   useEffect(() => {
     const applyPolygonFilters = async () => {
       if (!map.current) return;
@@ -2350,7 +3405,6 @@ const CalamityMap = () => {
 
         await loadPolygons(filtered);
 
-        // make sure barangay lines + labels are present & on top
         ensureBarangayLayers();
       } catch (err) {
         console.error("Failed to filter polygons:", err);
@@ -2369,7 +3423,6 @@ const CalamityMap = () => {
     ensureBarangayLayers,
   ]);
 
-  // cleanup
   useEffect(() => {
     return () => {
       watchStopRef.current?.();
@@ -2407,7 +3460,6 @@ const CalamityMap = () => {
     };
   }, [clearSelection]);
 
-  // ------------- UI -------------
   return (
     <div className="relative h-full w-full">
       {/* GPS / toolbar */}
@@ -2579,6 +3631,50 @@ const CalamityMap = () => {
           )}
         </IconButton>
       </div>
+      {activeCalamityId && (
+  <div className="absolute top-4 right-4 z-50 max-w-xs rounded-xl bg-white/90 px-3 py-2 shadow-md border border-red-100">
+    <div className="flex items-start justify-between gap-2">
+      <div>
+        <p className="text-[11px] font-semibold text-red-700 uppercase tracking-wide">
+          Active calamity radius
+        </p>
+        <p className="text-[12px] font-semibold text-gray-900">
+          {activeCalamity?.name || "Unnamed calamity"}
+        </p>
+        <p className="text-[11px] text-gray-500">
+          {activeCalamity?.type && <span>{activeCalamity.type}</span>}
+          {activeCalamity?.type &&
+          (activeCalamity?.started_at || activeCalamity?.radius_meters)
+            ? " · "
+            : null}
+          {activeCalamity?.started_at && (
+            <span>
+              {new Date(activeCalamity.started_at).toLocaleDateString()}
+            </span>
+          )}
+          {activeCalamity?.radius_meters && (
+            <>
+              {" · "}
+              <span>
+                {(Number(activeCalamity.radius_meters) / 1000).toFixed(2)} km
+                radius
+              </span>
+            </>
+          )}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleDeleteActiveCalamity}
+        className="ml-2 text-[11px] font-semibold text-red-600 hover:text-red-700 hover:underline"
+      >
+        Delete
+      </button>
+    </div>
+  </div>
+)}
+
 
       {/* Map */}
       <div ref={mapContainer} className="h-full w-full" />
@@ -2628,87 +3724,152 @@ const CalamityMap = () => {
                 </p>
               )}
 
-              <div className="mt-2 space-y-1 text-[11px] text-gray-700">
-                <div className="flex justify-between">
-                  <span>Area</span>
-                  <span className="font-semibold">
-                    {primaryHectares != null
-                      ? `${formatNum(primaryHectares)} ha`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Volume</span>
-                  <span className="font-semibold">
-                    {primaryVolume != null
-                      ? `${formatNum(primaryVolume)} ${primaryUnit}`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Planted</span>
-                  <span className="font-semibold">
-                    {primaryPlantedDate
-                      ? new Date(primaryPlantedDate).toLocaleDateString()
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Harvest</span>
-                  <span className="font-semibold">
-                    {primaryHarvestOrEst
-                      ? new Date(primaryHarvestOrEst).toLocaleDateString()
-                      : "—"}
-                  </span>
-                </div>
+              <div className="mt-2 space-y-1 text-[11px] text-gray-700">               
               </div>
 
-              {/* calamity impact (damage estimate based on radius distance) */}
-              {selectedCropDamage && (
+            {/* --- CALAMITY IMPACT + DAMAGE DOC SECTION (clean UI) --- */}
+{selectedCropDamage && (
+  <div className="mt-3 rounded-lg border border-red-100 bg-red-50/70 px-3 py-2 space-y-2">
+    {/* Header: calamity name + pill with severity */}
+    <div className="flex items-start justify-between gap-2">
+      <div>
+        {(activeCalamity || calamityName || calamityType || calamityDate) && (
+          <>
+            <p className="text-[11px] font-semibold text-red-700">
+              {activeCalamity?.name || calamityName || "Calamity"}
+            </p>
+            <p className="text-[10px] text-gray-600">
+              {/* type */}
+              {activeCalamity?.type || calamityType ? (
+                <span>{activeCalamity?.type || calamityType}</span>
+              ) : (
+                <span className="italic text-gray-400">Type not set</span>
+              )}
+
+              {/* date */}
+              {(activeCalamity?.started_at || calamityDate) && (
                 <>
-                  <div className="mt-2 rounded-md bg-red-50 px-2 py-1 text-[11px] text-red-700 flex justify-between">
-                    <span>Calamity impact</span>
-                    <span className="font-semibold">
-                      {selectedCropDamage.severity} (
-                      {selectedCropDamage.percent}
-                      %)
-                    </span>
-                  </div>
-
-                  <div className="mt-2 space-y-1 text-[11px] text-gray-700">
-                    <div className="flex justify-between">
-                      <span>Est. damaged area</span>
-                      <span className="font-semibold">
-                        {selectedCropDamage.damagedAreaHa != null
-                          ? `${formatNum(
-                              selectedCropDamage.damagedAreaHa
-                            )} ha`
-                          : "—"}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span>Est. damaged volume</span>
-                      <span className="font-semibold">
-                        {selectedCropDamage.damagedVolume != null
-                          ? `${formatNum(
-                              selectedCropDamage.damagedVolume
-                            )} ${primaryUnit}`
-                          : "—"}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span>Est. loss value</span>
-                      <span className="font-semibold">
-                        {selectedCropDamage.lossValue != null
-                          ? formatCurrency(selectedCropDamage.lossValue)
-                          : "—"}
-                      </span>
-                    </div>
-                  </div>
+                  {" · "}
+                  <span>
+                    {new Date(
+                      activeCalamity?.started_at || calamityDate
+                    ).toLocaleDateString()}
+                  </span>
                 </>
               )}
+            </p>
+          </>
+        )}
+      </div>
+
+      <span className="inline-flex items-center rounded-full bg-white px-2 py-[2px] text-[11px] font-semibold text-red-700 shadow-sm">
+        {selectedCropDamage.severity} (
+        {Math.round(selectedCropDamage.percent)}%)
+      </span>
+    </div>
+
+    {/* Quick stats: area / volume / loss */}
+    <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-gray-700">
+      <div className="flex flex-col">
+        <span className="text-gray-500">Est. damaged area</span>
+        <span className="font-semibold">
+          {selectedCropDamage.damagedAreaHa != null
+            ? `${formatNum(selectedCropDamage.damagedAreaHa)} ha`
+            : "—"}
+        </span>
+      </div>
+
+      <div className="flex flex-col">
+        <span className="text-gray-500">Est. damaged volume</span>
+        <span className="font-semibold">
+          {selectedCropDamage.damagedVolume != null
+            ? `${formatNum(selectedCropDamage.damagedVolume)} ${primaryUnit}`
+            : "—"}
+        </span>
+      </div>
+
+      <div className="flex flex-col col-span-2">
+        <span className="text-gray-500">Est. loss value</span>
+        <span className="font-semibold text-gray-900">
+          {selectedCropDamage?.lossRange?.label || "—"}
+        </span>
+      </div>
+    </div>
+
+        {/* Damage documentation: upload + save in one neat block */}
+    <div className="mt-2 rounded-md bg-white/80 px-3 py-2 space-y-2">
+      <p className="text-[11px] font-semibold text-gray-800">
+        Damage documentation
+      </p>
+      <p className="text-[11px] text-gray-500">
+        Attach a field photo and save this assessment to the calamity report.
+      </p>
+
+      {!activeCalamityId && (
+        <p className="text-[10px] text-red-500">
+          Tip: click an orange calamity circle on the map first.
+        </p>
+      )}
+
+     {!activeCalamityId && (
+  <p className="text-[10px] text-red-500">
+    Tip: click an orange calamity circle on the map first.
+  </p>
+)}
+
+{isCropOutsideRadius && (
+  <p className="text-[10px] text-gray-500 mt-1">
+    This field is outside the active calamity radius.
+    Select a field inside the radius to attach damage documentation.
+  </p>
+)}
+
+{!isCropOutsideRadius && (
+  <div className="mt-1 flex gap-2">
+    {/* Upload photo button */}
+    <label
+      className={`flex-1 inline-flex items-center justify-center px-3 py-1.5 rounded-md text-[11px] font-semibold
+                  border border-emerald-600 text-emerald-700 hover:bg-emerald-50
+                  ${
+                    (!activeCalamityId || isUploadingDamagePhoto) &&
+                    "opacity-60 cursor-not-allowed"
+                  }`}
+    >
+      {isUploadingDamagePhoto ? "Uploading..." : "Upload photo"}
+      <input
+        type="file"
+        accept="image/*"
+        className="hidden"
+        disabled={!activeCalamityId || isUploadingDamagePhoto}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleDamagePhotoUpload(file);
+            e.target.value = "";
+          }
+        }}
+      />
+    </label>
+
+    {/* Save impact button */}
+    <button
+      type="button"
+      onClick={handleSaveDamageImpact}
+      disabled={!activeCalamityId || isSavingImpact}
+      className="px-3 py-1.5 rounded-md text-[11px] font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      {isSavingImpact ? "Saving..." : "Save impact"}
+    </button>
+  </div>
+)}
+
+
+      
+
+    </div>
+
+  </div>
+)}             
             </div>
 
             {/* past season */}
@@ -2773,7 +3934,7 @@ const CalamityMap = () => {
         </div>
       )}
 
-      {/* Calamity radius save card (separate component) */}
+      {/* Calamity radius save card */}
       <CalamityRadiusForm
         show={showCalamityForm}
         radiusCenter={radiusCenter}
@@ -2792,8 +3953,8 @@ const CalamityMap = () => {
 
       {/* Radius live label */}
       {radiusMeters != null && radiusCenter && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 rounded-full bg-white/90 px-3 py-1 shadow text-xs font-medium text-gray-700">
-          Radius: {(radiusMeters / 1000).toFixed(2)} km
+ <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 rounded-full bg-white/95 px-3 py-1 shadow text-[11px] text-gray-700 flex flex-col items-center"> 
+  Radius: {(radiusMeters / 1000).toFixed(2)} km
         </div>
       )}
 
@@ -2842,7 +4003,7 @@ const CalamityMap = () => {
         </div>
       )}
 
-      {/* Radius draw tool (red button) */}
+      {/* Radius draw tool */}
       {!isTagging && (
         <button
           onClick={() => {
@@ -2853,14 +4014,11 @@ const CalamityMap = () => {
             dragActiveRef.current = false;
 
             if (!next) {
-              // clear circle when turning off
               if (map.current && map.current.getSource(RADIUS_SRC)) {
-                map.current
-                  .getSource(RADIUS_SRC)
-                  .setData({
-                    type: "FeatureCollection",
-                    features: [],
-                  });
+                map.current.getSource(RADIUS_SRC).setData({
+                  type: "FeatureCollection",
+                  features: [],
+                });
               }
               setRadiusMeters(null);
               setRadiusCenter(null);
@@ -2947,42 +4105,50 @@ const CalamityMap = () => {
         }`}
       >
         {isSidebarVisible && (
-          <AdminSidebar
-            mapStyles={mapStyles}
-            setMapStyle={setMapStyle}
-            showLayers={showLayers}
-            setShowLayers={setShowLayers}
-            zoomToBarangay={zoomToBarangay}
-            onBarangaySelect={handleBarangaySelect}
-            selectedBarangay={selectedBarangay}
-            cropTypes={cropTypes}
-            selectedCropType={selectedCropType}
-            setSelectedCropType={setSelectedCropType}
-            crops={sidebarCrops}
-            selectedCrop={selectedCrop}
-            setEnlargedImage={setEnlargedImage}
-            visible={isSidebarVisible}
-            harvestFilter={harvestFilter}
-            setHarvestFilter={setHarvestFilter}
-            timelineMode={timelineMode}
-            setTimelineMode={setTimelineMode}
-            timelineFrom={timelineFrom}
-            setTimelineFrom={setTimelineFrom}
-            timelineTo={timelineTo}
-            setTimelineTo={setTimelineTo}
-            onStartNewSeason={openTagFormForExistingCrop}
-            onCropUpdated={(updated) => {
-              setSelectedCrop(updated);
-              setSidebarCrops((prev) =>
-                prev.map((c) => (c.id === updated.id ? updated : c))
-              );
-              if (isCropHarvested(updated)) {
-                setHarvestFilter("harvested");
-              }
-              renderSavedMarkers();
-            }}
-            cropHistory={selectedCropHistory}
-          />
+          <CalamityImpactSidebar
+  mapStyles={mapStyles}
+  setMapStyle={setMapStyle}
+  showLayers={showLayers}
+  setShowLayers={setShowLayers}
+  zoomToBarangay={zoomToBarangay}
+  onBarangaySelect={handleBarangaySelect}
+  selectedBarangay={selectedBarangay}
+  cropTypes={cropTypes}
+  selectedCropType={selectedCropType}
+  setSelectedCropType={setSelectedCropType}
+  crops={sidebarCrops}
+  selectedCrop={selectedCrop}
+  setEnlargedImage={setEnlargedImage}
+  visible={isSidebarVisible}
+  harvestFilter={harvestFilter}
+  setHarvestFilter={setHarvestFilter}
+  timelineMode={timelineMode}
+  setTimelineMode={setTimelineMode}
+  timelineFrom={timelineFrom}
+  setTimelineFrom={setTimelineFrom}
+  timelineTo={timelineTo}
+  setTimelineTo={setTimelineTo}
+  onStartNewSeason={openTagFormForExistingCrop}
+  cropHistory={selectedCropHistory}       
+  calamityHistory={calamityHistory}
+  selectedCropDamage={selectedCropDamage}
+  activeCalamityId={activeCalamityId}
+  onResolveCalamityImpact={handleResolveCalamityImpact}  
+  resolvingImpact={resolvingImpact}     
+  activeImpactRecord={activeImpactRecord}
+activeImpactIsResolved={activeImpactIsResolved}                 
+  onCropUpdated={(updated) => {
+    setSelectedCrop(updated);
+    setSidebarCrops((prev) =>
+      prev.map((c) => (c.id === updated.id ? updated : c))
+    );
+    if (isCropHarvested(updated)) {
+      setHarvestFilter("harvested");
+    }
+    renderSavedMarkers();
+  }}
+/>
+
         )}
       </div>
 
