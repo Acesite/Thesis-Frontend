@@ -1,4 +1,4 @@
-// pages/SuperAdminManageCalamity.jsx
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AOS from "aos";
@@ -30,6 +30,7 @@ const SORT_OPTIONS = [
 const nf2 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const fmtNum = (v) =>
   v === null || v === undefined || v === "" ? "N/A" : nf2.format(Number(v));
+
 const fmtDate = (date) => {
   if (!date) return "N/A";
   const t = new Date(date);
@@ -40,6 +41,12 @@ const fmtDate = (date) => {
         month: "long",
         day: "numeric",
       });
+};
+
+const fmtDateTimeOrNA = (date) => {
+  if (!date) return "N/A";
+  const t = new Date(date);
+  return isNaN(t.getTime()) ? "N/A" : t.toLocaleString();
 };
 
 /* ---------- datetime-local helpers ---------- */
@@ -80,10 +87,70 @@ const severityBadge = (sevText) => {
     High: "bg-red-100 text-red-800 border border-red-200",
     Severe: "bg-red-200 text-red-900 border border-red-300",
   };
-  return (
-    map[sevText || ""] || "bg-gray-100 text-gray-800 border border-gray-200"
-  );
+  return map[sevText || ""] || "bg-gray-100 text-gray-800 border border-gray-200";
 };
+
+/* ---------- NEW: DAMAGE RECORDS CONFIG + FORMATTERS ---------- */
+/**
+ * Set this endpoint to your real backend route that returns the agricultural
+ * calamity impact/damage records (joined with calamity name + crop name if possible).
+ */
+const IMPACTS_API =
+  "http://localhost:5000/api/managecalamities/impact-records";
+
+const nf0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+const nfCurrency = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "PHP",
+  maximumFractionDigits: 0,
+});
+
+const fmtMeters = (v) =>
+  v === null || v === undefined || v === "" ? "N/A" : `${nf0.format(Number(v))} m`;
+
+const fmtPct = (v) => {
+  if (v === null || v === undefined || v === "") return "N/A";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "N/A";
+  const pct = n <= 1 ? n * 100 : n; // supports 0–1 fraction or 0–100
+  return `${pct.toFixed(1)}%`;
+};
+
+const fmtCurrencyPHP = (v) => {
+  if (v === null || v === undefined || v === "") return "N/A";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "N/A";
+  return nfCurrency.format(n);
+};
+
+const toSeverityNumAny = (sevTextOrNum) => {
+  const s = String(sevTextOrNum ?? "").toLowerCase();
+  if (s === "severe") return 6;
+  if (s === "high") return 5;
+  if (s === "moderate") return 3;
+  if (s === "low") return 1;
+  const n = Number(sevTextOrNum);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const severityTextFromAny = (sev) => {
+  const s = String(sev ?? "").toLowerCase();
+  if (["low", "moderate", "high", "severe"].includes(s)) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  const n = Number(sev);
+  if (!Number.isFinite(n)) return "N/A";
+  if (n >= 6) return "Severe";
+  if (n >= 5) return "High";
+  if (n >= 3) return "Moderate";
+  if (n >= 1) return "Low";
+  return "N/A";
+};
+
+const resolveStatusPill = (isResolved) =>
+  isResolved
+    ? "bg-blue-50 text-blue-800 border border-blue-200"
+    : "bg-emerald-50 text-emerald-800 border border-emerald-200";
 
 /* ---------- SMALL UI PRIMS ---------- */
 const Chip = ({ active, children, onClick }) => (
@@ -108,6 +175,15 @@ const Stat = ({ label, value }) => (
   </div>
 );
 
+const DetailKV = ({ label, value }) => (
+  <div>
+    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      {label}
+    </div>
+    <div className="text-[14px] text-slate-900 break-words">{value ?? "N/A"}</div>
+  </div>
+);
+
 function NoteClamp({ text, className = "" }) {
   const [expanded, setExpanded] = useState(false);
   if (!text || !text.toString().trim()) return null;
@@ -118,9 +194,7 @@ function NoteClamp({ text, className = "" }) {
         Description
       </div>
       <p
-        className={`text-[14px] text-slate-700 ${
-          expanded ? "" : "line-clamp-3"
-        }`}
+        className={`text-[14px] text-slate-700 ${expanded ? "" : "line-clamp-3"}`}
         style={
           !expanded
             ? {
@@ -209,9 +283,7 @@ const SkeletonCard = () => (
 const EmptyState = ({ onClear }) => (
   <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-8 sm:p-10 text-center">
     <h4 className="text-lg font-semibold text-slate-900">No incidents found</h4>
-    <p className="mt-1 text-slate-600">
-      Try adjusting the filters or your search.
-    </p>
+    <p className="mt-1 text-slate-600">Try adjusting the filters or your search.</p>
     <button
       onClick={onClear}
       className="mt-4 inline-flex items-center px-3 py-2 rounded-md border border-slate-300 hover:bg-slate-50"
@@ -259,6 +331,12 @@ const SuperAdminManageCalamity = () => {
   // sidebar collapsed state from SuperAdminNav
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
+  // --------- NEW: agricultural damage records ---------
+  const [impactRows, setImpactRows] = useState([]);
+  const [impactLoading, setImpactLoading] = useState(true);
+  const [impactSort, setImpactSort] = useState("severity_desc"); // severity_desc | severity_asc | recent_desc | recent_asc
+  const [expandedImpactIds, setExpandedImpactIds] = useState(() => new Set());
+
   // Close kebab on outside click / Escape
   const pageRef = useRef(null);
   useEffect(() => {
@@ -279,6 +357,19 @@ const SuperAdminManageCalamity = () => {
       document.removeEventListener("keydown", onEsc);
     };
   }, [activeActionId]);
+
+  const fetchImpactRows = async () => {
+    try {
+      setImpactLoading(true);
+      const res = await axios.get(IMPACTS_API);
+      setImpactRows(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      console.error("Error fetching impact records:", e);
+      setImpactRows([]);
+    } finally {
+      setImpactLoading(false);
+    }
+  };
 
   useEffect(() => {
     AOS.init({ duration: 400, once: true });
@@ -319,14 +410,15 @@ const SuperAdminManageCalamity = () => {
         setEcosystems(Array.isArray(eco.data) ? eco.data : []);
       } catch {}
     })();
+
+    // NEW: load agricultural damage records
+    fetchImpactRows();
   }, []);
 
   const fetchIncidents = async () => {
     try {
       setIsLoading(true);
-      const res = await axios.get(
-        "http://localhost:5000/api/managecalamities"
-      );
+      const res = await axios.get("http://localhost:5000/api/managecalamities");
       setIncidents(res.data || []);
     } catch (e) {
       console.error("Error fetching incidents:", e);
@@ -476,9 +568,7 @@ const SuperAdminManageCalamity = () => {
 
     try {
       const { data } = await axios.get(
-        `http://localhost:5000/api/managecalamities/${String(
-          latest.id
-        )}/farmers`
+        `http://localhost:5000/api/managecalamities/${String(latest.id)}/farmers`
       );
       const arr = Array.isArray(data) ? data : [];
       const f0 = arr[0] || null;
@@ -617,9 +707,7 @@ const SuperAdminManageCalamity = () => {
       await axios.delete(
         `http://localhost:5000/api/managecalamities/${pendingDelete.id}`
       );
-      setIncidents((prev) =>
-        prev.filter((c) => c.id !== pendingDelete.id)
-      );
+      setIncidents((prev) => prev.filter((c) => c.id !== pendingDelete.id));
       setPendingDelete(null);
       alert("Incident deleted successfully!");
     } catch (err) {
@@ -628,12 +716,104 @@ const SuperAdminManageCalamity = () => {
     }
   };
 
+  /* ---------- NEW: Damage Records filter/sort + expand ---------- */
+  const impactFiltered = useMemo(() => {
+    if (!search.trim()) return impactRows;
+    const q = search.toLowerCase();
+
+    return impactRows.filter((r) => {
+      const calamityName =
+        r.calamity_name ||
+        r.calamity ||
+        r.name ||
+        r.calamity_type ||
+        r.incident_type ||
+        "";
+      const cropName =
+        r.crop_name || r.crop_type_name || r.variety_name || r.crop || r.crop_id || "";
+
+      return [calamityName, cropName, r.severity, r.level, r.base_unit]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+    });
+  }, [impactRows, search]);
+
+  const impactSorted = useMemo(() => {
+    const arr = [...impactFiltered];
+    const toTime = (d) => {
+      if (!d) return null;
+      const t = new Date(d).getTime();
+      return Number.isNaN(t) ? null : t;
+    };
+
+    switch (impactSort) {
+      case "recent_asc":
+        arr.sort(
+          (a, b) =>
+            (toTime(a.created_at || a.updated_at) ?? Infinity) -
+            (toTime(b.created_at || b.updated_at) ?? Infinity)
+        );
+        break;
+      case "recent_desc":
+        arr.sort(
+          (a, b) =>
+            (toTime(b.created_at || b.updated_at) ?? -Infinity) -
+            (toTime(a.created_at || a.updated_at) ?? -Infinity)
+        );
+        break;
+      case "severity_asc":
+        arr.sort((a, b) => toSeverityNumAny(a.severity) - toSeverityNumAny(b.severity));
+        break;
+      case "severity_desc":
+      default:
+        arr.sort((a, b) => toSeverityNumAny(b.severity) - toSeverityNumAny(a.severity));
+        break;
+    }
+    return arr;
+  }, [impactFiltered, impactSort]);
+
+  const toggleImpactRow = (id) => {
+    setExpandedImpactIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const impactCalamityName = (r) =>
+    r.calamity_name ||
+    r.calamity ||
+    r.name ||
+    r.calamity_type ||
+    r.incident_type ||
+    "N/A";
+
+  const impactCropName = (r) =>
+    r.crop_name ||
+    r.crop_type_name ||
+    r.variety_name ||
+    r.crop ||
+    (r.crop_id != null ? `Crop #${r.crop_id}` : "N/A");
+
+  const impactResolved = (r) =>
+    r.is_resolved === 1 ||
+    r.is_resolved === true ||
+    String(r.status || "").toLowerCase() === "resolved" ||
+    !!r.resolved_at;
+
+  const severityDotColor = (sevText) => {
+    const s = String(sevText || "").toLowerCase();
+    if (s === "low") return "#10b981";
+    if (s === "moderate") return "#f59e0b";
+    if (s === "high") return "#ef4444";
+    if (s === "severe") return "#b91c1c";
+    return "#94a3b8";
+  };
+
   /* ---------- RENDER ---------- */
   return (
-    <div
-      ref={pageRef}
-      className="flex flex-col min-h-screen bg-white font-poppins"
-    >
+    <div ref={pageRef} className="flex flex-col min-h-screen bg-white font-poppins">
       <SuperAdminNav onCollapsedChange={setSidebarCollapsed} />
 
       <main
@@ -660,6 +840,7 @@ const SuperAdminManageCalamity = () => {
                 <Chip active={!selectedType} onClick={() => setSelectedType(null)}>
                   All
                 </Chip>
+
                 {incidentTypes.length > 0
                   ? incidentTypes.map((t, idx) => (
                       <Chip
@@ -667,9 +848,7 @@ const SuperAdminManageCalamity = () => {
                         active={selectedType === (t.name || t.id)}
                         onClick={() =>
                           setSelectedType(
-                            selectedType === (t.name || t.id)
-                              ? null
-                              : t.name || t.id
+                            selectedType === (t.name || t.id) ? null : t.name || t.id
                           )
                         }
                       >
@@ -680,9 +859,7 @@ const SuperAdminManageCalamity = () => {
                       <Chip
                         key={`${k}-${idx}`}
                         active={selectedType === k}
-                        onClick={() =>
-                          setSelectedType(selectedType === k ? null : k)
-                        }
+                        onClick={() => setSelectedType(selectedType === k ? null : k)}
                       >
                         {k}
                       </Chip>
@@ -707,8 +884,8 @@ const SuperAdminManageCalamity = () => {
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Search by term…"
                       className="h-10 w-[min(18rem,80vw)] sm:w-72 rounded-full border border-slate-300 bg-slate-50 pl-10 pr-4 text-sm
-                                 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
-                                 focus:ring-2 focus:ring-emerald-500/70"
+                                placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none
+                                focus:ring-2 focus:ring-emerald-500/70"
                     />
                   </div>
                 </div>
@@ -716,19 +893,268 @@ const SuperAdminManageCalamity = () => {
             </div>
           </div>
 
+           {/* ---------- NEW SECTION: AGRICULTURAL DAMAGE RECORDS (TABLE + EXPAND) ---------- */}
+          <div className="mb-8 rounded-2xl border border-slate-200 bg-white overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h2 className="text-[18px] sm:text-[20px] font-semibold text-slate-900">
+                  Agricultural Damage Records
+                </h2>
+                <p className="text-sm text-slate-600">
+                  Clear overview with expandable technical and damage details.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold tracking-wide text-slate-500 uppercase">
+                  Sort
+                </span>
+                <select
+                  value={impactSort}
+                  onChange={(e) => setImpactSort(e.target.value)}
+                  className="h-9 rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                >
+                  <option value="severity_desc">Severity: High → Low</option>
+                  <option value="severity_asc">Severity: Low → High</option>
+                  <option value="recent_desc">Most recent</option>
+                  <option value="recent_asc">Oldest</option>
+                </select>
+
+                <button
+                  onClick={fetchImpactRows}
+                  className="h-9 px-3 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
+                  title="Refresh"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-[1150px] w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr className="text-left">
+                    <th className="px-4 sm:px-6 py-3 w-10"></th>
+                    <th className="px-4 py-3">Calamity Name</th>
+                    <th className="px-4 py-3">Severity</th>
+                    <th className="px-4 py-3">Level</th>
+                    <th className="px-4 py-3">Distance (m)</th>
+                    <th className="px-4 py-3">Crop</th>
+                    <th className="px-4 py-3">Damage (%)</th>
+                    <th className="px-4 py-3">Damaged Area (ha)</th>
+                    <th className="px-4 py-3">Loss Value (PHP)</th>
+                    <th className="px-4 py-3">Status</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {impactLoading ? (
+                    Array.from({ length: 6 }).map((_, idx) => (
+                      <tr key={`impact-skel-${idx}`} className="animate-pulse">
+                        <td className="px-4 sm:px-6 py-3">
+                          <div className="h-4 w-4 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-36 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-24 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-16 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-20 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-28 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-16 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-20 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-28 bg-slate-200 rounded" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="h-4 w-20 bg-slate-200 rounded" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : impactSorted.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="px-4 sm:px-6 py-8 text-center">
+                        <div className="text-slate-900 font-semibold">
+                          No damage records found
+                        </div>
+                        <div className="text-slate-600 text-sm mt-1">
+                          If your API is not returning data, update <code>IMPACTS_API</code>.
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    impactSorted.map((r, idx) => {
+                      const id = r.id ?? `${idx}`;
+                      const isOpen = expandedImpactIds.has(id);
+                      const sevText = severityTextFromAny(r.severity);
+                      const resolved = impactResolved(r);
+
+                      return (
+                        <React.Fragment key={`impact-${id}`}>
+                          <tr className="hover:bg-slate-50">
+                            <td className="px-4 sm:px-6 py-3">
+                              <button
+                                onClick={() => toggleImpactRow(id)}
+                                className="h-8 w-8 grid place-items-center rounded-md border border-slate-200 hover:bg-white"
+                                aria-label={isOpen ? "Collapse row" : "Expand row"}
+                                title={isOpen ? "Collapse" : "Expand"}
+                              >
+                                <span className="text-slate-700">{isOpen ? "−" : "+"}</span>
+                              </button>
+                            </td>
+
+                            <td className="px-4 py-3 font-medium text-slate-900">
+                              {impactCalamityName(r)}
+                            </td>
+
+                            <td className="px-4 py-3">
+                              <div className="inline-flex items-center gap-2">
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full"
+                                  style={{ backgroundColor: severityDotColor(sevText) }}
+                                />
+                                <span
+                                  className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(
+                                    sevText === "N/A" ? "" : sevText
+                                  )}`}
+                                >
+                                  {sevText}
+                                </span>
+                              </div>
+                            </td>
+
+                            <td className="px-4 py-3 text-slate-800">{fmtStr(r.level)}</td>
+
+                            <td className="px-4 py-3 text-slate-800">
+                              {fmtMeters(r.distance_meters)}
+                            </td>
+
+                            <td className="px-4 py-3 text-slate-800">{impactCropName(r)}</td>
+
+                            <td className="px-4 py-3 text-slate-800">
+                              {fmtPct(r.damage_fraction)}
+                            </td>
+
+                            <td className="px-4 py-3 text-slate-800">
+                              {fmtHa(r.damaged_area_ha)}
+                            </td>
+
+                            <td className="px-4 py-3 text-slate-800">
+                              {fmtCurrencyPHP(r.loss_value_php)}
+                            </td>
+
+                            <td className="px-4 py-3">
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-xs ${resolveStatusPill(
+                                  resolved
+                                )}`}
+                              >
+                                {resolved ? "Resolved" : "Ongoing"}
+                              </span>
+                            </td>
+                          </tr>
+
+                          {isOpen && (
+                            <tr className="bg-white">
+                              <td colSpan={10} className="px-4 sm:px-6 py-4">
+                                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                        Detail view
+                                      </div>
+                                      <div className="text-sm text-slate-700">
+                                        Full technical + damage fields (for auditing and analysis).
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() => toggleImpactRow(id)}
+                                      className="text-sm text-emerald-700 hover:underline"
+                                    >
+                                      Collapse
+                                    </button>
+                                  </div>
+
+                                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                                    <DetailKV label="id" value={fmtStr(r.id)} />
+                                    <DetailKV label="calamity_id" value={fmtStr(r.calamity_id)} />
+                                    <DetailKV label="crop_id" value={fmtStr(r.crop_id)} />
+                                    <DetailKV label="severity" value={fmtStr(r.severity)} />
+                                    <DetailKV label="level" value={fmtStr(r.level)} />
+                                    <DetailKV
+                                      label="distance_meters"
+                                      value={fmtMeters(r.distance_meters)}
+                                    />
+                                    <DetailKV
+                                      label="damage_fraction"
+                                      value={fmtPct(r.damage_fraction)}
+                                    />
+                                    <DetailKV
+                                      label="damaged_area_ha"
+                                      value={fmtHa(r.damaged_area_ha)}
+                                    />
+                                    <DetailKV
+                                      label="damaged_volume"
+                                      value={
+                                        r.damaged_volume == null ? "N/A" : `${fmtNum(r.damaged_volume)}`
+                                      }
+                                    />
+                                    <DetailKV
+                                      label="loss_value_php"
+                                      value={fmtCurrencyPHP(r.loss_value_php)}
+                                    />
+                                    <DetailKV label="base_area_ha" value={fmtHa(r.base_area_ha)} />
+                                    <DetailKV
+                                      label="base_volume"
+                                      value={r.base_volume == null ? "N/A" : `${fmtNum(r.base_volume)}`
+                                      }
+                                    />
+                                    <DetailKV label="base_unit" value={fmtStr(r.base_unit)} />
+                                    <DetailKV label="is_resolved" value={resolved ? "true" : "false"} />
+                                    <DetailKV label="resolved_at" value={fmtDateTimeOrNA(r.resolved_at)} />
+                                    <DetailKV label="resolved_by" value={fmtStr(r.resolved_by)} />
+                                    <DetailKV label="created_at" value={fmtDateTimeOrNA(r.created_at)} />
+                                    <DetailKV label="updated_at" value={fmtDateTimeOrNA(r.updated_at)} />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {!impactLoading && impactSorted.length > 0 && (
+              <div className="px-4 sm:px-6 py-3 border-t border-slate-200 text-sm text-slate-600">
+                Showing <span className="font-medium">{impactSorted.length}</span> record(s)
+              </div>
+            )}
+          </div>
+
           {/* Grid of cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {isLoading ? (
-              Array.from({ length: pageSize }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))
+              Array.from({ length: pageSize }).map((_, i) => <SkeletonCard key={i} />)
             ) : pageItems.length > 0 ? (
               pageItems.map((inc) => {
                 const type =
-                  inc.calamity_type ||
-                  inc.incident_type ||
-                  inc.type_name ||
-                  "Others";
+                  inc.calamity_type || inc.incident_type || inc.type_name || "Others";
                 const color = colorByIncident[type] || "#16a34a";
                 const hasCoords = inc.latitude && inc.longitude;
 
@@ -751,11 +1177,7 @@ const SuperAdminManageCalamity = () => {
 
                       <div className="flex items-center gap-2 shrink-0">
                         {inc.status && (
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs ${statusBadge(
-                              inc.status
-                            )}`}
-                          >
+                          <span className={`px-2.5 py-1 rounded-full text-xs ${statusBadge(inc.status)}`}>
                             {inc.status}
                           </span>
                         )}
@@ -774,18 +1196,10 @@ const SuperAdminManageCalamity = () => {
                             data-kebab-trigger="true"
                             aria-label="More actions"
                             aria-expanded={activeActionId === inc.id}
-                            onClick={() =>
-                              setActiveActionId((id) =>
-                                id === inc.id ? null : inc.id
-                              )
-                            }
+                            onClick={() => setActiveActionId((id) => (id === inc.id ? null : inc.id))}
                             className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
                           >
-                            <svg
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                              className="h-5 w-5"
-                            >
+                            <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
                               <circle cx="5" cy="10" r="1.6" />
                               <circle cx="10" cy="10" r="1.6" />
                               <circle cx="15" cy="10" r="1.6" />
@@ -822,45 +1236,21 @@ const SuperAdminManageCalamity = () => {
                     </div>
 
                     <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
-                      <Stat
-                        label="Reported"
-                        value={fmtDate(
-                          inc.date_reported || inc.reported_at
-                        )}
-                      />
-                      <Stat
-                        label="Location (Barangay)"
-                        value={fmtStr(inc.location || inc.barangay)}
-                      />
-                      <Stat
-                        label="Affected Area"
-                        value={fmtHa(inc.affected_area)}
-                      />
-                      <Stat
-                        label="Crop Stage"
-                        value={fmtStr(inc.crop_stage)}
-                      />
+                      <Stat label="Reported" value={fmtDate(inc.date_reported || inc.reported_at)} />
+                      <Stat label="Location (Barangay)" value={fmtStr(inc.location || inc.barangay)} />
+                      <Stat label="Affected Area" value={fmtHa(inc.affected_area)} />
+                      <Stat label="Crop Stage" value={fmtStr(inc.crop_stage)} />
                       <Stat
                         label="Crop Type"
-                        value={
-                          inc.crop_type_name ||
-                          inc.crop_type ||
-                          inc.crop_type_id
-                        }
+                        value={inc.crop_type_name || inc.crop_type || inc.crop_type_id}
                       />
                       <Stat
                         label="Ecosystem"
-                        value={
-                          inc.ecosystem_name ||
-                          inc.ecosystem ||
-                          inc.ecosystem_id
-                        }
+                        value={inc.ecosystem_name || inc.ecosystem || inc.ecosystem_id}
                       />
                       <Stat
                         label="Variety"
-                        value={
-                          inc.variety_name || inc.variety || inc.crop_variety_id
-                        }
+                        value={inc.variety_name || inc.variety || inc.crop_variety_id}
                       />
                       <Stat
                         label="Map"
@@ -873,8 +1263,7 @@ const SuperAdminManageCalamity = () => {
                                   state: {
                                     incidentId: String(inc.id),
                                     incidentType: type,
-                                    barangay:
-                                      inc.barangay || inc.location || "",
+                                    barangay: inc.barangay || inc.location || "",
                                     lat: Number(inc.latitude),
                                     lng: Number(inc.longitude),
                                     zoom: 16,
@@ -892,17 +1281,12 @@ const SuperAdminManageCalamity = () => {
                       />
                     </div>
 
-                    <NoteClamp
-                      text={inc.description || inc.note}
-                      className="mt-3"
-                    />
+                    <NoteClamp text={inc.description || inc.note} className="mt-3" />
 
                     <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100">
                       <div className="text-[12px] text-slate-500">
                         Status:&nbsp;
-                        <span className="text-slate-700">
-                          {inc.status || "Pending"}
-                        </span>
+                        <span className="text-slate-700">{inc.status || "Pending"}</span>
                       </div>
 
                       <button
@@ -929,13 +1313,8 @@ const SuperAdminManageCalamity = () => {
             <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="text-sm text-slate-600">
                 Showing{" "}
-                <span className="font-medium">
-                  {total === 0 ? 0 : start + 1}
-                </span>
-                –
-                <span className="font-medium">
-                  {Math.min(start + pageSize, total)}
-                </span>{" "}
+                <span className="font-medium">{total === 0 ? 0 : start + 1}</span>–
+                <span className="font-medium">{Math.min(start + pageSize, total)}</span>{" "}
                 of <span className="font-medium">{total}</span>
               </div>
 
@@ -953,18 +1332,12 @@ const SuperAdminManageCalamity = () => {
                 </select>
 
                 <div className="inline-flex items-center gap-1">
-                  <PageBtn
-                    disabled={page === 1}
-                    onClick={() => setPage(1)}
-                    aria="First"
-                  >
+                  <PageBtn disabled={page === 1} onClick={() => setPage(1)} aria="First">
                     «
                   </PageBtn>
                   <PageBtn
                     disabled={page === 1}
-                    onClick={() =>
-                      setPage((p) => Math.max(1, p - 1))
-                    }
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
                     aria="Previous"
                   >
                     ‹
@@ -974,18 +1347,12 @@ const SuperAdminManageCalamity = () => {
                   </span>
                   <PageBtn
                     disabled={page === totalPages}
-                    onClick={() =>
-                      setPage((p) => Math.min(totalPages, p + 1))
-                    }
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     aria="Next"
                   >
                     ›
                   </PageBtn>
-                  <PageBtn
-                    disabled={page === totalPages}
-                    onClick={() => setPage(totalPages)}
-                    aria="Last"
-                  >
+                  <PageBtn disabled={page === totalPages} onClick={() => setPage(totalPages)} aria="Last">
                     »
                   </PageBtn>
                 </div>
@@ -1001,9 +1368,7 @@ const SuperAdminManageCalamity = () => {
           <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
             <div className="sticky top-0 flex items-center justify-between border-b px-4 sm:px-5 py-3 bg-white">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Edit Incident Details
-                </h3>
+                <h3 className="text-lg font-semibold text-slate-900">Edit Incident Details</h3>
                 <p className="text-xs text-slate-600">
                   Provide clear details so responders can act quickly.
                 </p>
@@ -1019,19 +1384,14 @@ const SuperAdminManageCalamity = () => {
 
             <div className="max-h-[78vh] overflow-auto px-4 sm:px-5 py-5 space-y-6">
               <section>
-                <h4 className="text-sm font-semibold text-slate-900">
-                  Incident details
-                </h4>
+                <h4 className="text-sm font-semibold text-slate-900">Incident details</h4>
                 <p className="mt-0.5 text-[11px] text-slate-500">
                   Basic information about the calamity.
                 </p>
 
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <label
-                      htmlFor="incident_type"
-                      className="text-xs font-medium text-slate-700"
-                    >
+                    <label htmlFor="incident_type" className="text-xs font-medium text-slate-700">
                       Calamity Type <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -1045,10 +1405,7 @@ const SuperAdminManageCalamity = () => {
                   </div>
 
                   <div>
-                    <label
-                      htmlFor="barangay"
-                      className="text-xs font-medium text-slate-700"
-                    >
+                    <label htmlFor="barangay" className="text-xs font-medium text-slate-700">
                       Barangay <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -1062,12 +1419,8 @@ const SuperAdminManageCalamity = () => {
                   </div>
 
                   <div>
-                    <label
-                      htmlFor="crop_stage"
-                      className="text-xs font-medium text-slate-700"
-                    >
-                      Crop Development Stage{" "}
-                      <span className="text-red-500">*</span>
+                    <label htmlFor="crop_stage" className="text-xs font-medium text-slate-700">
+                      Crop Development Stage <span className="text-red-500">*</span>
                     </label>
                     <select
                       id="crop_stage"
@@ -1086,10 +1439,7 @@ const SuperAdminManageCalamity = () => {
                   </div>
 
                   <div>
-                    <label
-                      htmlFor="status"
-                      className="text-xs font-medium text-slate-700"
-                    >
+                    <label htmlFor="status" className="text-xs font-medium text-slate-700">
                       Status <span className="text-red-500">*</span>
                     </label>
                     <select
@@ -1108,10 +1458,7 @@ const SuperAdminManageCalamity = () => {
                   </div>
 
                   <div>
-                    <label
-                      htmlFor="severity_text"
-                      className="text-xs font-medium text-slate-700"
-                    >
+                    <label htmlFor="severity_text" className="text-xs font-medium text-slate-700">
                       Severity <span className="text-red-500">*</span>
                     </label>
                     <select
@@ -1127,18 +1474,12 @@ const SuperAdminManageCalamity = () => {
                       <option value="High">High</option>
                       <option value="Severe">Severe</option>
                     </select>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      How intense is the incident?
-                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">How intense is the incident?</p>
                   </div>
 
                   <div>
-                    <label
-                      htmlFor="reported_at_input"
-                      className="text-xs font-medium text-slate-700"
-                    >
-                      Reported at{" "}
-                      <span className="text-red-500">*</span>
+                    <label htmlFor="reported_at_input" className="text-xs font-medium text-slate-700">
+                      Reported at <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="reported_at_input"
@@ -1151,10 +1492,7 @@ const SuperAdminManageCalamity = () => {
                   </div>
 
                   <div className="md:col-span-2">
-                    <label
-                      htmlFor="note"
-                      className="text-xs font-medium text-slate-700"
-                    >
+                    <label htmlFor="note" className="text-xs font-medium text-slate-700">
                       Description <span className="text-red-500">*</span>
                     </label>
                     <textarea
@@ -1183,9 +1521,7 @@ const SuperAdminManageCalamity = () => {
                     {editFarmer && (
                       <button
                         type="button"
-                        onClick={() =>
-                          setIsEditingFarmer((v) => !v)
-                        }
+                        onClick={() => setIsEditingFarmer((v) => !v)}
                         className="text-[12px] text-emerald-700 hover:underline"
                       >
                         {isEditingFarmer ? "Cancel" : "Edit"}
@@ -1194,109 +1530,71 @@ const SuperAdminManageCalamity = () => {
                   </div>
 
                   {!editFarmer ? (
-                    <div className="mt-2 text-sm text-slate-600">
-                      No linked farmer or still loading…
-                    </div>
+                    <div className="mt-2 text-sm text-slate-600">No linked farmer or still loading…</div>
                   ) : !isEditingFarmer ? (
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
                       <Stat
                         label="Name"
                         value={
                           editFarmer.full_name ||
-                          [editFarmer.first_name, editFarmer.last_name]
-                            .filter(Boolean)
-                            .join(" ") ||
+                          [editFarmer.first_name, editFarmer.last_name].filter(Boolean).join(" ") ||
                           "N/A"
                         }
                       />
-                      <Stat
-                        label="Mobile"
-                        value={editFarmer.mobile_number || "N/A"}
-                      />
-                      <Stat
-                        label="Barangay"
-                        value={editFarmer.barangay || "N/A"}
-                      />
-                      <Stat
-                        label="Full Address"
-                        value={editFarmer.full_address || "N/A"}
-                      />
+                      <Stat label="Mobile" value={editFarmer.mobile_number || "N/A"} />
+                      <Stat label="Barangay" value={editFarmer.barangay || "N/A"} />
+                      <Stat label="Full Address" value={editFarmer.full_address || "N/A"} />
                     </div>
                   ) : (
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <label className="text-xs font-medium text-slate-700">
-                          First name
-                        </label>
+                        <label className="text-xs font-medium text-slate-700">First name</label>
                         <input
                           className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                           value={editFarmerDraft?.first_name || ""}
                           onChange={(e) =>
-                            setEditFarmerDraft((p) => ({
-                              ...p,
-                              first_name: e.target.value,
-                            }))
+                            setEditFarmerDraft((p) => ({ ...p, first_name: e.target.value }))
                           }
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-slate-700">
-                          Last name
-                        </label>
+                        <label className="text-xs font-medium text-slate-700">Last name</label>
                         <input
                           className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                           value={editFarmerDraft?.last_name || ""}
                           onChange={(e) =>
-                            setEditFarmerDraft((p) => ({
-                              ...p,
-                              last_name: e.target.value,
-                            }))
+                            setEditFarmerDraft((p) => ({ ...p, last_name: e.target.value }))
                           }
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-slate-700">
-                          Mobile
-                        </label>
+                        <label className="text-xs font-medium text-slate-700">Mobile</label>
                         <input
                           className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                           value={editFarmerDraft?.mobile_number || ""}
                           onChange={(e) =>
-                            setEditFarmerDraft((p) => ({
-                              ...p,
-                              mobile_number: e.target.value,
-                            }))
+                            setEditFarmerDraft((p) => ({ ...p, mobile_number: e.target.value }))
                           }
                           placeholder="09xxxxxxxxx"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-slate-700">
-                          Barangay
-                        </label>
+                        <label className="text-xs font-medium text-slate-700">Barangay</label>
                         <input
                           className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                           value={editFarmerDraft?.barangay || ""}
                           onChange={(e) =>
-                            setEditFarmerDraft((p) => ({
-                              ...p,
-                              barangay: e.target.value,
-                            }))
+                            setEditFarmerDraft((p) => ({ ...p, barangay: e.target.value }))
                           }
                         />
                       </div>
                       <div className="md:col-span-2">
-                        <label className="text-xs font-medium text-slate-700">
-                          Full address
-                        </label>
+                        <label className="text-xs font-medium text-slate-700">Full address</label>
                         <input
                           className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                           value={editFarmerDraft?.full_address || ""}
                           onChange={(e) =>
-                            setEditFarmerDraft((p) => ({
-                              ...p,
-                              full_address: e.target.value,
-                            }))
+                            setEditFarmerDraft((p) => ({ ...p, full_address: e.target.value }))
                           }
                         />
                       </div>
@@ -1309,15 +1607,11 @@ const SuperAdminManageCalamity = () => {
                             setEditFarmerDraft(
                               editFarmer
                                 ? {
-                                    first_name:
-                                      editFarmer.first_name || "",
-                                    last_name:
-                                      editFarmer.last_name || "",
-                                    mobile_number:
-                                      editFarmer.mobile_number || "",
+                                    first_name: editFarmer.first_name || "",
+                                    last_name: editFarmer.last_name || "",
+                                    mobile_number: editFarmer.mobile_number || "",
                                     barangay: editFarmer.barangay || "",
-                                    full_address:
-                                      editFarmer.full_address || "",
+                                    full_address: editFarmer.full_address || "",
                                   }
                                 : null
                             );
@@ -1340,9 +1634,7 @@ const SuperAdminManageCalamity = () => {
               </section>
 
               <section>
-                <h4 className="text-sm font-semibold text-slate-900">
-                  Crop &amp; ecosystem
-                </h4>
+                <h4 className="text-sm font-semibold text-slate-900">Crop &amp; ecosystem</h4>
                 <p className="mt-0.5 text-[11px] text-slate-500">
                   These fields tailor recommendations and analysis.
                 </p>
@@ -1365,9 +1657,7 @@ const SuperAdminManageCalamity = () => {
                         </option>
                       ))}
                     </select>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Primary crop affected.
-                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">Primary crop affected.</p>
                   </div>
 
                   <div>
@@ -1378,13 +1668,9 @@ const SuperAdminManageCalamity = () => {
                       name="ecosystem_id"
                       value={editForm.ecosystem_id ?? ""}
                       onChange={handleEditChange}
-                      disabled={
-                        !editForm.crop_type_id ||
-                        filteredEcosystems.length === 0
-                      }
+                      disabled={!editForm.crop_type_id || filteredEcosystems.length === 0}
                       className={`mt-1 h-10 w-full rounded-md border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 ${
-                        !editForm.crop_type_id ||
-                        filteredEcosystems.length === 0
+                        !editForm.crop_type_id || filteredEcosystems.length === 0
                           ? "border-slate-200 bg-slate-50 text-slate-400"
                           : "border-slate-300"
                       }`}
@@ -1404,26 +1690,18 @@ const SuperAdminManageCalamity = () => {
                         </>
                       )}
                     </select>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Pick after crop type.
-                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">Pick after crop type.</p>
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="text-xs font-medium text-slate-700">
-                      Variety
-                    </label>
+                    <label className="text-xs font-medium text-slate-700">Variety</label>
                     <select
                       name="crop_variety_id"
                       value={editForm.crop_variety_id ?? ""}
                       onChange={handleEditChange}
-                      disabled={
-                        !editForm.crop_type_id ||
-                        filteredVarieties.length === 0
-                      }
+                      disabled={!editForm.crop_type_id || filteredVarieties.length === 0}
                       className={`mt-1 h-10 w-full rounded-md border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600 ${
-                        !editForm.crop_type_id ||
-                        filteredVarieties.length === 0
+                        !editForm.crop_type_id || filteredVarieties.length === 0
                           ? "border-slate-200 bg-slate-50 text-slate-400"
                           : "border-slate-300"
                       }`}
@@ -1466,6 +1744,7 @@ const SuperAdminManageCalamity = () => {
         </div>
       )}
 
+      {/* VIEW MODAL (kept from your original flow) */}
       {viewingIncident && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
           <div className="bg-white p-5 sm:p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl relative">
@@ -1476,18 +1755,11 @@ const SuperAdminManageCalamity = () => {
                     viewingIncident.incident_type ||
                     viewingIncident.type_name ||
                     "Incident"}
-                  {viewingIncident.status
-                    ? ` · ${viewingIncident.status}`
-                    : ""}
+                  {viewingIncident.status ? ` · ${viewingIncident.status}` : ""}
                 </h3>
                 <p className="text-sm text-slate-500">
-                  {viewingIncident.location ||
-                    viewingIncident.barangay ||
-                    "—"}{" "}
-                  ·{" "}
-                  {viewingIncident.severity_level ||
-                    viewingIncident.severity_text ||
-                    "—"}
+                  {viewingIncident.location || viewingIncident.barangay || "—"} ·{" "}
+                  {viewingIncident.severity_level || viewingIncident.severity_text || "—"}
                 </p>
               </div>
               <button
@@ -1503,55 +1775,29 @@ const SuperAdminManageCalamity = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
               <Stat
                 label="Reported"
-                value={fmtDate(
-                  viewingIncident.date_reported ||
-                    viewingIncident.reported_at
-                )}
+                value={fmtDate(viewingIncident.date_reported || viewingIncident.reported_at)}
               />
-              <Stat
-                label="Affected Area"
-                value={fmtHa(viewingIncident.affected_area)}
-              />
-              <Stat
-                label="Crop Stage"
-                value={fmtStr(viewingIncident.crop_stage)}
-              />
+              <Stat label="Affected Area" value={fmtHa(viewingIncident.affected_area)} />
+              <Stat label="Crop Stage" value={fmtStr(viewingIncident.crop_stage)} />
               <Stat
                 label="Crop Type"
-                value={fmtStr(
-                  viewingIncident.crop_type_name ||
-                    viewingIncident.crop_type_id
-                )}
+                value={fmtStr(viewingIncident.crop_type_name || viewingIncident.crop_type_id)}
               />
               <Stat
                 label="Ecosystem"
-                value={fmtStr(
-                  viewingIncident.ecosystem_name ||
-                    viewingIncident.ecosystem_id
-                )}
+                value={fmtStr(viewingIncident.ecosystem_name || viewingIncident.ecosystem_id)}
               />
               <Stat
                 label="Variety"
-                value={fmtStr(
-                  viewingIncident.variety_name ||
-                    viewingIncident.crop_variety_id
-                )}
+                value={fmtStr(viewingIncident.variety_name || viewingIncident.crop_variety_id)}
               />
               <Stat
                 label="Latitude"
-                value={
-                  viewingIncident.latitude
-                    ? fmtNum(viewingIncident.latitude)
-                    : "N/A"
-                }
+                value={viewingIncident.latitude ? fmtNum(viewingIncident.latitude) : "N/A"}
               />
               <Stat
                 label="Longitude"
-                value={
-                  viewingIncident.longitude
-                    ? fmtNum(viewingIncident.longitude)
-                    : "N/A"
-                }
+                value={viewingIncident.longitude ? fmtNum(viewingIncident.longitude) : "N/A"}
               />
             </div>
 
@@ -1559,9 +1805,7 @@ const SuperAdminManageCalamity = () => {
 
             {(viewingIncident.description || viewingIncident.note) && (
               <div className="mt-4">
-                <div className="text-[11px] uppercase tracking-wide text-slate-500">
-                  Description
-                </div>
+                <div className="text-[11px] uppercase tracking-wide text-slate-500">Description</div>
                 <p className="text-[14px] text-slate-700 whitespace-pre-wrap">
                   {viewingIncident.description || viewingIncident.note}
                 </p>
@@ -1580,11 +1824,11 @@ const SuperAdminManageCalamity = () => {
         </div>
       )}
 
+      {/* FARMERS MODAL */}
       {farmersModal &&
         (() => {
           const inc = farmersModal.incident || {};
-          const type =
-            inc.calamity_type || inc.incident_type || inc.type_name || "Incident";
+          const type = inc.calamity_type || inc.incident_type || inc.type_name || "Incident";
           const locationText = inc.location || inc.barangay || "—";
 
           const KV = ({ label, value, className = "" }) => (
@@ -1592,9 +1836,7 @@ const SuperAdminManageCalamity = () => {
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 {label}
               </div>
-              <div className="text-[14px] text-slate-900">
-                {value ?? "N/A"}
-              </div>
+              <div className="text-[14px] text-slate-900">{value ?? "N/A"}</div>
             </div>
           );
 
@@ -1625,35 +1867,22 @@ const SuperAdminManageCalamity = () => {
                   </div>
 
                   {farmersModal.loading ? (
-                    <div className="text-sm text-slate-600">
-                      Loading farmer details…
-                    </div>
+                    <div className="text-sm text-slate-600">Loading farmer details…</div>
                   ) : (farmersModal.farmers || []).length === 0 ? (
-                    <div className="text-sm text-slate-600">
-                      No linked farmers for this incident.
-                    </div>
+                    <div className="text-sm text-slate-600">No linked farmers for this incident.</div>
                   ) : (
                     (() => {
                       const f = farmersModal.farmers[0] || {};
                       const fullName =
                         f.full_name ||
-                        [f.first_name, f.last_name]
-                          .filter(Boolean)
-                          .join(" ")
-                          .trim() ||
+                        [f.first_name, f.last_name].filter(Boolean).join(" ").trim() ||
                         "N/A";
                       return (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
                           <KV label="Name" value={fullName} />
-                          <KV
-                            label="Mobile"
-                            value={f.mobile_number || f.contact_no || "N/A"}
-                          />
+                          <KV label="Mobile" value={f.mobile_number || f.contact_no || "N/A"} />
                           <KV label="Barangay" value={f.barangay || "N/A"} />
-                          <KV
-                            label="Full Address"
-                            value={f.full_address || f.address || "N/A"}
-                          />
+                          <KV label="Full Address" value={f.full_address || f.address || "N/A"} />
                         </div>
                       );
                     })()
@@ -1663,42 +1892,21 @@ const SuperAdminManageCalamity = () => {
                 <div className="mt-5 mb-3 h-px bg-slate-200" />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                  <KV
-                    label="Reported"
-                    value={fmtDate(inc.date_reported || inc.reported_at)}
-                  />
-                  <KV
-                    label="Severity"
-                    value={inc.severity_level || inc.severity_text || "N/A"}
-                  />
+                  <KV label="Reported" value={fmtDate(inc.date_reported || inc.reported_at)} />
+                  <KV label="Severity" value={inc.severity_level || inc.severity_text || "N/A"} />
                   <KV label="Status" value={inc.status || "Pending"} />
                   <KV
                     label="Affected Area"
-                    value={
-                      inc.affected_area
-                        ? `${Number(inc.affected_area).toFixed(2)} ha`
-                        : "N/A"
-                    }
+                    value={inc.affected_area ? `${Number(inc.affected_area).toFixed(2)} ha` : "N/A"}
                   />
-                  <KV
-                    label="Crop Type"
-                    value={inc.crop_type_name || inc.crop_type_id || "N/A"}
-                  />
-                  <KV
-                    label="Ecosystem"
-                    value={inc.ecosystem_name || inc.ecosystem_id || "N/A"}
-                  />
-                  <KV
-                    label="Variety"
-                    value={inc.variety_name || inc.crop_variety_id || "N/A"}
-                  />
+                  <KV label="Crop Type" value={inc.crop_type_name || inc.crop_type_id || "N/A"} />
+                  <KV label="Ecosystem" value={inc.ecosystem_name || inc.ecosystem_id || "N/A"} />
+                  <KV label="Variety" value={inc.variety_name || inc.crop_variety_id || "N/A"} />
                   <KV
                     label="Coordinates"
                     value={
                       inc.latitude != null && inc.longitude != null
-                        ? `${Number(inc.latitude).toFixed(
-                            5
-                          )}, ${Number(inc.longitude).toFixed(5)}`
+                        ? `${Number(inc.latitude).toFixed(5)}, ${Number(inc.longitude).toFixed(5)}`
                         : "N/A"
                     }
                   />
@@ -1761,10 +1969,13 @@ function renderPhotoStrip(item) {
     if (!raw) return;
     let p = String(raw).trim();
     if (!p) return;
+
+    // allow comma-separated list
     if (p.includes(",") && !p.startsWith("[") && !p.startsWith("{")) {
       p.split(",").forEach((part) => push(part));
       return;
     }
+
     if (!/^https?:\/\//i.test(p)) {
       const base = "http://localhost:5000";
       p = p.startsWith("/") ? `${base}${p}` : `${base}/${p}`;
@@ -1786,13 +1997,7 @@ function renderPhotoStrip(item) {
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {photos.map((url, idx) => (
-          <a
-            key={idx}
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="shrink-0"
-          >
+          <a key={idx} href={url} target="_blank" rel="noreferrer" className="shrink-0">
             <img
               src={url}
               alt={`evidence-${idx}`}
@@ -1806,3 +2011,4 @@ function renderPhotoStrip(item) {
 }
 
 export default SuperAdminManageCalamity;
+

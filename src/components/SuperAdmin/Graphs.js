@@ -1,6 +1,7 @@
 // components/SuperAdmin/Graphs.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import * as XLSX from "xlsx";
 import {
   BarChart,
   Bar,
@@ -93,12 +94,28 @@ const MONTHS_SHORT = [
   "Dec",
 ];
 
-const getCropType = (c) => (c.crop_name || c.crop_type || "Unknown").trim() || "Unknown";
+const getCropType = (c) =>
+  (c.crop_name || c.crop_type || "Unknown").trim() || "Unknown";
+
+// Variety + Area helpers (safe)
+const getVarietyName = (c) =>
+  (c.variety_name ||
+    c.variety ||
+    c.crop_variety ||
+    c.varietyName ||
+    c.variety_type ||
+    "Unknown")
+    .toString()
+    .trim() || "Unknown";
+
+const getAreaHa = (c) =>
+  toNum(c.area_ha ?? c.estimated_hectares ?? c.hectares ?? c.area ?? 0);
 
 // Location defaults (AgriGIS context). If your DB has these fields, it uses them.
 // NOTE: No GPS coordinates are exported.
 const getRegion = (c) => (c.region || c.region_name || "VI").trim();
-const getProvince = (c) => (c.province || c.province_name || "Negros Occidental").trim();
+const getProvince = (c) =>
+  (c.province || c.province_name || "Negros Occidental").trim();
 const getMunicipality = (c) =>
   (c.municipality || c.city || c.municipality_name || "Bago City").trim();
 
@@ -129,7 +146,78 @@ const getEstimatedHarvestDate = (c) => {
 const formatHarvest = (d) =>
   d ? `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}` : "";
 
-export default function Graphs() {
+/* ---------------- NEW: Period-specific Crop Report Export (CSV + XLSX) ---------------- */
+/**
+ * Output requirements supported:
+ * - 3 distinct files (Quarterly / Yearly / Annual)
+ * - Each file downloadable as CSV and XLSX
+ * - Consistent column names across all files
+ * - Aggregation:
+ *   Quarterly: Year + Quarter
+ *   Yearly: Year (year totals)
+ *   Annual: Year (consolidated summary per year; same grouping as Yearly but separate file)
+ * - Included fields:
+ *   Crop, Variety, Total Area (ha) SUM(area_ha), Number of Records COUNT(*),
+ *   Top Variety (by total area) per Crop+Period, Top Variety Area (ha)
+ */
+const REPORT_COLUMNS = [
+  "Year",
+  "Quarter",
+  "Crop",
+  "Variety",
+  "Total Area (ha)",
+  "Number of Records",
+  "Top Variety",
+  "Top Variety Area (ha)",
+];
+
+const safeNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const quarterOfDate = (d) => Math.floor(d.getMonth() / 3) + 1;
+
+const downloadCSV = (rows, filename) => {
+  if (!rows?.length) return;
+
+  const header = REPORT_COLUMNS;
+
+  const csv = [header, ...rows.map((r) => header.map((h) => r[h] ?? ""))]
+    .map((row) =>
+      row.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")
+    )
+    .join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+const downloadXLSX = (rows, filename) => {
+  if (!rows?.length) return;
+
+  const ordered = rows.map((r) => {
+    const o = {};
+    REPORT_COLUMNS.forEach((c) => (o[c] = r[c] ?? ""));
+    return o;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(ordered, { header: REPORT_COLUMNS });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Report");
+
+  // Optional: widen columns a bit
+  ws["!cols"] = REPORT_COLUMNS.map((c) => ({
+    wch: Math.max(14, c.length + 2),
+  }));
+
+  XLSX.writeFile(wb, filename);
+};
+
+function Graphs() {
   /* ---------- Page/scroll stability so footer doesn't jump ---------- */
   useEffect(() => {
     const root = document.documentElement;
@@ -176,10 +264,8 @@ export default function Graphs() {
   // sidebar collapsed state for SuperAdminNav
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  /* ---------- NEW: Crops Report Period ---------- */
-  // Quarterly = Q1-Q4 in a selected year (or latest year if "All")
-  // Yearly    = month-by-month in a selected year (or latest year if "All")
-  // Annually  = year-by-year across all years in filtered data
+  /* ---------- Crops Report Period ---------- */
+  // This remains for on-screen chart/table only; exports are now separate buttons/files.
   const [reportPeriod, setReportPeriod] = useState("quarterly"); // 'quarterly' | 'yearly' | 'annually'
 
   /* ---------- Options ---------- */
@@ -217,10 +303,7 @@ export default function Graphs() {
         getBarangayName(c) !== selectedBarangay
       )
         return false;
-      if (
-        selectedCrop !== "all" &&
-        (c.crop_name || "").trim() !== selectedCrop
-      )
+      if (selectedCrop !== "all" && getCropType(c) !== selectedCrop)
         return false;
 
       const d = getPlantedDate(c);
@@ -240,7 +323,7 @@ export default function Graphs() {
     let totalHa = 0;
     for (const c of filtered) {
       const bg = getBarangayName(c);
-      const ha = parseFloat(c.estimated_hectares || 0) || 0;
+      const ha = getAreaHa(c);
       totalHa += ha;
       const rec = map.get(bg) || { barangay: bg, crops: 0, hectares: 0 };
       rec.crops += 1;
@@ -263,7 +346,7 @@ export default function Graphs() {
     const cropCount = {};
     const barangayCount = {};
     for (const c of filtered) {
-      const cn = c.crop_name || "Unknown";
+      const cn = getCropType(c);
       const bg = getBarangayName(c);
       cropCount[cn] = (cropCount[cn] || 0) + 1;
       barangayCount[bg] = (barangayCount[bg] || 0) + 1;
@@ -278,9 +361,8 @@ export default function Graphs() {
   const chartData = useMemo(() => {
     const map = new Map();
     for (const c of filtered) {
-      const key = c.crop_name || "Unknown";
-      const val =
-        metric === "area" ? parseFloat(c.estimated_hectares || 0) || 0 : 1;
+      const key = getCropType(c);
+      const val = metric === "area" ? getAreaHa(c) : 1;
       map.set(key, (map.get(key) || 0) + val);
     }
     return Array.from(map.entries())
@@ -288,40 +370,104 @@ export default function Graphs() {
       .sort((a, b) => b.total - a.total);
   }, [filtered, metric]);
 
-  /* ---------- CROPS REPORT (Quarterly / Yearly / Annually) ---------- */
+  /* ---------- Visual — Top 5–10 Varieties ---------- */
+  const TOP_VARIETY_LIMIT = 10;
+
+  const topVarietiesData = useMemo(() => {
+    const map = new Map(); // variety -> { variety, area, count }
+
+    for (const c of filtered) {
+      const variety = getVarietyName(c);
+      if (!variety || variety === "Unknown") continue;
+
+      const area = getAreaHa(c);
+      const rec = map.get(variety) || { variety, area: 0, count: 0 };
+      rec.area += area;
+      rec.count += 1;
+      map.set(variety, rec);
+    }
+
+    const rows = Array.from(map.values());
+
+    rows.sort((a, b) => {
+      const av = metric === "area" ? a.area : a.count;
+      const bv = metric === "area" ? b.area : b.count;
+      return bv - av;
+    });
+
+    return rows.slice(0, TOP_VARIETY_LIMIT).map((r) => ({
+      variety: r.variety,
+      value: metric === "area" ? r.area : r.count,
+      area: r.area,
+      count: r.count,
+    }));
+  }, [filtered, metric]);
+
+  /* ---------- Table — Crop → Top Variety Summary ---------- */
+  const cropTopVarietyTable = useMemo(() => {
+    const cropMap = new Map(); // crop -> summary
+
+    for (const c of filtered) {
+      const crop = getCropType(c);
+      const area = getAreaHa(c);
+      const variety = getVarietyName(c);
+
+      const rec =
+        cropMap.get(crop) || {
+          crop,
+          totalArea: 0,
+          records: 0,
+          varietyArea: new Map(), // variety -> totalArea
+        };
+
+      rec.totalArea += area;
+      rec.records += 1;
+
+      if (variety && variety !== "Unknown") {
+        rec.varietyArea.set(
+          variety,
+          (rec.varietyArea.get(variety) || 0) + area
+        );
+      }
+
+      cropMap.set(crop, rec);
+    }
+
+    const rows = Array.from(cropMap.values()).map((r) => {
+      let topVariety = "—";
+      let topVarietyArea = 0;
+
+      if (r.varietyArea.size) {
+        const best = Array.from(r.varietyArea.entries()).sort(
+          (a, b) => b[1] - a[1]
+        )[0];
+        topVariety = best?.[0] ?? "—";
+        topVarietyArea = best?.[1] ?? 0;
+      }
+
+      return {
+        crop: r.crop,
+        totalArea: r.totalArea,
+        records: r.records,
+        topVariety,
+        topVarietyArea,
+      };
+    });
+
+    rows.sort((a, b) => b.totalArea - a.totalArea);
+    return rows;
+  }, [filtered]);
+
+  /* ---------- On-screen report (existing) ---------- */
   const activeReportYear = useMemo(() => {
     if (selectedYear !== "all") return Number(selectedYear);
     const latest = years.find((y) => y !== "all");
     return Number(latest || new Date().getFullYear());
   }, [selectedYear, years]);
 
-  const reportTypeLabel = useMemo(() => {
-    if (reportPeriod === "quarterly") return "Quarterly";
-    if (reportPeriod === "yearly") return "Yearly";
-    return "Annual"; // reportPeriod === "annually"
-  }, [reportPeriod]);
-
-  const periodCoveredLabel = useMemo(() => {
-    if (reportPeriod === "annually") {
-      const ys = [];
-      for (const c of filtered) {
-        const d = getPlantedDate(c);
-        if (d) ys.push(d.getFullYear());
-      }
-      if (!ys.length) return "—";
-      const minY = Math.min(...ys);
-      const maxY = Math.max(...ys);
-      return minY === maxY ? `Year ${minY}` : `${minY}–${maxY}`;
-    }
-    return `Year ${activeReportYear}`;
-  }, [filtered, reportPeriod, activeReportYear]);
-
-  // Chart/table: summarized by period only (clean and readable in UI)
   const cropReportData = useMemo(() => {
-    const getVal = (c) =>
-      metric === "area" ? toNum(c.estimated_hectares ?? 0) : 1;
+    const getVal = (c) => (metric === "area" ? getAreaHa(c) : 1);
 
-    // Annually (year-by-year)
     if (reportPeriod === "annually") {
       const map = new Map(); // year -> total
       for (const c of filtered) {
@@ -339,7 +485,6 @@ export default function Graphs() {
         }));
     }
 
-    // Quarterly (Q1-Q4 in active year)
     if (reportPeriod === "quarterly") {
       const buckets = [
         { key: `Q1-${activeReportYear}`, label: `Q1 ${activeReportYear}`, total: 0 },
@@ -359,11 +504,9 @@ export default function Graphs() {
         const b = idx.get(key);
         if (b) b.total += getVal(c);
       }
-
       return buckets;
     }
 
-    // Yearly (month-by-month in active year)
     const buckets = MONTHS_SHORT.map((m, i) => ({
       key: `${activeReportYear}-${pad2(i + 1)}`,
       label: `${m} ${activeReportYear}`,
@@ -379,169 +522,8 @@ export default function Graphs() {
       const b = idx.get(key);
       if (b) b.total += getVal(c);
     }
-
     return buckets;
   }, [filtered, metric, reportPeriod, activeReportYear]);
-
-  // CSV: aggregated rows (time + crop + location), NOT raw records
-  const cropReportCsvRows = useMemo(() => {
-    const group = new Map();
-
-    const quarterOf = (d) => Math.floor(d.getMonth() / 3) + 1;
-    const monthRangeLabel = (q) => {
-      if (q === 1) return "Jan–Mar";
-      if (q === 2) return "Apr–Jun";
-      if (q === 3) return "Jul–Sep";
-      return "Oct–Dec";
-    };
-
-    const includeThisRecord = (planted) => {
-      if (!planted) return false;
-      if (reportPeriod === "annually") return true;
-      return planted.getFullYear() === activeReportYear;
-    };
-
-    const periodKeyOf = (d) => {
-      const y = d.getFullYear();
-      if (reportPeriod === "annually") return String(y);
-      if (reportPeriod === "quarterly") return `${y}-Q${quarterOf(d)}`;
-      return `${y}-${pad2(d.getMonth() + 1)}`; // yearly (monthly)
-    };
-
-    const periodLabelOf = (d) => {
-      const y = d.getFullYear();
-      if (reportPeriod === "annually") return String(y);
-      if (reportPeriod === "quarterly") return `Q${quarterOf(d)} ${y}`;
-      return `${MONTHS_SHORT[d.getMonth()]} ${y}`;
-    };
-
-    for (const c of filtered) {
-      const planted = getPlantedDate(c);
-      if (!includeThisRecord(planted)) continue;
-
-      const periodKey = periodKeyOf(planted);
-      const periodLabel = periodLabelOf(planted);
-
-      const cropType = getCropType(c);
-      const barangay = getBarangayName(c);
-
-      const region = getRegion(c);
-      const province = getProvince(c);
-      const municipality = getMunicipality(c);
-
-      const areaHa = toNum(c.estimated_hectares ?? c.area_ha ?? c.hectares ?? 0);
-      const expectedYield = getExpectedYield(c);
-
-      const harvestDate = getEstimatedHarvestDate(c);
-
-      // Grouped summary: period + crop + barangay (clean, useful, non-raw)
-      const key = `${periodKey}||${cropType}||${barangay}`;
-
-      const rec =
-        group.get(key) || {
-          Report_Type: reportTypeLabel,
-          Period_Covered: periodCoveredLabel,
-          Date_Generated: "",
-
-          Period_Key: periodKey,
-          Period_Label: periodLabel,
-          Year: planted.getFullYear(),
-
-          Quarter: reportPeriod === "quarterly" ? `Q${quarterOf(planted)}` : "",
-          Month_Range: reportPeriod === "quarterly" ? monthRangeLabel(quarterOf(planted)) : "",
-
-          Crop_Type: cropType,
-
-          Region: region, // optional
-          Province: province,
-          Municipality: municipality,
-          Barangay: barangay,
-
-          Total_Plantings: 0,
-          Total_Area_Planted_ha: 0,
-          Total_Expected_Yield: 0,
-
-          Estimated_Harvest: "",
-
-          Percentage_Contribution: "",
-          Rank: "",
-
-          _harvestMin: null,
-          _harvestMax: null,
-        };
-
-      rec.Total_Plantings += 1;
-      rec.Total_Area_Planted_ha += areaHa;
-      rec.Total_Expected_Yield += expectedYield;
-
-      if (harvestDate) {
-        rec._harvestMin = rec._harvestMin
-          ? new Date(Math.min(rec._harvestMin.getTime(), harvestDate.getTime()))
-          : harvestDate;
-        rec._harvestMax = rec._harvestMax
-          ? new Date(Math.max(rec._harvestMax.getTime(), harvestDate.getTime()))
-          : harvestDate;
-      }
-
-      group.set(key, rec);
-    }
-
-    const rows = Array.from(group.values());
-
-    // Finalize Estimated_Harvest as a range (if available)
-    for (const r of rows) {
-      if (r._harvestMin && r._harvestMax) {
-        const a = formatHarvest(r._harvestMin);
-        const b = formatHarvest(r._harvestMax);
-        r.Estimated_Harvest = a === b ? a : `${a} – ${b}`;
-      } else {
-        r.Estimated_Harvest = "";
-      }
-      delete r._harvestMin;
-      delete r._harvestMax;
-    }
-
-    // Optional: Rank + Percentage Contribution per Period
-    // Ranking basis:
-    // - If metric === area -> rank by Total_Area_Planted_ha
-    // - Else rank by Total_Plantings
-    const rankField =
-      metric === "area" ? "Total_Area_Planted_ha" : "Total_Plantings";
-
-    const byPeriod = new Map();
-    for (const r of rows) {
-      const p = r.Period_Key;
-      const arr = byPeriod.get(p) || [];
-      arr.push(r);
-      byPeriod.set(p, arr);
-    }
-
-    for (const [p, arr] of byPeriod.entries()) {
-      const total = arr.reduce((s, r) => s + toNum(r[rankField]), 0) || 0;
-
-      arr.sort((a, b) => toNum(b[rankField]) - toNum(a[rankField]));
-      arr.forEach((r, i) => {
-        r.Rank = i + 1;
-        r.Percentage_Contribution =
-          total > 0 ? ((toNum(r[rankField]) / total) * 100).toFixed(2) : "0.00";
-      });
-    }
-
-    // Sort output for a clean CSV (Period, then Rank)
-    rows.sort((a, b) => {
-      if (a.Period_Key !== b.Period_Key) return a.Period_Key.localeCompare(b.Period_Key);
-      return (Number(a.Rank) || 0) - (Number(b.Rank) || 0);
-    });
-
-    return rows;
-  }, [
-    filtered,
-    reportTypeLabel,
-    periodCoveredLabel,
-    reportPeriod,
-    activeReportYear,
-    metric,
-  ]);
 
   /* ---------- Calamity calls ---------- */
   useEffect(() => {
@@ -595,16 +577,22 @@ export default function Graphs() {
   }, [calSummary, selectedCalamityType]);
 
   const monthsOfYear = (y) =>
-    Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
+    Array.from({ length: 12 }, (_, i) =>
+      `${y}-${String(i + 1).padStart(2, "0")}`
+    );
+
   const last12Months = () => {
     const out = [];
     const d = new Date();
     for (let i = 11; i >= 0; i--) {
       const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
-      out.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+      out.push(
+        `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`
+      );
     }
     return out;
   };
+
   const calamityTimelineFilled = useMemo(() => {
     const idx = new Map((calTimeline || []).map((r) => [String(r.month), r]));
     const months =
@@ -659,82 +647,148 @@ export default function Graphs() {
     URL.revokeObjectURL(url);
   };
 
-  // CSV export for crops report (clean summarized + time + crop + location)
-  const exportCropReportCSV = () => {
-    if (!cropReportCsvRows.length) return;
+  /* ---------- NEW: Build period-specific report rows ---------- */
+  const buildReportRows = (periodType) => {
+    // Group by: Period + Crop + Variety
+    const group = new Map(); // key: periodKey||crop||variety -> agg
+    // For Top Variety: Period + Crop -> Map(variety -> area)
+    const topMap = new Map(); // key: periodKey||crop -> Map
 
-    const dateGenerated = new Date().toISOString();
+    for (const c of filtered) {
+      const d = getPlantedDate(c);
+      if (!d) continue;
 
-    // Required columns (clean + analyzable; no GPS; no personal data)
-    const header = [
-      "Report_Type",
-      "Period_Covered",
-      "Date_Generated",
+      const year = d.getFullYear();
+      const quarter = `Q${quarterOfDate(d)}`;
 
-      "Year",
-      "Quarter",
-      "Month_Range",
-      "Period_Label",
+      let periodKey = "";
+      let outQuarter = "";
 
-      "Crop_Type",
+      if (periodType === "quarterly") {
+        periodKey = `${year}-${quarter}`;
+        outQuarter = quarter;
+      } else {
+        // Yearly and Annual are both per year (separate files; same grouping)
+        periodKey = `${year}`;
+        outQuarter = "";
+      }
 
-      "Region",
-      "Province",
-      "Municipality",
-      "Barangay",
+      const crop = getCropType(c);
+      const variety = getVarietyName(c);
+      const area = safeNum(getAreaHa(c));
 
-      "Total_Plantings",
-      "Total_Area_Planted_ha",
-      "Total_Expected_Yield",
-      "Estimated_Harvest",
+      const key = `${periodKey}||${crop}||${variety}`;
 
-      "Percentage_Contribution",
-      "Rank",
-    ];
+      const rec =
+        group.get(key) || {
+          Year: year,
+          Quarter: outQuarter,
+          Crop: crop,
+          Variety: variety,
+          "Total Area (ha)": 0,
+          "Number of Records": 0,
+          "Top Variety": "",
+          "Top Variety Area (ha)": 0,
+        };
 
-    const rows = cropReportCsvRows.map((r) => {
-      const out = {
-        ...r,
-        Date_Generated: dateGenerated,
+      rec["Total Area (ha)"] += area;
+      rec["Number of Records"] += 1;
+      group.set(key, rec);
+
+      const topKey = `${periodKey}||${crop}`;
+      const vm = topMap.get(topKey) || new Map();
+      vm.set(variety, (vm.get(variety) || 0) + area);
+      topMap.set(topKey, vm);
+    }
+
+    // Compute top variety for each Period+Crop
+    const topByPeriodCrop = new Map(); // key -> {variety, area}
+    for (const [k, vm] of topMap.entries()) {
+      let bestVar = "Unknown";
+      let bestArea = 0;
+      for (const [v, a] of vm.entries()) {
+        if (a > bestArea) {
+          bestArea = a;
+          bestVar = v;
+        }
+      }
+      topByPeriodCrop.set(k, { bestVar, bestArea });
+    }
+
+    // Attach top variety fields
+    const rows = Array.from(group.values()).map((r) => {
+      const periodKey =
+        periodType === "quarterly" ? `${r.Year}-${r.Quarter}` : `${r.Year}`;
+      const topKey = `${periodKey}||${r.Crop}`;
+      const best = topByPeriodCrop.get(topKey) || {
+        bestVar: "Unknown",
+        bestArea: 0,
       };
 
-      // keep Region optional; empty string is okay
-      return header.map((k) => out[k] ?? "");
+      return {
+        ...r,
+        "Top Variety": best.bestVar,
+        "Top Variety Area (ha)": Number(best.bestArea.toFixed(4)),
+        "Total Area (ha)": Number(r["Total Area (ha)"].toFixed(4)),
+      };
     });
 
-    const csv = [header, ...rows]
-      .map((row) =>
-        row.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")
-      )
-      .join("\n");
+    // Sort: Year asc, Quarter Q1..Q4, Crop, Variety
+    const qNum = (q) => (q ? Number(String(q).replace("Q", "")) : 0);
+    rows.sort((a, b) => {
+      if (a.Year !== b.Year) return a.Year - b.Year;
+      if (periodType === "quarterly") {
+        const aq = qNum(a.Quarter);
+        const bq = qNum(b.Quarter);
+        if (aq !== bq) return aq - bq;
+      }
+      if (a.Crop !== b.Crop) return a.Crop.localeCompare(b.Crop);
+      return a.Variety.localeCompare(b.Variety);
+    });
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    // Ensure all columns exist
+    return rows.map((r) => {
+      const out = {};
+      REPORT_COLUMNS.forEach((c) => (out[c] = r[c] ?? ""));
+      return out;
+    });
+  };
 
-    const brgy =
-      selectedBarangay === "all"
-        ? "all-brgys"
-        : selectedBarangay.replace(/\s+/g, "_");
-    const crop =
-      selectedCrop === "all" ? "all-crops" : selectedCrop.replace(/\s+/g, "_");
+  /* ---------- NEW: Export 3 distinct files (CSV and XLSX) ---------- */
+  const exportQuarterlyCSV = () => {
+    const rows = buildReportRows("quarterly");
+    downloadCSV(rows, "Crop_Report_Quarterly.csv");
+  };
+  const exportQuarterlyXLSX = () => {
+    const rows = buildReportRows("quarterly");
+    downloadXLSX(rows, "Crop_Report_Quarterly.xlsx");
+  };
 
-    const periodName =
-      reportPeriod === "annually" ? "annual" : reportPeriod; // quarterly/yearly/annual
-    const yr =
-      reportPeriod === "annually" ? periodCoveredLabel.replace(/\s+/g, "_") : String(activeReportYear);
+  const exportYearlyCSV = () => {
+    const rows = buildReportRows("yearly");
+    downloadCSV(rows, "Crop_Report_Yearly.csv");
+  };
+  const exportYearlyXLSX = () => {
+    const rows = buildReportRows("yearly");
+    downloadXLSX(rows, "Crop_Report_Yearly.xlsx");
+  };
 
-    a.href = url;
-    a.download = `crop-report-${periodName}-${yr}-${brgy}-${crop}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const exportAnnualCSV = () => {
+    const rows = buildReportRows("annual");
+    downloadCSV(rows, "Crop_Report_Annual.csv");
+  };
+  const exportAnnualXLSX = () => {
+    const rows = buildReportRows("annual");
+    downloadXLSX(rows, "Crop_Report_Annual.xlsx");
   };
 
   /* ---------- Render ---------- */
   const valueLabel = metric === "area" ? "Hectares" : "Total";
   const suffix = metric === "area" ? " ha" : "";
+  const topVarTitle =
+    metric === "area"
+      ? "Top Crop Varieties by Area (ha)"
+      : "Top Crop Varieties by Count";
 
   return (
     <div className="flex flex-col min-h-screen bg-white font-poppins">
@@ -752,7 +806,8 @@ export default function Graphs() {
               Crops & Calamity Overview
             </h1>
             <p className="text-gray-600 mt-1">
-              Simple, clear snapshots with filters, KPIs, charts, and downloadable summarized reports.
+              Simple, clear snapshots with filters, KPIs, charts, and downloadable
+              summarized reports.
             </p>
           </div>
 
@@ -761,16 +816,10 @@ export default function Graphs() {
             <TabButton active={tab === "crops"} onClick={() => setTab("crops")}>
               Crops
             </TabButton>
-            <TabButton
-              active={tab === "calamity"}
-              onClick={() => setTab("calamity")}
-            >
+            <TabButton active={tab === "calamity"} onClick={() => setTab("calamity")}>
               Calamity
             </TabButton>
-            <TabButton
-              active={tab === "rankings"}
-              onClick={() => setTab("rankings")}
-            >
+            <TabButton active={tab === "rankings"} onClick={() => setTab("rankings")}>
               Rankings
             </TabButton>
             <button
@@ -909,9 +958,7 @@ export default function Graphs() {
                     title="Total Crops"
                     value={fmt(totalCrops, { maximumFractionDigits: 0 })}
                     subtitle={
-                      selectedBarangay === "all"
-                        ? "All barangays"
-                        : selectedBarangay
+                      selectedBarangay === "all" ? "All barangays" : selectedBarangay
                     }
                   />
                   <Kpi title="Most Planted Crops" value={mostPlanted} subtitle="by count" />
@@ -924,51 +971,19 @@ export default function Graphs() {
                 </div>
               </Section>
 
-              <Section title="Distribution">
+              {/* ✅ Distribution + Varieties & Crop Leaders side-by-side */}
+              <Section title="Distribution and Varieties & Crop Leaders">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* LEFT: Distribution (Pie only) */}
                   <Card>
-                    <CardTitle>By Crop (Bar)</CardTitle>
-                    {loading ? (
-                      <ChartSkeleton />
-                    ) : chartData.length === 0 ? (
-                      <EmptyChart message="No data for this filter." />
-                    ) : (
-                      <div className="h-[260px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={chartData}
-                            margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                            <XAxis dataKey="crop_type" tickMargin={8} />
-                            <YAxis tickFormatter={(v) => fmt(v)} />
-                            <Tooltip content={<NiceTooltip suffix={suffix} />} />
-                            <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                              {chartData.map((d, i) => (
-                                <Cell
-                                  key={i}
-                                  fill={
-                                    COLOR_BY_CROP[d.crop_type] ||
-                                    FALLBACK_COLORS[i % FALLBACK_COLORS.length]
-                                  }
-                                />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
-                    <CardFooter>Metric: {valueLabel}</CardFooter>
-                  </Card>
+                    <CardTitle>Distribution</CardTitle>
 
-                  <Card>
-                    <CardTitle>By Crop (Pie)</CardTitle>
                     {loading ? (
                       <ChartSkeleton />
                     ) : chartData.length === 0 ? (
                       <EmptyChart message="No data for this filter." />
                     ) : (
-                      <div className="h-[260px]">
+                      <div className="h-[280px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                             <Pie
@@ -1001,7 +1016,121 @@ export default function Graphs() {
                         </ResponsiveContainer>
                       </div>
                     )}
+
                     <CardFooter>Metric: {valueLabel}</CardFooter>
+                  </Card>
+
+                  {/* RIGHT: Varieties & Crop Leaders */}
+                  <Card>
+                    <CardTitle>Varieties & Crop Leaders</CardTitle>
+
+                    {/* Variety bar */}
+                    <div className="mb-6">
+                      <div className="text-sm font-semibold text-gray-700 mb-2">
+                        {topVarTitle}
+                      </div>
+
+                      {loading ? (
+                        <ChartSkeleton />
+                      ) : topVarietiesData.length === 0 ? (
+                        <EmptyChart message="No variety data for this filter." />
+                      ) : (
+                        <div className="h-[280px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={topVarietiesData}
+                              margin={{ top: 8, right: 16, left: 0, bottom: 24 }}
+                            >
+                              <XAxis
+                                dataKey="variety"
+                                interval={0}
+                                tickMargin={10}
+                                angle={-20}
+                                textAnchor="end"
+                                height={60}
+                              />
+                              <YAxis
+                                tickFormatter={(v) =>
+                                  metric === "area"
+                                    ? fmt(v)
+                                    : fmt(v, { maximumFractionDigits: 0 })
+                                }
+                                label={{
+                                  value: metric === "area" ? "Area (ha)" : "Count",
+                                  angle: -90,
+                                  position: "insideLeft",
+                                }}
+                              />
+                              <Tooltip
+                                content={
+                                  <NiceTooltip suffix={metric === "area" ? " ha" : ""} />
+                                }
+                              />
+                              <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                                {topVarietiesData.map((_, i) => (
+                                  <Cell
+                                    key={i}
+                                    fill={FALLBACK_COLORS[i % FALLBACK_COLORS.length]}
+                                  />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+
+                      <div className="mt-2 text-xs text-gray-500">
+                        Showing top {TOP_VARIETY_LIMIT} varieties by{" "}
+                        {metric === "area" ? "Area (ha)" : "Count"}.
+                      </div>
+                    </div>
+
+                    {/* Crop → Top Variety table */}
+                    <div>
+                      <div className="text-sm font-semibold text-gray-700 mb-2">
+                        Crop → Top Variety Summary
+                      </div>
+
+                      {loading ? (
+                        <ChartSkeleton />
+                      ) : cropTopVarietyTable.length === 0 ? (
+                        <EmptyChart message="No crop/variety summary for this filter." />
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-gray-600 border-b">
+                                <th className="py-2 pr-4">Crop</th>
+                                <th className="py-2 pr-4">Total Area (ha)</th>
+                                <th className="py-2 pr-4"># Records</th>
+                                <th className="py-2 pr-4">Top Variety</th>
+                                <th className="py-2 pr-4">Top Variety Area (ha)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {cropTopVarietyTable.map((r) => (
+                                <tr
+                                  key={r.crop}
+                                  className="border-b last:border-0 hover:bg-gray-50/60"
+                                >
+                                  <td className="py-2 pr-4">{r.crop}</td>
+                                  <td className="py-2 pr-4">{fmt(r.totalArea)} ha</td>
+                                  <td className="py-2 pr-4">
+                                    {fmt(r.records, { maximumFractionDigits: 0 })}
+                                  </td>
+                                  <td className="py-2 pr-4">{r.topVariety}</td>
+                                  <td className="py-2 pr-4">{fmt(r.topVarietyArea)} ha</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="mt-3 text-xs text-gray-500">
+                            Sorted by Total Area (ha) descending. Top Variety is based on the
+                            highest total planted area per crop.
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </Card>
                 </div>
               </Section>
@@ -1020,10 +1149,12 @@ export default function Graphs() {
                           : reportPeriod === "quarterly"
                           ? `Quarterly breakdown for ${activeReportYear}`
                           : `Monthly breakdown for ${activeReportYear}`}{" "}
-                        • Metric: {metric === "area" ? "Area (ha)" : "Count"} • CSV is aggregated (no raw records).
+                        • Metric: {metric === "area" ? "Area (ha)" : "Count"} • Export
+                        generates distinct files per period.
                       </div>
                     </div>
 
+                    {/* ✅ NEW: 3 separate exports (CSV + XLSX) */}
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="inline-flex border rounded-md overflow-hidden">
                         <button
@@ -1058,18 +1189,58 @@ export default function Graphs() {
                         </button>
                       </div>
 
-                      <button
-                        onClick={exportCropReportCSV}
-                        disabled={!cropReportCsvRows.length}
-                        className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        title={
-                          cropReportCsvRows.length
-                            ? "Download summarized CSV"
-                            : "No data to export"
-                        }
-                      >
-                        Download CSV
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={exportQuarterlyCSV}
+                          disabled={!filtered.length}
+                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          title="Download Quarterly CSV"
+                        >
+                          Quarterly CSV
+                        </button>
+                        <button
+                          onClick={exportQuarterlyXLSX}
+                          disabled={!filtered.length}
+                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          title="Download Quarterly Excel"
+                        >
+                          Quarterly XLSX
+                        </button>
+
+                        <button
+                          onClick={exportYearlyCSV}
+                          disabled={!filtered.length}
+                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          title="Download Yearly CSV"
+                        >
+                          Yearly CSV
+                        </button>
+                        <button
+                          onClick={exportYearlyXLSX}
+                          disabled={!filtered.length}
+                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          title="Download Yearly Excel"
+                        >
+                          Yearly XLSX
+                        </button>
+
+                        <button
+                          onClick={exportAnnualCSV}
+                          disabled={!filtered.length}
+                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          title="Download Annual CSV"
+                        >
+                          Annual CSV
+                        </button>
+                        <button
+                          onClick={exportAnnualXLSX}
+                          disabled={!filtered.length}
+                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          title="Download Annual Excel"
+                        >
+                          Annual XLSX
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1087,7 +1258,11 @@ export default function Graphs() {
                             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                             <XAxis dataKey="label" tickMargin={8} />
                             <YAxis tickFormatter={(v) => fmt(v)} />
-                            <Tooltip content={<NiceTooltip suffix={metric === "area" ? " ha" : ""} />} />
+                            <Tooltip
+                              content={
+                                <NiceTooltip suffix={metric === "area" ? " ha" : ""} />
+                              }
+                            />
                             <Bar dataKey="total" radius={[6, 6, 0, 0]} fill="#16A34A" />
                           </BarChart>
                         </ResponsiveContainer>
@@ -1122,9 +1297,9 @@ export default function Graphs() {
                         </table>
 
                         <div className="mt-3 text-xs text-gray-500">
-                          CSV includes: Report Type, Period Covered, Date Generated, time fields (Year/Quarter/Month Range),
-                          Crop Type, GIS location (Region/Province/Municipality/Barangay), totals (Plantings/Area/Yield),
-                          Estimated Harvest (if available), plus % contribution and ranking — and excludes GPS + personal farmer data.
+                          Exports create separate files with columns: Year, Quarter, Crop,
+                          Variety, Total Area (ha), Number of Records, Top Variety, Top Variety
+                          Area (ha). Data is period-specific without manual filtering.
                         </div>
                       </div>
                     </div>
@@ -1143,17 +1318,13 @@ export default function Graphs() {
                     title="Total Affected Area"
                     value={`${fmt(calSummary.totalAffectedArea)} ha`}
                     subtitle={
-                      selectedBarangay === "all"
-                        ? "All barangays"
-                        : selectedBarangay
+                      selectedBarangay === "all" ? "All barangays" : selectedBarangay
                     }
                   />
                   <Kpi
                     title="Affected Farmers"
                     value={fmt(calSummary.affectedFarmers, { maximumFractionDigits: 0 })}
-                    subtitle={
-                      selectedYear === "all" ? "All years" : `Year ${selectedYear}`
-                    }
+                    subtitle={selectedYear === "all" ? "All years" : `Year ${selectedYear}`}
                   />
                 </div>
               </Section>
@@ -1176,7 +1347,11 @@ export default function Graphs() {
                           <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                           <XAxis dataKey="type" tickMargin={8} />
                           <YAxis tickFormatter={(v) => fmt(v)} />
-                          <Tooltip content={<NiceTooltip suffix={calMetric === "area" ? " ha" : ""} />} />
+                          <Tooltip
+                            content={
+                              <NiceTooltip suffix={calMetric === "area" ? " ha" : ""} />
+                            }
+                          />
                           <Bar
                             dataKey={calMetric === "area" ? "area" : "incidents"}
                             radius={[6, 6, 0, 0]}
@@ -1221,7 +1396,11 @@ export default function Graphs() {
                               position: "insideLeft",
                             }}
                           />
-                          <Tooltip content={<NiceTooltip suffix={calMetric === "area" ? " ha" : ""} />} />
+                          <Tooltip
+                            content={
+                              <NiceTooltip suffix={calMetric === "area" ? " ha" : ""} />
+                            }
+                          />
                           <Line
                             type="monotone"
                             dataKey={calMetric === "area" ? "area" : "incidents"}
@@ -1321,6 +1500,8 @@ export default function Graphs() {
     </div>
   );
 }
+
+export default Graphs;
 
 /* ---------- UI bits (simple & consistent) ---------- */
 function TabButton({ active, onClick, children }) {

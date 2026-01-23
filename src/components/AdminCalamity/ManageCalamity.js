@@ -182,7 +182,7 @@ const SkeletonCard = () => (
 
 const EmptyState = ({ onClear }) => (
   <div className="col-span-full rounded-2xl border border-dashed border-slate-300 p-8 sm:p-10 text-center">
-    <h4 className="text-lg font-semibold text-slate-900">No incidents found</h4>
+    <h4 className="text-lg font-semibold text-slate-900">No incidents foun hellod</h4>
     <p className="mt-1 text-slate-600">Try adjusting the filters or your search.</p>
     <button
       onClick={onClear}
@@ -582,7 +582,7 @@ const ManageCalamity = () => {
           <div className="mb-6 space-y-4">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-[26px] sm:text-[32px] leading-tight font-bold text-slate-900">Calamity Management</h1>
+                <h1 className="text-[26px] sm:text-[32px] leading-tight font-bold text-slate-900">Calamity hello   Management</h1>
                 <p className="text-[14px] sm:text-[15px] text-slate-600">View, filter, and update reported incidents.</p>
               </div>
             </div>
