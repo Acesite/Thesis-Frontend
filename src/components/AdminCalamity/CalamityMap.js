@@ -1050,6 +1050,8 @@ const CalamityMap = () => {
     const [calamityHistory, setCalamityHistory] = useState([]);
 const [resolvedCropIds, setResolvedCropIds] = useState([]);
 
+
+
   const initialHarvestFilter =
     locationState.harvestFilter ??
     searchParams.get("harvestFilter") ??
@@ -1466,6 +1468,7 @@ const activeImpactIsResolved = useMemo(() => {
   }, []);
 
 const handleResolveCalamityImpact = async () => {
+  // 0) basic guards
   if (!selectedCrop || !selectedCrop.id) {
     toast.info("Select a crop first.");
     return;
@@ -1496,7 +1499,7 @@ const handleResolveCalamityImpact = async () => {
   try {
     setResolvingImpact(true);
 
-    // 1) update DB
+    // 1) update DB (mark this crop's impact as resolved)
     await axios.patch(
       `http://localhost:5000/api/calamityradius/${activeCalamityId}/impact/resolve`,
       { crop_id: selectedCrop.id }
@@ -1516,17 +1519,38 @@ const handleResolveCalamityImpact = async () => {
 
     const idStr = String(selectedCrop.id);
 
-    // 3) remember this crop as resolved (for filtering)
+    // 3) remember this crop as resolved (for filtering) + persist to localStorage
     setResolvedCropIds((prev) => {
-      if (prev.some((id) => String(id) === idStr)) return prev;
-      return [...prev, selectedCrop.id];
+      const existing = prev.map((id) => String(id));
+      if (existing.includes(idStr)) return prev;
+
+      const next = [...prev, selectedCrop.id];
+
+      try {
+        const nextForStorage = Array.from(
+          new Set(next.map((id) => String(id)))
+        );
+        localStorage.setItem(
+          "agri_resolved_crop_ids",
+          JSON.stringify(nextForStorage)
+        );
+      } catch (e) {
+        console.warn("Failed to persist resolved crop IDs:", e);
+      }
+
+      return next;
     });
 
-    // 4) remove marker for this crop
+    // 4) remove marker for this crop (so the pin disappears immediately)
     const marker = cropMarkerMapRef.current.get(idStr);
     if (marker) {
       marker.remove();
       cropMarkerMapRef.current.delete(idStr);
+
+      // also drop it from the list of all markers
+      savedMarkersRef.current = savedMarkersRef.current.filter(
+        (m) => m !== marker
+      );
     }
 
     // 5) remove this crop from the sidebar list
@@ -1536,7 +1560,7 @@ const handleResolveCalamityImpact = async () => {
     clearSelection();
     setSelectedCrop(null);
 
-    // 7) keep the radius visible (re-draw it with the same center & size)
+    // 7) keep the calamity radius visible (multi-band circle)
     if (radiusCenter && radiusMeters) {
       updateRadiusCircle(radiusCenter, radiusMeters);
     }
@@ -1550,10 +1574,6 @@ const handleResolveCalamityImpact = async () => {
     setResolvingImpact(false);
   }
 };
-
-
-
-
 
 
   const refreshMapData = useCallback(async () => {
@@ -2735,11 +2755,7 @@ const updatePlainRadiusCircle = useCallback(
 
       toast.success("Calamity radius deleted.");
 
-      // clear active state + drawn circle
-      setActiveCalamityId(null);
-      setActiveCalamity(null);
-      setRadiusCenter(null);
-      setRadiusMeters(null);
+      
 
       // reload remaining orange circles (if any)
       await loadSavedCalamityRadii();
@@ -2962,6 +2978,25 @@ const reapplyActiveRadius = useCallback(() => {
     primaryVolume,
     primaryUnit,
   ]);
+
+  // 🔁 Load resolved crop IDs from localStorage on first mount
+useEffect(() => {
+  try {
+    const raw = localStorage.getItem("agri_resolved_crop_ids");
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // Normalize to string IDs, avoid duplicates
+      const unique = Array.from(
+        new Set(parsed.map((id) => String(id)))
+      );
+      setResolvedCropIds(unique);
+    }
+  } catch (e) {
+    console.warn("Failed to load resolved crop IDs from localStorage:", e);
+  }
+}, []);
+
 
   useEffect(() => {
   if (!map.current) return;

@@ -616,7 +616,7 @@ const AdminSideBar = ({
                       : "Not yet harvested"}
                   </p>
 
-                  {!isHarvested && (
+                  {/* {!isHarvested && (
                     <button
                       type="button"
                       onClick={handleMarkHarvested}
@@ -630,7 +630,7 @@ const AdminSideBar = ({
                     >
                       Mark as harvested
                     </button>
-                  )}
+                  )} */}
 
                   {isHarvested && onStartNewSeason && (
                     <button
