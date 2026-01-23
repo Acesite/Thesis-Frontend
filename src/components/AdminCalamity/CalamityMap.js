@@ -2677,11 +2677,9 @@ const updateRadiusCircle = useCallback(
 
     radiusBandsGeoRef.current = bandsFC;
     m.getSource(RADIUS_BANDS_SRC).setData(bandsFC);
-  },q
+  },
   [ensureRadiusLayers, ensureRadiusBandsLayers]
 );
-
-
 
 // Plain circle used ONLY while drawing (no severity bands yet)
 const updatePlainRadiusCircle = useCallback(
