@@ -1565,6 +1565,17 @@ const handleResolveCalamityImpact = async () => {
       updateRadiusCircle(radiusCenter, radiusMeters);
     }
     reapplyActiveRadius();
+
+    // 8) 🔴 SAFETY NET: fully rebuild markers from API using updated resolvedCropIds
+    //    This guarantees that even after a hard page refresh + resolve,
+    //    any stray marker for this crop will be dropped.
+    if (areMarkersVisible) {
+      try {
+        await renderSavedMarkers();
+      } catch (e) {
+        console.warn("Failed to refresh markers after resolve:", e);
+      }
+    }
   } catch (err) {
     console.error("Failed to resolve calamity impact:", err);
     toast.error(
@@ -1626,8 +1637,8 @@ const handleResolveCalamityImpact = async () => {
     }
   }, []);
 
-  /* ---------- marker rendering WITH hover preview ---------- */
-  const renderSavedMarkers = useCallback(async () => {
+ // ---------- marker rendering WITH hover preview ----------
+const renderSavedMarkers = useCallback(async () => {
   if (!map.current) return;
 
   try {
@@ -1636,9 +1647,24 @@ const handleResolveCalamityImpact = async () => {
     const allRows = response.data || [];
     let crops = allRows.filter((c) => !isSoftDeletedCrop(c));
 
-    // 🔴 NEW: filter out resolved crops (for current session)
-    if (resolvedCropIds.length) {
-      const resolvedSet = new Set(resolvedCropIds.map((id) => String(id)));
+    // ✅ ALWAYS read the latest resolved IDs from localStorage
+    let resolvedIdsFromStorage = [];
+    try {
+      const raw = localStorage.getItem("agri_resolved_crop_ids");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          resolvedIdsFromStorage = parsed;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to read resolved crop IDs from localStorage:", e);
+    }
+
+    if (resolvedIdsFromStorage.length) {
+      const resolvedSet = new Set(
+        resolvedIdsFromStorage.map((id) => String(id))
+      );
       crops = crops.filter((c) => !resolvedSet.has(String(c.id)));
     }
 
@@ -1655,6 +1681,7 @@ const handleResolveCalamityImpact = async () => {
       hoverPopupRef.current = null;
     }
 
+    // Apply filters (type, harvest, timeline)
     const filteredByType =
       selectedCropType === "All"
         ? crops
@@ -1672,6 +1699,7 @@ const handleResolveCalamityImpact = async () => {
       passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
     );
 
+    // Create markers
     for (const crop of filtered) {
       const center = getCropCenter(crop);
       if (!center) continue;
@@ -1699,12 +1727,14 @@ const handleResolveCalamityImpact = async () => {
         .setPopup(popup)
         .addTo(map.current);
 
+      // Click → select crop + highlight
       marker.getElement().addEventListener("click", () => {
         setSelectedCrop(crop);
         highlightSelection(crop);
         setIsSidebarVisible(true);
       });
 
+      // Hover → big preview card
       marker.getElement().addEventListener("mouseenter", () => {
         if (hoverLeaveTimerRef.current) {
           clearTimeout(hoverLeaveTimerRef.current);
@@ -1768,8 +1798,8 @@ const handleResolveCalamityImpact = async () => {
   timelineMode,
   timelineFrom,
   timelineTo,
-  resolvedCropIds,          // 🔴 make sure this is in the deps
 ]);
+
 
   /* ---------- polygon loader with harvested color ---------- */
   const loadPolygons = useCallback(
@@ -2647,7 +2677,7 @@ const updateRadiusCircle = useCallback(
 
     radiusBandsGeoRef.current = bandsFC;
     m.getSource(RADIUS_BANDS_SRC).setData(bandsFC);
-  },
+  },q
   [ensureRadiusLayers, ensureRadiusBandsLayers]
 );
 
@@ -2737,42 +2767,87 @@ const updatePlainRadiusCircle = useCallback(
 
     setShowCalamityForm(true);
   }, []);
-  const handleDeleteActiveCalamity = useCallback(async () => {
-    if (!activeCalamityId) {
-      toast.error("No active calamity radius selected.");
-      return;
-    }
 
-    const confirmed = window.confirm(
-      "Delete this calamity radius and all linked damage records/photos?"
+ const handleDeleteActiveCalamity = useCallback(async () => {
+  if (!activeCalamityId) {
+    toast.error("No active calamity radius selected.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Delete this calamity radius and all linked damage records/photos?"
+  );
+  if (!confirmed) return;
+
+  try {
+    // 1) Delete from backend
+    await axios.delete(
+      `http://localhost:5000/api/calamityradius/${activeCalamityId}`
     );
-    if (!confirmed) return;
 
-    try {
-      await axios.delete(
-        `http://localhost:5000/api/calamityradius/${activeCalamityId}`
-      );
+    toast.success("Calamity radius deleted.");
 
-      toast.success("Calamity radius deleted.");
+    // 2) Clear active radius state
+    setActiveCalamityId(null);
+    setActiveCalamity(null);
+    setRadiusCenter(null);
+    setRadiusMeters(null);
+    radiusCenterRef.current = null;
+    radiusMetersRef.current = null;
 
-      
-
-      // reload remaining orange circles (if any)
-      await loadSavedCalamityRadii();
-    } catch (err) {
-      console.error("Failed to delete calamity radius:", err);
-      const msg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to delete calamity radius.";
-      toast.error(msg);
+    // 3) Remove radius graphics from the map
+    if (map.current) {
+      const m = map.current;
+      try {
+        if (m.getSource(RADIUS_SRC)) {
+          m.getSource(RADIUS_SRC).setData({
+            type: "FeatureCollection",
+            features: [],
+          });
+        }
+        if (m.getSource(RADIUS_BANDS_SRC)) {
+          m.getSource(RADIUS_BANDS_SRC).setData({
+            type: "FeatureCollection",
+            features: [],
+          });
+        }
+      } catch (e) {
+        console.warn("Failed to clear radius layers after delete:", e);
+      }
     }
-  }, [
-    activeCalamityId,
-    loadSavedCalamityRadii,
-    setRadiusCenter,
-    setRadiusMeters,
-  ]);
+
+    // 4) Clear resolved crop tracking so polygons + markers reappear
+    setResolvedCropIds([]);
+    try {
+      localStorage.removeItem("agri_resolved_crop_ids");
+    } catch (e) {
+      console.warn("Failed to clear resolved crop IDs from storage:", e);
+    }
+
+    // 5) Reload base crop polygons and markers (now without any resolved filter)
+    await loadPolygons();
+    if (areMarkersVisible) {
+      await renderSavedMarkers();
+    }
+
+    // 6) Reload remaining saved calamity radii (orange disks), if any
+    await loadSavedCalamityRadii();
+  } catch (err) {
+    console.error("Failed to delete calamity radius:", err);
+    const msg =
+      err?.response?.data?.message ||
+      err?.message ||
+      "Failed to delete calamity radius.";
+    toast.error(msg);
+  }
+}, [
+  activeCalamityId,
+  areMarkersVisible,
+  loadPolygons,
+  renderSavedMarkers,
+  loadSavedCalamityRadii,
+]);
+
 
    const handleSaveCalamityRadius = useCallback(async () => {
     try {
