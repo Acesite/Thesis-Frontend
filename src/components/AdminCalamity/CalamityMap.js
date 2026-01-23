@@ -1,3 +1,4 @@
+
 // src/components/AdminCalamity/CalamityMap.js
 import React, {
   useEffect,
@@ -1047,6 +1048,7 @@ const CalamityMap = () => {
   const [enlargedImage, setEnlargedImage] = useState(null);
     const [resolvingImpact, setResolvingImpact] = useState(false);
     const [calamityHistory, setCalamityHistory] = useState([]);
+const [resolvedCropIds, setResolvedCropIds] = useState([]);
 
   const initialHarvestFilter =
     locationState.harvestFilter ??
@@ -1076,6 +1078,9 @@ const CalamityMap = () => {
     radiusCenterRef.current = val;
     _setRadiusCenter(val);
   }, []);
+
+  const radiusGeoRef = useRef(null);       // last main circle FC
+  const radiusBandsGeoRef = useRef(null);
 
   const isDrawingRadiusRef = useRef(false);
   const dragCenterRef = useRef(null);
@@ -1460,7 +1465,7 @@ const activeImpactIsResolved = useMemo(() => {
     }
   }, []);
 
-   const handleResolveCalamityImpact = async () => {
+const handleResolveCalamityImpact = async () => {
   if (!selectedCrop || !selectedCrop.id) {
     toast.info("Select a crop first.");
     return;
@@ -1471,13 +1476,13 @@ const activeImpactIsResolved = useMemo(() => {
     return;
   }
 
-  // ✅ IMPORTANT: “Resolve” is only valid if an impact record already exists
   if (!activeImpactRecord) {
-    toast.info("No saved impact found for this crop under the active calamity. Click “Save impact” first.");
+    toast.info(
+      "No saved impact found for this crop under the active calamity. Click “Save impact” first."
+    );
     return;
   }
 
-  // ✅ If already resolved, don’t allow re-resolve
   if (activeImpactIsResolved) {
     toast.info("This impact is already resolved.");
     return;
@@ -1491,6 +1496,7 @@ const activeImpactIsResolved = useMemo(() => {
   try {
     setResolvingImpact(true);
 
+    // 1) update DB
     await axios.patch(
       `http://localhost:5000/api/calamityradius/${activeCalamityId}/impact/resolve`,
       { crop_id: selectedCrop.id }
@@ -1498,7 +1504,7 @@ const activeImpactIsResolved = useMemo(() => {
 
     toast.success("Calamity impact marked as resolved.");
 
-    // ✅ Refresh calamity history so UI updates immediately
+    // 2) refresh history for this crop (for the sidebar card)
     try {
       const res = await axios.get(
         `http://localhost:5000/api/calamityradius/crop/${selectedCrop.id}/history`
@@ -1507,13 +1513,46 @@ const activeImpactIsResolved = useMemo(() => {
     } catch (e) {
       console.warn("Resolve ok, but failed to refresh history:", e);
     }
+
+    const idStr = String(selectedCrop.id);
+
+    // 3) remember this crop as resolved (for filtering)
+    setResolvedCropIds((prev) => {
+      if (prev.some((id) => String(id) === idStr)) return prev;
+      return [...prev, selectedCrop.id];
+    });
+
+    // 4) remove marker for this crop
+    const marker = cropMarkerMapRef.current.get(idStr);
+    if (marker) {
+      marker.remove();
+      cropMarkerMapRef.current.delete(idStr);
+    }
+
+    // 5) remove this crop from the sidebar list
+    setSidebarCrops((prev) => prev.filter((c) => String(c.id) !== idStr));
+
+    // 6) clear highlight and close card
+    clearSelection();
+    setSelectedCrop(null);
+
+    // 7) keep the radius visible (re-draw it with the same center & size)
+    if (radiusCenter && radiusMeters) {
+      updateRadiusCircle(radiusCenter, radiusMeters);
+    }
+    reapplyActiveRadius();
   } catch (err) {
     console.error("Failed to resolve calamity impact:", err);
-    toast.error(err?.response?.data?.message || "Failed to resolve impact. Please try again.");
+    toast.error(
+      err?.response?.data?.message || "Failed to resolve impact. Please try again."
+    );
   } finally {
     setResolvingImpact(false);
   }
 };
+
+
+
 
 
 
@@ -1569,137 +1608,148 @@ const activeImpactIsResolved = useMemo(() => {
 
   /* ---------- marker rendering WITH hover preview ---------- */
   const renderSavedMarkers = useCallback(async () => {
-    if (!map.current) return;
-    try {
-      const response = await axios.get("http://localhost:5000/api/crops");
+  if (!map.current) return;
 
-      const allRows = response.data || [];
-      const crops = allRows.filter((c) => !isSoftDeletedCrop(c));
+  try {
+    const response = await axios.get("http://localhost:5000/api/crops");
 
-      setSidebarCrops(crops);
+    const allRows = response.data || [];
+    let crops = allRows.filter((c) => !isSoftDeletedCrop(c));
 
-      savedMarkersRef.current.forEach((marker) => marker.remove());
-      savedMarkersRef.current = [];
-      cropMarkerMapRef.current.clear();
-      if (hoverPopupRef.current) {
+    // 🔴 NEW: filter out resolved crops (for current session)
+    if (resolvedCropIds.length) {
+      const resolvedSet = new Set(resolvedCropIds.map((id) => String(id)));
+      crops = crops.filter((c) => !resolvedSet.has(String(c.id)));
+    }
+
+    setSidebarCrops(crops);
+
+    // Clear existing markers + hover popup
+    savedMarkersRef.current.forEach((marker) => marker.remove());
+    savedMarkersRef.current = [];
+    cropMarkerMapRef.current.clear();
+    if (hoverPopupRef.current) {
+      try {
+        hoverPopupRef.current.remove();
+      } catch {}
+      hoverPopupRef.current = null;
+    }
+
+    const filteredByType =
+      selectedCropType === "All"
+        ? crops
+        : crops.filter((c) => c.crop_name === selectedCropType);
+
+    let filtered = filteredByType;
+
+    if (harvestFilter === "harvested") {
+      filtered = filtered.filter((c) => isCropHarvested(c));
+    } else if (harvestFilter === "not_harvested") {
+      filtered = filtered.filter((c) => !isCropHarvested(c));
+    }
+
+    filtered = filtered.filter((c) =>
+      passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
+    );
+
+    for (const crop of filtered) {
+      const center = getCropCenter(crop);
+      if (!center) continue;
+
+      const isHarvestedFlag = isCropHarvested(crop);
+
+      const popupHtml = `
+        <div class="text-sm" style="min-width:220px">
+          <h3 class='font-bold text-green-600'>${crop.crop_name}</h3>
+          <p><strong>Variety:</strong> ${crop.variety_name || "N/A"}</p>
+          <p style="margin-top:6px;">
+            <strong>Status:</strong> ${
+              isHarvestedFlag ? "Harvested" : "Not harvested"
+            }
+          </p>
+        </div>
+      `;
+
+      const popup = new mapboxgl.Popup({ offset: 15 }).setHTML(popupHtml);
+
+      const marker = new mapboxgl.Marker({
+        color: isHarvestedFlag ? "#6B7280" : "#10B981",
+      })
+        .setLngLat(center)
+        .setPopup(popup)
+        .addTo(map.current);
+
+      marker.getElement().addEventListener("click", () => {
+        setSelectedCrop(crop);
+        highlightSelection(crop);
+        setIsSidebarVisible(true);
+      });
+
+      marker.getElement().addEventListener("mouseenter", () => {
+        if (hoverLeaveTimerRef.current) {
+          clearTimeout(hoverLeaveTimerRef.current);
+          hoverLeaveTimerRef.current = null;
+        }
         try {
-          hoverPopupRef.current.remove();
+          hoverPopupRef.current?.remove();
         } catch {}
-        hoverPopupRef.current = null;
-      }
 
-      const filteredByType =
-        selectedCropType === "All"
-          ? crops
-          : crops.filter((c) => c.crop_name === selectedCropType);
-
-      let filtered = filteredByType;
-      if (harvestFilter === "harvested") {
-        filtered = filtered.filter((c) => isCropHarvested(c));
-      } else if (harvestFilter === "not_harvested") {
-        filtered = filtered.filter((c) => !isCropHarvested(c));
-      }
-
-      filtered = filtered.filter((c) =>
-        passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
-      );
-
-      for (const crop of filtered) {
-        const center = getCropCenter(crop);
-        if (!center) continue;
-
-        const isHarvestedFlag = isCropHarvested(crop);
-
-        const popupHtml = `
-          <div class="text-sm" style="min-width:220px">
-            <h3 class='font-bold text-green-600'>${crop.crop_name}</h3>
-            <p><strong>Variety:</strong> ${crop.variety_name || "N/A"}</p>
-            <p style="margin-top:6px;">
-              <strong>Status:</strong> ${
-                isHarvestedFlag ? "Harvested" : "Not harvested"
-              }
-            </p>
-          </div>
-        `;
-
-        const popup = new mapboxgl.Popup({ offset: 15 }).setHTML(popupHtml);
-
-        const marker = new mapboxgl.Marker({
-          color: isHarvestedFlag ? "#6B7280" : "#10B981",
+        const html = buildCropPreviewHTML(crop);
+        const hoverPopup = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          closeOnMove: false,
+          offset: 30,
+          anchor: "top",
+          className: "crop-hover-preview",
+          maxWidth: "none",
         })
           .setLngLat(center)
-          .setPopup(popup)
+          .setHTML(html)
           .addTo(map.current);
 
-        marker.getElement().addEventListener("click", () => {
-          setSelectedCrop(crop);
-          highlightSelection(crop);
-          setIsSidebarVisible(true);
-        });
-
-        marker.getElement().addEventListener("mouseenter", () => {
-          if (hoverLeaveTimerRef.current) {
-            clearTimeout(hoverLeaveTimerRef.current);
-            hoverLeaveTimerRef.current = null;
+        setTimeout(() => {
+          const el = hoverPopup.getElement();
+          const content = el?.querySelector(".mapboxgl-popup-content");
+          const tip = el?.querySelector(".mapboxgl-popup-tip");
+          if (content) {
+            content.style.background = "transparent";
+            content.style.padding = "0";
+            content.style.boxShadow = "none";
           }
-          try {
-            hoverPopupRef.current?.remove();
-          } catch {}
-          const html = buildCropPreviewHTML(crop);
-          const hoverPopup = new mapboxgl.Popup({
-            closeButton: false,
-            closeOnClick: false,
-            closeOnMove: false,
-            offset: 30,
-            anchor: "top",
-            className: "crop-hover-preview",
-            maxWidth: "none",
-          })
-            .setLngLat(center)
-            .setHTML(html)
-            .addTo(map.current);
+          if (tip) tip.style.display = "none";
+        }, 0);
 
-          setTimeout(() => {
-            const el = hoverPopup.getElement();
-            const content = el?.querySelector(".mapboxgl-popup-content");
-            const tip = el?.querySelector(".mapboxgl-popup-tip");
-            if (content) {
-              content.style.background = "transparent";
-              content.style.padding = "0";
-              content.style.boxShadow = "none";
-            }
-            if (tip) tip.style.display = "none";
-          }, 0);
+        hoverPopupRef.current = hoverPopup;
+      });
 
-          hoverPopupRef.current = hoverPopup;
-        });
+      marker.getElement().addEventListener("mouseleave", () => {
+        hoverLeaveTimerRef.current = setTimeout(() => {
+          if (hoverPopupRef.current) {
+            try {
+              hoverPopupRef.current.remove();
+            } catch {}
+            hoverPopupRef.current = null;
+          }
+        }, 140);
+      });
 
-        marker.getElement().addEventListener("mouseleave", () => {
-          hoverLeaveTimerRef.current = setTimeout(() => {
-            if (hoverPopupRef.current) {
-              try {
-                hoverPopupRef.current.remove();
-              } catch {}
-              hoverPopupRef.current = null;
-            }
-          }, 140);
-        });
-
-        cropMarkerMapRef.current.set(String(crop.id), marker);
-        savedMarkersRef.current.push(marker);
-      }
-
-      ensureDeepLinkSelection();
-    } catch (error) {
-      console.error("Failed to load saved markers:", error);
+      cropMarkerMapRef.current.set(String(crop.id), marker);
+      savedMarkersRef.current.push(marker);
     }
-  }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-  ]);
+
+    ensureDeepLinkSelection();
+  } catch (error) {
+    console.error("Failed to load saved markers:", error);
+  }
+}, [
+  selectedCropType,
+  harvestFilter,
+  timelineMode,
+  timelineFrom,
+  timelineTo,
+  resolvedCropIds,          // 🔴 make sure this is in the deps
+]);
 
   /* ---------- polygon loader with harvested color ---------- */
   const loadPolygons = useCallback(
@@ -2525,18 +2575,22 @@ const updateRadiusCircle = useCallback(
     ensureRadiusLayers();
     ensureRadiusBandsLayers();
 
-    // update outline circle source
+    // main outline circle
     const circle = turf.circle(centerLngLat, radiusKm, {
       steps: 80,
       units: "kilometers",
     });
 
-    m.getSource(RADIUS_SRC).setData({
+    const circleFC = {
       type: "FeatureCollection",
       features: [circle],
-    });
+    };
 
-    // hide the base fill – we only want the dashed outline + bands
+    // cache + apply
+    radiusGeoRef.current = circleFC;
+    m.getSource(RADIUS_SRC).setData(circleFC);
+
+    // hide base fill – we only want dashed outline + bands
     try {
       m.setPaintProperty(RADIUS_FILL, "fill-color", "rgba(0,0,0,0)");
       m.setPaintProperty(RADIUS_FILL, "fill-opacity", 0);
@@ -2544,10 +2598,11 @@ const updateRadiusCircle = useCallback(
 
     const r = radiusKm;
     if (!Number.isFinite(r) || r <= 0) {
-      m.getSource(RADIUS_BANDS_SRC).setData({
-        type: "FeatureCollection",
-        features: [],
-      });
+      const emptyFC = { type: "FeatureCollection", features: [] };
+      radiusBandsGeoRef.current = emptyFC;
+      if (m.getSource(RADIUS_BANDS_SRC)) {
+        m.getSource(RADIUS_BANDS_SRC).setData(emptyFC);
+      }
       return;
     }
 
@@ -2560,19 +2615,22 @@ const updateRadiusCircle = useCallback(
       return outer;
     };
 
-    // outer → inner bands
     const low = makeBand(r, "low");
     const moderate = makeBand(r * 0.75, "moderate");
     const high = makeBand(r * 0.5, "high");
     const severe = makeBand(r * 0.25, "severe");
 
-    m.getSource(RADIUS_BANDS_SRC).setData({
+    const bandsFC = {
       type: "FeatureCollection",
       features: [low, moderate, high, severe],
-    });
+    };
+
+    radiusBandsGeoRef.current = bandsFC;
+    m.getSource(RADIUS_BANDS_SRC).setData(bandsFC);
   },
   [ensureRadiusLayers, ensureRadiusBandsLayers]
 );
+
 
 
 // Plain circle used ONLY while drawing (no severity bands yet)
@@ -2775,6 +2833,23 @@ const updatePlainRadiusCircle = useCallback(
     calamityDate,
     loadSavedCalamityRadii,
   ]);
+
+  // ✅ Force-reapply the currently active radius (outline + bands) after any re-render / data refresh
+const reapplyActiveRadius = useCallback(() => {
+  const m = map.current;
+  const c = radiusCenterRef.current;
+  const r = radiusMetersRef.current;
+
+  if (!m || !c || !r) return;
+
+  // Ensure layers exist, then redraw using the last known values
+  runWhenStyleReady(() => {
+    ensureRadiusLayers();
+    ensureRadiusBandsLayers();
+    updateRadiusCircle(c, r);
+  });
+}, [ensureRadiusLayers, ensureRadiusBandsLayers, updateRadiusCircle]);
+
   // 🔴 photo upload handler (crop + calamity)
   const handleDamagePhotoUpload = useCallback(
     async (file) => {
@@ -2917,6 +2992,11 @@ const updatePlainRadiusCircle = useCallback(
   updateRadiusCircle(radiusCenter, radiusMeters);
 }, [radiusCenter, radiusMeters, updateRadiusCircle]);
 
+// ✅ When resolving a crop triggers marker/polygon refresh, keep radius visible
+useEffect(() => {
+  reapplyActiveRadius();
+}, [resolvedCropIds, reapplyActiveRadius]);
+
 
   // fetch backend crop history for selected crop
   useEffect(() => {
@@ -2948,6 +3028,40 @@ const updatePlainRadiusCircle = useCallback(
       cancelled = true;
     };
   }, [selectedCrop]);
+
+  // 🔁 Whenever Mapbox reloads style/layers, reapply last radius + bands
+useEffect(() => {
+  if (!map.current) return;
+  const m = map.current;
+
+  const reapplyRadius = () => {
+    if (!radiusCenterRef.current || !radiusMetersRef.current) return;
+
+    ensureRadiusLayers();
+    ensureRadiusBandsLayers();
+
+    // main circle
+    if (radiusGeoRef.current && m.getSource(RADIUS_SRC)) {
+      try {
+        m.getSource(RADIUS_SRC).setData(radiusGeoRef.current);
+      } catch {}
+    } else {
+      updateRadiusCircle(radiusCenterRef.current, radiusMetersRef.current);
+    }
+
+    // bands
+    if (radiusBandsGeoRef.current && m.getSource(RADIUS_BANDS_SRC)) {
+      try {
+        m.getSource(RADIUS_BANDS_SRC).setData(radiusBandsGeoRef.current);
+      } catch {}
+    }
+  };
+
+  // styledata fires after style / layers are refreshed
+  m.on("styledata", reapplyRadius);
+  return () => m.off("styledata", reapplyRadius);
+}, [ensureRadiusLayers, ensureRadiusBandsLayers, updateRadiusCircle]);
+
 
   // init map
   useEffect(() => {
@@ -3350,18 +3464,20 @@ useEffect(() => {
   }, [ensureDeepLinkSelection]);
 
   useEffect(() => {
-    if (!map.current) return;
-    if (!areMarkersVisible) return;
-    renderSavedMarkers();
-  }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-    areMarkersVisible,
-    renderSavedMarkers,
-  ]);
+  if (!map.current) return;
+  if (!areMarkersVisible) return;
+  renderSavedMarkers();
+}, [
+  selectedCropType,
+  harvestFilter,
+  timelineMode,
+  timelineFrom,
+  timelineTo,
+  areMarkersVisible,
+  renderSavedMarkers,
+  resolvedCropIds,   // 🔴 add this so markers refresh after resolve
+]);
+
 
   useEffect(() => {
     if (!map.current) return;
@@ -3373,55 +3489,63 @@ useEffect(() => {
   }, [lockToBago]);
 
   useEffect(() => {
-    const applyPolygonFilters = async () => {
-      if (!map.current) return;
+  const applyPolygonFilters = async () => {
+    if (!map.current) return;
 
-      try {
-        let crops = sidebarCrops;
+    try {
+      let crops = sidebarCrops;
 
-        if (!crops || !crops.length) {
-          const res = await axios.get("http://localhost:5000/api/crops");
-          const rows = res.data || [];
-          crops = rows.filter((c) => !isSoftDeletedCrop(c));
-        } else {
-          crops = crops.filter((c) => !isSoftDeletedCrop(c));
-        }
-
-        let filtered = [...crops];
-
-        if (selectedCropType !== "All") {
-          filtered = filtered.filter((c) => c.crop_name === selectedCropType);
-        }
-
-        if (harvestFilter === "harvested") {
-          filtered = filtered.filter((c) => isCropHarvested(c));
-        } else if (harvestFilter === "not_harvested") {
-          filtered = filtered.filter((c) => !isCropHarvested(c));
-        }
-
-        filtered = filtered.filter((c) =>
-          passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
-        );
-
-        await loadPolygons(filtered);
-
-        ensureBarangayLayers();
-      } catch (err) {
-        console.error("Failed to filter polygons:", err);
+      if (!crops || !crops.length) {
+        const res = await axios.get("http://localhost:5000/api/crops");
+        const rows = res.data || [];
+        crops = rows.filter((c) => !isSoftDeletedCrop(c));
+      } else {
+        crops = crops.filter((c) => !isSoftDeletedCrop(c));
       }
-    };
 
-    applyPolygonFilters();
-  }, [
-    selectedCropType,
-    harvestFilter,
-    timelineMode,
-    timelineFrom,
-    timelineTo,
-    sidebarCrops,
-    loadPolygons,
-    ensureBarangayLayers,
-  ]);
+      let filtered = [...crops];
+
+      // 🔴 DROP RESOLVED CROPS FROM POLYGONS
+      if (resolvedCropIds.length) {
+        const resolvedSet = new Set(resolvedCropIds.map((id) => String(id)));
+        filtered = filtered.filter((c) => !resolvedSet.has(String(c.id)));
+      }
+
+      if (selectedCropType !== "All") {
+        filtered = filtered.filter((c) => c.crop_name === selectedCropType);
+      }
+
+      if (harvestFilter === "harvested") {
+        filtered = filtered.filter((c) => isCropHarvested(c));
+      } else if (harvestFilter === "not_harvested") {
+        filtered = filtered.filter((c) => !isCropHarvested(c));
+      }
+
+      filtered = filtered.filter((c) =>
+        passesTimelineFilter(c, timelineMode, timelineFrom, timelineTo)
+      );
+
+      await loadPolygons(filtered);
+      ensureBarangayLayers();
+    } catch (err) {
+      console.error("Failed to filter polygons:", err);
+    }
+  };
+
+  applyPolygonFilters();
+}, [
+  selectedCropType,
+  harvestFilter,
+  timelineMode,
+  timelineFrom,
+  timelineTo,
+  sidebarCrops,
+  loadPolygons,
+  ensureBarangayLayers,
+  resolvedCropIds,   // ✅ ALSO IMPORTANT HERE
+]);
+
+
 
   useEffect(() => {
     return () => {
