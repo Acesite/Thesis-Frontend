@@ -234,14 +234,14 @@ const SuperAdminSideBar = ({ onCollapsedChange }) => {
 
           {/* Calamity Map with anchored/pin icon */}
           <Link
-            to="/SuperAdminCalamityMap"
+            to="/UnifiedAgriMap"
             className={
-              linkClass("/SuperAdminCalamityMap") +
+              linkClass("/UnifiedAgriMap") +
               (collapsed ? " justify-center px-0" : "")
             }
             title={collapsed ? "Calamity Map" : undefined}
           >
-            <MapPin className={iconClass("/SuperAdminCalamityMap")} />
+            <MapPin className={iconClass("/UnifiedAgriMap")} />
             {!collapsed && <span>Calamity Map</span>}
           </Link>
 
