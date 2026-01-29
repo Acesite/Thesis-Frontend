@@ -34,7 +34,7 @@ const BAGO_CITY_BOUNDS = [
   [123.5, 10.6333],
 ];
 
-/* ---------- yield units (keep for volume display) ---------- */
+
 
 const yieldUnitMap = {
   1: "sacks",
@@ -45,14 +45,6 @@ const yieldUnitMap = {
   6: "kg",
 };
 
-/* ---------- Farmgate SINGLE SOURCE OF TRUTH helpers ---------- */
-/**
- * IMPORTANT:
- * - AdminCropMap must NOT recompute farmgate value.
- * - It only reads what TagCropForm saved to DB:
- *   - est_farmgate_value_display (preferred)
- *   - est_farmgate_value_low / est_farmgate_value_high (fallback)
- */
 
 const peso = (n) => {
   const x = Number(n);
@@ -991,6 +983,85 @@ const AdminCropMap = () => {
     timelineFrom,
     timelineTo,
   ]);
+  /* ---------- crop polygon label layer helper ---------- */
+function ensureCropPolygonLabelsLayer(m) {
+  if (!m) return;
+
+  // Layer id
+  const LABEL_LAYER = "crop-polygons-labels";
+
+  // If layer already exists, do nothing
+  if (m.getLayer(LABEL_LAYER)) return;
+
+  // Make sure source exists first
+  if (!m.getSource("crop-polygons")) return;
+
+  m.addLayer({
+    id: LABEL_LAYER,
+    type: "symbol",
+    source: "crop-polygons",
+    layout: {
+      // ✅ "CropName • SN-0001" format
+      "text-field": [
+        "let",
+        "n",
+        ["to-number", ["get", "id"]],
+        [
+          "concat",
+          ["coalesce", ["get", "crop_name"], "Crop"],
+          " • SN-",
+          [
+            "case",
+            ["<", ["var", "n"], 10],
+            "000",
+            ["<", ["var", "n"], 100],
+            "00",
+            ["<", ["var", "n"], 1000],
+            "0",
+            "",
+          ],
+          ["to-string", ["var", "n"]],
+        ],
+      ],
+      "symbol-placement": "point",
+      "text-size": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        11,
+        10,
+        14,
+        12,
+        16,
+        14,
+      ],
+      "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+      "text-offset": [0, 0],
+    },
+    paint: {
+      // ✅ Gray if harvested
+      "text-color": [
+        "case",
+        ["==", ["get", "is_harvested"], 1],
+        "#6B7280",
+        "#111827",
+      ],
+      "text-halo-color": "rgba(255,255,255,0.95)",
+      "text-halo-width": 2,
+      "text-halo-blur": 0.2,
+    },
+  });
+
+  // keep labels above polygons
+  try {
+    if (m.getLayer("crop-polygons-outline")) {
+      m.moveLayer(LABEL_LAYER);
+    }
+  } catch {}
+}
+
 
   /* ---------- polygon loader ---------- */
   const loadPolygons = useCallback(
@@ -1044,6 +1115,9 @@ const AdminCropMap = () => {
           "fill-color",
           paintStyle["fill-color"]
         );
+
+          ensureCropPolygonLabelsLayer(map.current);
+
       } else {
         map.current.addSource("crop-polygons", {
           type: "geojson",
@@ -1062,6 +1136,8 @@ const AdminCropMap = () => {
           paint: { "line-color": "#065F46", "line-width": 1 },
         });
       }
+        ensureCropPolygonLabelsLayer(map.current);
+
     },
     [] // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -1134,6 +1210,8 @@ const AdminCropMap = () => {
       }
     } catch {}
   }, []);
+
+  
 
   // GPS accuracy ring
   const USER_ACC_SOURCE = "user-accuracy-source";
