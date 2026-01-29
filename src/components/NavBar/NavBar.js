@@ -16,6 +16,7 @@ const NavBar = () => {
         {/* Navigation + Login Container */}
         <div className="flex items-center space-x-6 ml-auto">
           {/* Navigation Links */}
+          
           <nav className="hidden md:flex space-x-6">
       <a
         href="/"

@@ -322,6 +322,8 @@ const AdminManageCrop = () => {
     try {
       setIsLoading(true);
       const res = await axios.get("http://localhost:5000/api/managecrops");
+      console.log("sample crop row:", res.data?.[0]);
+
       setCrops(res.data || []);
     } catch (e) {
       console.error("Error fetching crops:", e);
@@ -1221,7 +1223,7 @@ const AdminManageCrop = () => {
                                 crop.is_harvested === "1" ||
                                 crop.is_harvested === true;
 
-                              navigate("/AdminCropMap", {
+                              navigate("/UnifiedAgriMap", {
                                 state: {
                                   cropId: String(crop.id),
                                   zoom: 17,
@@ -1275,7 +1277,7 @@ const AdminManageCrop = () => {
                     )}
 
                     {/* 🔹 Estimated farmgate value (PHP) in card */}
-                    {(mainFarmgate || secondaryFarmgate) && (
+                    {/* {(mainFarmgate || secondaryFarmgate) && (
                       <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2">
                         <div className="text-[11px] uppercase tracking-wide text-emerald-700">
                           Estimated farmgate value (PHP)
@@ -1317,7 +1319,7 @@ const AdminManageCrop = () => {
                           )}
                         </div>
                       </div>
-                    )}
+                    )} */}
 
                     {/* Notes */}
                     <NoteClamp text={crop.note} className="mt-3" />
@@ -1423,7 +1425,7 @@ const AdminManageCrop = () => {
 
       {editingCrop && (
         <div
-          className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-start md:items-center justifycenter p-3 md:p-4 lg:p-6 overflow-y-auto"
+    className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-start md:items-center justify-center p-3 md:p-4 lg:p-6 overflow-y-auto"
           onClick={() => setEditingCrop(null)}
         >
           <div

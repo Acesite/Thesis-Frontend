@@ -2203,7 +2203,7 @@ const AdminCropMap = () => {
               <div className={currentCardClasses}>
                 <div className="flex items-center justify-between">
                   <p className="text-[11px] font-semibold text-emerald-900">
-                    Current season
+                    Current Season
                   </p>
 
                   {hasBothValues && (

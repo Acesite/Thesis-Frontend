@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import AdminCropMap from "../AdminCrop/AdminCropMap"; // adjust path if needed
 import CalamityFarmerMap from "../AdminCalamity/CalamityMap"; // adjust path
 import { Sprout, CloudLightning, MapPin, Layers } from "lucide-react";
+import { NavLink } from "react-router-dom";
 
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -18,14 +19,17 @@ const BAGO_CITY_BOUNDS = [
   [123.5, 10.6333],
 ];
 
-/* ---------- HELPERS (reuse, simplified from your maps) ---------- */
-
+/* ---------- HELPERS ---------- */
 function isSoftDeletedCrop(crop) {
   if (!crop) return false;
 
   const yes = (v) =>
-    v === 1 || v === "1" || v === true || v === "true" || v === "yes" || v === "y";
-
+    v === 1 ||
+    v === "1" ||
+    v === true ||
+    v === "true" ||
+    v === "yes" ||
+    v === "y";
   const no = (v) =>
     v === 0 || v === "0" || v === false || v === "false" || v === "no";
 
@@ -48,7 +52,8 @@ function isSoftDeletedCrop(crop) {
     return ["deleted", "archived", "inactive", "removed"].includes(s);
   };
 
-  if (checkStatusStr(crop.status) || checkStatusStr(crop.record_status)) return true;
+  if (checkStatusStr(crop.status) || checkStatusStr(crop.record_status))
+    return true;
 
   return false;
 }
@@ -71,7 +76,8 @@ function buildPolygonsFromCrops(crops = []) {
 
     const first = coords[0];
     const last = coords[coords.length - 1];
-    if (JSON.stringify(first) !== JSON.stringify(last)) coords = [...coords, first];
+    if (JSON.stringify(first) !== JSON.stringify(last))
+      coords = [...coords, first];
 
     const harvested =
       crop.is_harvested === 1 ||
@@ -103,7 +109,6 @@ const calamityColorMap = {
   Wildfire: "#dc2626",
 };
 
-/* ---------- helper: get polygon center like AdminCropMap ---------- */
 function getPolygonCenterFromFeature(feature) {
   if (!feature?.geometry || feature.geometry.type !== "Polygon") return null;
 
@@ -112,16 +117,13 @@ function getPolygonCenterFromFeature(feature) {
 
   const first = ring[0];
   const last = ring[ring.length - 1];
-  if (JSON.stringify(first) !== JSON.stringify(last)) {
-    ring = [...ring, first];
-  }
+  if (JSON.stringify(first) !== JSON.stringify(last)) ring = [...ring, first];
 
   const center = turf.centerOfMass(turf.polygon([ring])).geometry.coordinates;
-  return center; // [lng, lat]
+  return center;
 }
 
-/* ---------- NEW: Unified overlay map showing both layers ---------- */
-
+/* ---------- Unified overlay map showing both layers ---------- */
 const UnifiedOverlayMap = () => {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -129,7 +131,6 @@ const UnifiedOverlayMap = () => {
   const [showCrops, setShowCrops] = useState(true);
   const [showCalamities, setShowCalamities] = useState(true);
 
-  // init map + load layers
   useEffect(() => {
     if (mapRef.current) return;
 
@@ -166,7 +167,7 @@ const UnifiedOverlayMap = () => {
           "#60a5fa",
           "Vegetables",
           "#f472b6",
-          /* other */ "#10B981",
+          "#10B981",
         ];
 
         const cropPaint = {
@@ -240,14 +241,7 @@ const UnifiedOverlayMap = () => {
           paint: { "line-color": "#7f1d1d", "line-width": 2 },
         });
 
-        map.addLayer({
-          id: "unified-crop-outline",
-          type: "line",
-          source: "unified-crop-polygons",
-          paint: { "line-color": "#064e3b", "line-width": 1 },
-        });
-
-        // Add markers at crop polygon centers using same logic as AdminCropMap
+        // crop markers
         cropFC.features.forEach((feature) => {
           try {
             const center = getPolygonCenterFromFeature(feature);
@@ -259,32 +253,29 @@ const UnifiedOverlayMap = () => {
 
             const popupHtml = `
               <div class="text-sm" style="min-width:220px">
-                <h3 class='font-bold text-green-600'>${feature.properties.crop_name || 'Unknown Crop'}</h3>
+                <h3 class='font-bold text-green-600'>${feature.properties.crop_name || "Unknown Crop"}</h3>
                 <p><strong>Variety:</strong> ${feature.properties.variety_name || "N/A"}</p>
-                ${feature.properties.barangay ? `<p><strong>Barangay:</strong> ${feature.properties.barangay}</p>` : ''}
+                ${
+                  feature.properties.barangay
+                    ? `<p><strong>Barangay:</strong> ${feature.properties.barangay}</p>`
+                    : ""
+                }
                 <p style="margin-top:6px;">
                   <strong>Status:</strong> ${isHarvested ? "Harvested" : "Not harvested"}
                 </p>
               </div>
             `;
 
-            const popup = new mapboxgl.Popup({ offset: 15 }).setHTML(popupHtml);
-
-            // ✅ match AdminCropMap: no anchor/offset, just color + centerOfMass
-            const marker = new mapboxgl.Marker({
-              color: markerColor,
-            })
+            new mapboxgl.Marker({ color: markerColor })
               .setLngLat([lng, lat])
-              .setPopup(popup)
+              .setPopup(new mapboxgl.Popup({ offset: 15 }).setHTML(popupHtml))
               .addTo(map);
-
-            marker._cropData = feature.properties;
           } catch (err) {
             console.error("Error creating crop marker:", err);
           }
         });
 
-        // 3) Fit to union of both layers
+        // fit bounds
         const allFeatures = [
           ...(cropFC.features || []),
           ...((calamityFC && calamityFC.features) || []),
@@ -313,7 +304,6 @@ const UnifiedOverlayMap = () => {
     };
   }, []);
 
-  // react to showCrops/showCalamities toggles
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -336,141 +326,130 @@ const UnifiedOverlayMap = () => {
     <div className="h-full w-full relative">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Small layer legend / filter in combined mode */}
-      <div className="absolute left-4 bottom-4 z-40 rounded-xl bg-white/90 shadow-md px-3 py-2 flex flex-col gap-2 text-xs">
-        <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-700">
+      <div className="absolute left-4 bottom-4 z-40 rounded-lg bg-white/95 border border-slate-200 shadow-sm px-3 py-2 text-xs">
+        <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-700 mb-2">
           <Layers className="w-3.5 h-3.5 text-slate-500" />
           <span>Layers</span>
         </div>
 
-        <div className="flex gap-2 mt-1">
+        <div className="flex gap-2">
           <button
             type="button"
             onClick={() => setShowCrops((v) => !v)}
-            className={`inline-flex items-center gap-1 px-2.5 py-[4px] rounded-full border text-[11px] font-medium ${
+            className={`px-3 py-1 rounded-md border text-[11px] font-medium transition ${
               showCrops
-                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                : "bg-white text-slate-600 border-slate-300 hover:text-slate-900"
+                ? "bg-emerald-600 text-white border-emerald-600"
+                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
             }`}
           >
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ background: "#10B981" }}
-            />
             Crops
           </button>
 
           <button
             type="button"
             onClick={() => setShowCalamities((v) => !v)}
-            className={`inline-flex items-center gap-1 px-2.5 py-[4px] rounded-full border text-[11px] font-medium ${
+            className={`px-3 py-1 rounded-md border text-[11px] font-medium transition ${
               showCalamities
-                ? "bg-red-600 text-white border-red-600 shadow-sm"
-                : "bg-white text-slate-600 border-slate-300 hover:text-slate-900"
+                ? "bg-red-600 text-white border-red-600"
+                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
             }`}
           >
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ background: "#ef4444" }}
-            />
             Calamities
           </button>
         </div>
 
-        <p className="mt-1 text-[10px] text-slate-500 max-w-[220px]">
-          Use this combined view to see where crop areas overlap with hazard-affected
-          zones.
+        <p className="mt-2 text-[10px] text-slate-500 max-w-[220px]">
+          Toggle layers to compare crops and hazard zones.
         </p>
       </div>
     </div>
   );
 };
 
-/* ---------- MAIN UNIFIED CONTAINER WITH 3 MODES ---------- */
-
+/* ---------- MAIN PAGE ---------- */
 const UnifiedAgriMap = () => {
-  const [activeTab, setActiveTab] = useState("crop"); // 'crop' | 'calamity' | 'both'
+  const [activeTab, setActiveTab] = useState("crop"); // crop | calamity | both
+
+  const navLinks = [
+    { to: "/AdminLanding", label: "Home", end: true },
+    { to: "/AdminManageCrop", label: "Crops" },
+    { to: "/AdminManageCalamity", label: "Calamity" },
+    { to: "/AdminGlossary", label: "Glossary" },
+  ];
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-50 overflow-hidden">
-      {/* Top brand bar */}
-      <header className="flex items-center justify-between px-6 py-3 border-b bg-white/95 backdrop-blur-sm shadow-sm">
-        {/* Left: title */}
+    // ✅ add font-poppins here so everything inside uses Poppins
+    <div className="h-screen w-screen flex flex-col bg-slate-50 overflow-hidden font-poppins">
+      <header className="flex items-center justify-between px-6 py-3 border-b bg-white">
+        {/* Left brand */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-base font-semibold text-slate-900 truncate">
-                AgriGIS Unified Map
+              <h1 className="text-sm sm:text-base font-semibold text-slate-900 truncate">
+                AgriGIS
               </h1>
               <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-[2px] text-[11px] font-semibold text-emerald-700">
                 <MapPin className="h-3 w-3" />
-                Bago City DA
+                Bago City
               </span>
             </div>
-            <p className="text-xs text-slate-500">
-              One map for crop and calamity geotagging
+            <p className="hidden sm:block text-xs text-slate-500">
+              Unified crop & calamity mapping
             </p>
           </div>
         </div>
 
-        {/* Right: mode toggle */}
-        <div className="flex items-center gap-3">
-          <div className="hidden md:flex flex-col items-end mr-1">
-            <span className="text-[11px] font-medium text-slate-500 leading-tight">
-              View mode
-            </span>
-            <span className="text-[10px] text-slate-400">
-              Switch between crops, calamities, or both
-            </span>
-          </div>
+        {/* Right: links + toggle */}
+        <div className="flex items-center gap-6">
+          {/* ✅ Navbar links (same style as your sample) */}
+          <nav className="hidden lg:flex space-x-6">
+            {navLinks.map((l) => (
+              <NavLink
+                key={l.label}
+                to={l.to}
+                end={l.end}
+                className={({ isActive }) =>
+                  `tracking-wide font-light hover:text-green-700 ${
+                    isActive ? "text-green-700 font-light" : "text-black"
+                  }`
+                }
+              >
+                {l.label}
+              </NavLink>
+            ))}
+          </nav>
 
-          <div className="inline-flex rounded-full bg-slate-100 p-[4px] text-xs">
-            {/* CROPS */}
+          {/* Crop/Calamity toggle (only changes map view here) */}
+          <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-[3px] text-xs">
             <button
               type="button"
               onClick={() => setActiveTab("crop")}
-              className={`inline-flex items-center gap-1 px-3.5 py-[6px] rounded-full transition text-xs font-medium ${
+              className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
                 activeTab === "crop"
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-emerald-600 text-white"
+                  : "text-slate-700 hover:text-slate-900"
               }`}
             >
               <Sprout className="w-3.5 h-3.5" />
               Crops
             </button>
 
-            {/* CALAMITIES */}
             <button
               type="button"
               onClick={() => setActiveTab("calamity")}
-              className={`inline-flex items-center gap-1 px-3.5 py-[6px] rounded-full transition text-xs font-medium ${
+              className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
                 activeTab === "calamity"
-                  ? "bg-red-600 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-red-600 text-white"
+                  : "text-slate-700 hover:text-slate-900"
               }`}
             >
               <CloudLightning className="w-3.5 h-3.5" />
               Calamities
             </button>
-
-            {/* BOTH (NEW) */}
-            {/* <button
-              type="button"
-              onClick={() => setActiveTab("both")}
-              className={`inline-flex items-center gap-1 px-3.5 py-[6px] rounded-full transition text-xs font-medium ${
-                activeTab === "both"
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              Both
-            </button> */}
           </div>
         </div>
       </header>
 
-      {/* Map area */}
       <main className="flex-1 relative min-h-0">
         {activeTab === "crop" && <AdminCropMap />}
         {activeTab === "calamity" && <CalamityFarmerMap />}

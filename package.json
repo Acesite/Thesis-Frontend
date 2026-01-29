@@ -18,6 +18,8 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
+    "jspdf": "^4.0.0",
+    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.485.0",
     "mapbox-gl": "^3.11.0",
     "mapbox-gl-compare": "^0.4.1",

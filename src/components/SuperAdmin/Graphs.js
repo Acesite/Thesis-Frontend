@@ -20,6 +20,11 @@ import {
 import SuperAdminNav from "../NavBar/SuperAdminSideBar";
 import Footer from "../LandingPage/Footer";
 
+/* =========================
+   API BASE
+========================= */
+const API_BASE = "http://localhost:5000";
+
 /* ---------- COLORS ---------- */
 const COLOR_BY_CROP = {
   Rice: "#F59E0B",
@@ -48,12 +53,47 @@ const CALAMITY_COLORS = [
   "#22D3EE",
 ];
 
+const DEFAULT_CALAMITY_TYPES = [
+  "Flood",
+  "Landslide",
+  "Fire",
+  "Typhoon",
+  "Earthquake",
+  "Others",
+];
+
 const fmt = (n, opts = {}) =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: 2, ...opts }).format(
     n
   );
 
-/* ---------- Safe field getters ---------- */
+const fmtPHP = (n) =>
+  new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "PHP",
+    maximumFractionDigits: 0,
+  }).format(Number(n) || 0);
+
+/* ---------- ESTIMATED VALUE DEFAULTS ---------- */
+const PRICE_PER_KG_BY_CROP = {
+  Rice: 20,
+  Corn: 16,
+  Banana: 12,
+  Sugarcane: 2.2,
+  Cassava: 6,
+  Vegetables: 30,
+};
+
+const YIELD_KG_PER_HA_BY_CROP = {
+  Rice: 4000,
+  Corn: 3500,
+  Banana: 12000,
+  Sugarcane: 60000,
+  Cassava: 15000,
+  Vegetables: 8000,
+};
+
+/* ---------- Safe field getters (CROPS) ---------- */
 const getBarangayName = (crop) =>
   (crop.barangay && crop.barangay.trim()) ||
   crop.farmer_barangay ||
@@ -73,7 +113,7 @@ const getPlantedDate = (crop) => {
   return d && !isNaN(d.getTime()) ? d : null;
 };
 
-/* ---------- CSV/report helpers (aggregated, no GPS, no personal data) ---------- */
+/* ---------- helpers ---------- */
 const toNum = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -95,9 +135,10 @@ const MONTHS_SHORT = [
 ];
 
 const getCropType = (c) =>
-  (c.crop_name || c.crop_type || "Unknown").trim() || "Unknown";
+  (c.crop_name || c.crop_type || c.crop_type_name || "Unknown")
+    .toString()
+    .trim() || "Unknown";
 
-// Variety + Area helpers (safe)
 const getVarietyName = (c) =>
   (c.variety_name ||
     c.variety ||
@@ -111,15 +152,6 @@ const getVarietyName = (c) =>
 const getAreaHa = (c) =>
   toNum(c.area_ha ?? c.estimated_hectares ?? c.hectares ?? c.area ?? 0);
 
-// Location defaults (AgriGIS context). If your DB has these fields, it uses them.
-// NOTE: No GPS coordinates are exported.
-const getRegion = (c) => (c.region || c.region_name || "VI").trim();
-const getProvince = (c) =>
-  (c.province || c.province_name || "Negros Occidental").trim();
-const getMunicipality = (c) =>
-  (c.municipality || c.city || c.municipality_name || "Bago City").trim();
-
-// Yield (optional in your DB): uses any available field; otherwise 0
 const getExpectedYield = (c) =>
   toNum(
     c.total_expected_yield ??
@@ -130,36 +162,105 @@ const getExpectedYield = (c) =>
       0
   );
 
-// Estimated harvest (optional): format as "Mon YYYY" or as a range
-const getEstimatedHarvestDate = (c) => {
-  const v =
-    c.estimated_harvest ||
-    c.expected_harvest_date ||
-    c.harvest_date ||
-    c.date_harvest ||
-    c.harvest_at ||
-    null;
+/* ---------- Estimated Value helpers ---------- */
+const getPricePerKg = (c) =>
+  toNum(
+    c.price_per_kg ??
+      c.farmgate_price ??
+      c.priceKg ??
+      c.price_kg ??
+      PRICE_PER_KG_BY_CROP[getCropType(c)] ??
+      0
+  );
+
+const getYieldKgPerHa = (c) =>
+  toNum(
+    c.yield_kg_per_ha ??
+      c.expected_yield_per_ha ??
+      c.yieldPerHa ??
+      c.yield_per_hectare ??
+      YIELD_KG_PER_HA_BY_CROP[getCropType(c)] ??
+      0
+  );
+
+const getExpectedYieldKg = (c) => {
+  const direct = toNum(getExpectedYield(c));
+  if (direct > 0) return direct;
+
+  const area = toNum(getAreaHa(c));
+  const yph = toNum(getYieldKgPerHa(c));
+  if (area > 0 && yph > 0) return area * yph;
+
+  return 0;
+};
+
+const getEstimatedValuePHP = (c) => {
+  const yieldKg = getExpectedYieldKg(c);
+  const price = getPricePerKg(c);
+  return yieldKg > 0 && price > 0 ? yieldKg * price : 0;
+};
+
+/* =========================
+   IMPACTS (tbl_calamity_crop_impacts)
+========================= */
+
+/** type from impacts join (calamity_type) */
+const getImpactType = (r) =>
+  (r.calamity_type || r.type || r.incident_type || "Others").toString().trim() ||
+  "Others";
+
+/** date priority: started_at > created_at > updated_at */
+const getImpactDate = (r) => {
+  const v = r.started_at || r.created_at || r.updated_at || null;
   const d = v ? new Date(v) : null;
   return d && !isNaN(d.getTime()) ? d : null;
 };
 
-const formatHarvest = (d) =>
-  d ? `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}` : "";
-
-/* ---------------- NEW: Period-specific Crop Report Export (CSV + XLSX) ---------------- */
-/**
- * Output requirements supported:
- * - 3 distinct files (Quarterly / Yearly / Annual)
- * - Each file downloadable as CSV and XLSX
- * - Consistent column names across all files
- * - Aggregation:
- *   Quarterly: Year + Quarter
- *   Yearly: Year (year totals)
- *   Annual: Year (consolidated summary per year; same grouping as Yearly but separate file)
- * - Included fields:
- *   Crop, Variety, Total Area (ha) SUM(area_ha), Number of Records COUNT(*),
- *   Top Variety (by total area) per Crop+Period, Top Variety Area (ha)
+/** damaged area ha:
+ * 1) damaged_area_ha
+ * 2) damage_fraction * base_area_ha (if available)
  */
+const getImpactDamagedAreaHa = (r) => {
+  const direct = toNum(r.damaged_area_ha);
+  if (direct > 0) return direct;
+
+  const frac = toNum(r.damage_fraction);
+  const base = toNum(r.base_area_ha);
+  if (frac > 0 && base > 0) return frac * base;
+
+  return 0;
+};
+
+/** loss value php (flex fields) */
+const getImpactLossPHP = (r) =>
+  toNum(r.loss_value_php ?? r.total_loss_php ?? r.loss_value ?? r.loss ?? 0);
+
+/** Month key */
+const toMonthKey = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+/* ---------- Crop name from impact row (may include variety) ---------- */
+const getImpactCropName = (r) => {
+  const v =
+    (r.crop_name && String(r.crop_name).trim()) ||
+    (r.crop_type && String(r.crop_type).trim()) ||
+    "";
+  return v || "Unknown";
+};
+
+/* ✅ Normalize crop name so dropdown will NOT show/require varieties.
+   Example: "Rice - NSIC Rc222" -> "Rice", "Rice (Rc222)" -> "Rice"
+*/
+const normalizeCropBase = (name) => {
+  const s = String(name || "").trim();
+  if (!s) return "Unknown";
+  const a = s.split(" - ")[0];
+  const b = a.split(" (")[0];
+  const c = b.split("(")[0];
+  return c.trim() || "Unknown";
+};
+
+/* ---------------- REPORT EXPORT (CSV + PDF) ---------------- */
 const REPORT_COLUMNS = [
   "Year",
   "Quarter",
@@ -169,20 +270,17 @@ const REPORT_COLUMNS = [
   "Number of Records",
   "Top Variety",
   "Top Variety Area (ha)",
+  "Estimated Crop Value (PHP)",
 ];
 
 const safeNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const quarterOfDate = (d) => Math.floor(d.getMonth() / 3) + 1;
 
-const downloadCSV = (rows, filename) => {
+const downloadCSV = (rows, filename, columns) => {
   if (!rows?.length) return;
-
-  const header = REPORT_COLUMNS;
-
+  const header = columns || Object.keys(rows[0] || {});
   const csv = [header, ...rows.map((r) => header.map((h) => r[h] ?? ""))]
-    .map((row) =>
-      row.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")
-    )
+    .map((row) => row.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(","))
     .join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -196,6 +294,7 @@ const downloadCSV = (rows, filename) => {
   URL.revokeObjectURL(url);
 };
 
+// kept (even if unused)
 const downloadXLSX = (rows, filename) => {
   if (!rows?.length) return;
 
@@ -209,16 +308,40 @@ const downloadXLSX = (rows, filename) => {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Report");
 
-  // Optional: widen columns a bit
   ws["!cols"] = REPORT_COLUMNS.map((c) => ({
-    wch: Math.max(14, c.length + 2),
+    wch: Math.max(16, c.length + 2),
   }));
-
   XLSX.writeFile(wb, filename);
 };
 
+const downloadPDFGeneric = async (rows, filename, title, columns) => {
+  if (!rows?.length) return;
+
+  const { default: jsPDF } = await import("jspdf");
+  const { default: autoTable } = await import("jspdf-autotable");
+
+  const cols = columns || Object.keys(rows[0] || {});
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+
+  doc.setFontSize(14);
+  doc.text(title || "Report", 40, 32);
+
+  const head = [cols];
+  const body = rows.map((r) => cols.map((c) => r[c] ?? ""));
+
+  autoTable(doc, {
+    head,
+    body,
+    startY: 50,
+    styles: { fontSize: 8, cellPadding: 4 },
+    headStyles: { fontStyle: "bold" },
+    margin: { left: 40, right: 40 },
+  });
+
+  doc.save(filename);
+};
+
 function Graphs() {
-  /* ---------- Page/scroll stability so footer doesn't jump ---------- */
   useEffect(() => {
     const root = document.documentElement;
     const prev = root.style.overflowY;
@@ -228,47 +351,52 @@ function Graphs() {
     };
   }, []);
 
-  /* ---------- Data ---------- */
+  /* ---------- Data (Crops) ---------- */
   const [allCrops, setAllCrops] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  /* ---------- Data (Impacts) from tbl_calamity_crop_impacts ---------- */
+  const [impacts, setImpacts] = useState([]);
+  const [calLoading, setCalLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     axios
-      .get("http://localhost:5000/api/managecrops")
+      .get(`${API_BASE}/api/managecrops`)
       .then((res) => setAllCrops(res.data || []))
       .catch((err) => console.error("Failed to fetch crops:", err))
       .finally(() => setLoading(false));
   }, []);
 
-  /* ---------- Calamity API ---------- */
-  const [calLoading, setCalLoading] = useState(false);
-  const [calSummary, setCalSummary] = useState({
-    totalAffectedArea: 0,
-    affectedFarmers: 0,
-    byType: [],
-  });
-  const [calTimeline, setCalTimeline] = useState([]);
+  useEffect(() => {
+    setCalLoading(true);
+    axios
+      .get(`${API_BASE}/api/impacts`)
+      .then((res) => setImpacts(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => {
+        console.error("Failed to fetch impacts:", err);
+        setImpacts([]);
+      })
+      .finally(() => setCalLoading(false));
+  }, []);
 
   /* ---------- Filters ---------- */
   const [selectedBarangay, setSelectedBarangay] = useState("all");
   const [selectedCrop, setSelectedCrop] = useState("all");
   const [selectedYear, setSelectedYear] = useState("all");
-  const [metric, setMetric] = useState("count"); // crops: 'count' | 'area'
+  const [metric, setMetric] = useState("count");
 
-  const [calMetric, setCalMetric] = useState("area"); // calamity: 'area' | 'incidents'
+  // ✅ Calamity filters (NO more "damage area/incidents" buttons)
   const [selectedCalamityType, setSelectedCalamityType] = useState("all");
+  const [selectedCalamityCrop, setSelectedCalamityCrop] = useState("all"); // ✅ NEW: crop-type only
 
-  const [tab, setTab] = useState("crops"); // 'crops' | 'calamity' | 'rankings'
-
-  // sidebar collapsed state for SuperAdminNav
+  const [tab, setTab] = useState("crops");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  /* ---------- Crops Report Period ---------- */
-  // This remains for on-screen chart/table only; exports are now separate buttons/files.
-  const [reportPeriod, setReportPeriod] = useState("quarterly"); // 'quarterly' | 'yearly' | 'annually'
+  const [reportPeriod, setReportPeriod] = useState("quarterly"); // crops report
+  const [calReportPeriod, setCalReportPeriod] = useState("quarterly"); // ✅ calamity report
 
-  /* ---------- Options ---------- */
+  /* ---------- OPTIONS ---------- */
   const barangays = useMemo(() => {
     const set = new Set(
       allCrops
@@ -278,10 +406,9 @@ function Graphs() {
     return ["all", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
   }, [allCrops]);
 
+  // ✅ crop types only (NO varieties)
   const crops = useMemo(() => {
-    const set = new Set(
-      allCrops.map((c) => (c.crop_name || "").trim()).filter(Boolean)
-    );
+    const set = new Set(allCrops.map((c) => getCropType(c)).filter(Boolean));
     return ["all", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
   }, [allCrops]);
 
@@ -291,20 +418,50 @@ function Graphs() {
       const d = getPlantedDate(c);
       if (d) set.add(d.getFullYear());
     }
+    for (const r of impacts) {
+      const d = getImpactDate(r);
+      if (d) set.add(d.getFullYear());
+    }
     const list = Array.from(set).sort((a, b) => b - a);
     return ["all", ...list];
+  }, [allCrops, impacts]);
+
+  /* ---------- CropId -> Crop Map (infer barangay/cropname for impacts) ---------- */
+  const cropById = useMemo(() => {
+    const m = new Map();
+    for (const c of allCrops) {
+      const id = c.id ?? c.crop_id ?? c.cropId ?? null;
+      if (id != null) m.set(String(id), c);
+    }
+    return m;
   }, [allCrops]);
 
-  /* ---------- Filtered crops ---------- */
+  const getImpactBarangay = (r) => {
+    const direct =
+      (r.barangay && String(r.barangay).trim()) ||
+      (r.brgy_name && String(r.brgy_name).trim()) ||
+      (r.barangay_name && String(r.barangay_name).trim());
+    if (direct) return direct;
+
+    const crop = cropById.get(String(r.crop_id));
+    return crop ? getBarangayName(crop) : "Unknown";
+  };
+
+  const getImpactCropBase = (r) => {
+    const direct = normalizeCropBase(getImpactCropName(r));
+    if (direct && direct !== "Unknown") return direct;
+
+    const crop = cropById.get(String(r.crop_id));
+    return crop ? normalizeCropBase(getCropType(crop)) : "Unknown";
+  };
+
+  /* ---------- FILTERED CROPS ---------- */
   const filtered = useMemo(() => {
     return allCrops.filter((c) => {
-      if (
-        selectedBarangay !== "all" &&
-        getBarangayName(c) !== selectedBarangay
-      )
+      if (selectedBarangay !== "all" && getBarangayName(c) !== selectedBarangay)
         return false;
-      if (selectedCrop !== "all" && getCropType(c) !== selectedCrop)
-        return false;
+
+      if (selectedCrop !== "all" && getCropType(c) !== selectedCrop) return false;
 
       const d = getPlantedDate(c);
       if (selectedYear !== "all") {
@@ -317,19 +474,56 @@ function Graphs() {
 
   const totalCrops = filtered.length;
 
+  /* ---------- Estimated Crop Value (₱) ---------- */
+  const {
+    totalEstimatedValue,
+    avgEstimatedValue,
+    topCropByValue,
+    valueByCropData,
+  } = useMemo(() => {
+    const map = new Map();
+    let total = 0;
+
+    for (const c of filtered) {
+      const crop = getCropType(c);
+      const val = getEstimatedValuePHP(c);
+      total += val;
+      map.set(crop, (map.get(crop) || 0) + val);
+    }
+
+    const arr = Array.from(map.entries())
+      .map(([crop_type, totalValue]) => ({ crop_type, totalValue }))
+      .sort((a, b) => b.totalValue - a.totalValue);
+
+    return {
+      totalEstimatedValue: total,
+      avgEstimatedValue: filtered.length ? total / filtered.length : 0,
+      topCropByValue: arr[0]?.crop_type || "—",
+      valueByCropData: arr,
+    };
+  }, [filtered]);
+
+  const hasValueData = useMemo(
+    () => valueByCropData.some((r) => Number(r.totalValue) > 0),
+    [valueByCropData]
+  );
+
   /* ---------- Crop KPIs & charts ---------- */
   const { totalHectares, avgArea, top5Barangays } = useMemo(() => {
     const map = new Map();
     let totalHa = 0;
+
     for (const c of filtered) {
       const bg = getBarangayName(c);
       const ha = getAreaHa(c);
       totalHa += ha;
+
       const rec = map.get(bg) || { barangay: bg, crops: 0, hectares: 0 };
       rec.crops += 1;
       rec.hectares += ha;
       map.set(bg, rec);
     }
+
     const arr = Array.from(map.values())
       .filter((r) => r.barangay !== "Unknown")
       .sort((a, b) => b.hectares - a.hectares);
@@ -370,11 +564,10 @@ function Graphs() {
       .sort((a, b) => b.total - a.total);
   }, [filtered, metric]);
 
-  /* ---------- Visual — Top 5–10 Varieties ---------- */
+  /* ---------- Top Varieties ---------- */
   const TOP_VARIETY_LIMIT = 10;
-
   const topVarietiesData = useMemo(() => {
-    const map = new Map(); // variety -> { variety, area, count }
+    const map = new Map();
 
     for (const c of filtered) {
       const variety = getVarietyName(c);
@@ -403,9 +596,9 @@ function Graphs() {
     }));
   }, [filtered, metric]);
 
-  /* ---------- Table — Crop → Top Variety Summary ---------- */
+  /* ---------- Crop → Top Variety Summary Table ---------- */
   const cropTopVarietyTable = useMemo(() => {
-    const cropMap = new Map(); // crop -> summary
+    const cropMap = new Map();
 
     for (const c of filtered) {
       const crop = getCropType(c);
@@ -417,17 +610,14 @@ function Graphs() {
           crop,
           totalArea: 0,
           records: 0,
-          varietyArea: new Map(), // variety -> totalArea
+          varietyArea: new Map(),
         };
 
       rec.totalArea += area;
       rec.records += 1;
 
       if (variety && variety !== "Unknown") {
-        rec.varietyArea.set(
-          variety,
-          (rec.varietyArea.get(variety) || 0) + area
-        );
+        rec.varietyArea.set(variety, (rec.varietyArea.get(variety) || 0) + area);
       }
 
       cropMap.set(crop, rec);
@@ -458,7 +648,7 @@ function Graphs() {
     return rows;
   }, [filtered]);
 
-  /* ---------- On-screen report (existing) ---------- */
+  /* ---------- On-screen crops report ---------- */
   const activeReportYear = useMemo(() => {
     if (selectedYear !== "all") return Number(selectedYear);
     const latest = years.find((y) => y !== "all");
@@ -469,7 +659,7 @@ function Graphs() {
     const getVal = (c) => (metric === "area" ? getAreaHa(c) : 1);
 
     if (reportPeriod === "annually") {
-      const map = new Map(); // year -> total
+      const map = new Map();
       for (const c of filtered) {
         const d = getPlantedDate(c);
         if (!d) continue;
@@ -499,7 +689,7 @@ function Graphs() {
         if (!d) continue;
         if (d.getFullYear() !== activeReportYear) continue;
 
-        const q = Math.floor(d.getMonth() / 3) + 1; // 1..4
+        const q = Math.floor(d.getMonth() / 3) + 1;
         const key = `Q${q}-${activeReportYear}`;
         const b = idx.get(key);
         if (b) b.total += getVal(c);
@@ -525,87 +715,280 @@ function Graphs() {
     return buckets;
   }, [filtered, metric, reportPeriod, activeReportYear]);
 
-  /* ---------- Calamity calls ---------- */
-  useEffect(() => {
-    setCalLoading(true);
-    const params = {};
-    if (selectedBarangay !== "all") params.barangay = selectedBarangay;
-    if (selectedYear !== "all") params.year = selectedYear;
-    axios
-      .get("http://localhost:5000/api/graphs/calamity/summary", { params })
-      .then((res) =>
-        setCalSummary(
-          res.data || { totalAffectedArea: 0, affectedFarmers: 0, byType: [] }
-        )
-      )
-      .catch(() =>
-        setCalSummary({ totalAffectedArea: 0, affectedFarmers: 0, byType: [] })
-      )
-      .finally(() => setCalLoading(false));
-  }, [selectedBarangay, selectedYear]);
+  /* =========================
+     CALAMITY (from impacts table)
+     ✅ Crop filter is crop-type only (normalized), not variety
+  ========================= */
+  const filteredImpacts = useMemo(() => {
+    return (impacts || []).filter((r) => {
+      if (selectedBarangay !== "all") {
+        if (getImpactBarangay(r) !== selectedBarangay) return false;
+      }
 
-  useEffect(() => {
-    const params = {};
-    if (selectedBarangay !== "all") params.barangay = selectedBarangay;
-    if (selectedYear !== "all") params.year = selectedYear;
-    if (selectedCalamityType !== "all") params.type = selectedCalamityType;
-    axios
-      .get("http://localhost:5000/api/graphs/calamity/timeline", { params })
-      .then((res) => setCalTimeline(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setCalTimeline([]));
-  }, [selectedBarangay, selectedYear, selectedCalamityType]);
+      if (selectedYear !== "all") {
+        const d = getImpactDate(r);
+        if (!d) return false;
+        if (d.getFullYear() !== Number(selectedYear)) return false;
+      }
+
+      if (selectedCalamityType !== "all") {
+        if (getImpactType(r) !== selectedCalamityType) return false;
+      }
+
+      if (selectedCalamityCrop !== "all") {
+        if (getImpactCropBase(r) !== selectedCalamityCrop) return false;
+      }
+
+      return true;
+    });
+  }, [
+    impacts,
+    selectedBarangay,
+    selectedYear,
+    selectedCalamityType,
+    selectedCalamityCrop,
+    cropById,
+  ]);
 
   const calamityTypes = useMemo(() => {
-    const set = new Set(
-      (calSummary.byType || []).map((t) => t.calamity_type || "Unknown")
-    );
+    const fromData = filteredImpacts.map((r) => getImpactType(r)).filter(Boolean);
+    const set = new Set([...DEFAULT_CALAMITY_TYPES, ...fromData]);
     return ["all", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
-  }, [calSummary]);
+  }, [filteredImpacts]);
+
+  // ✅ calamity crop dropdown = crop TYPES ONLY (NO varieties)
+  const calamityCrops = useMemo(() => crops, [crops]);
+
+  const calSummary = useMemo(() => {
+    const byTypeMap = new Map();
+    let totalArea = 0;
+    let totalLoss = 0;
+
+    const cropSet = new Set();
+    const calamitySet = new Set();
+
+    for (const r of filteredImpacts) {
+      const t = getImpactType(r);
+      const area = getImpactDamagedAreaHa(r);
+      const loss = getImpactLossPHP(r);
+
+      totalArea += area;
+      totalLoss += loss;
+
+      if (r.crop_id != null) cropSet.add(String(r.crop_id));
+      if (r.calamity_id != null) calamitySet.add(String(r.calamity_id));
+
+      const rec = byTypeMap.get(t) || {
+        calamity_type: t,
+        total_area: 0,
+        incidents: 0,
+        total_loss: 0,
+      };
+      rec.total_area += area;
+      rec.incidents += 1;
+      rec.total_loss += loss;
+      byTypeMap.set(t, rec);
+    }
+
+    const byType = Array.from(byTypeMap.values()).sort(
+      (a, b) => b.total_area - a.total_area
+    );
+
+    return {
+      totalAffectedArea: totalArea,
+      totalLossValue: totalLoss,
+      affectedCrops: cropSet.size,
+      calamityCount: calamitySet.size,
+      byType,
+    };
+  }, [filteredImpacts]);
 
   const calamityByTypeChart = useMemo(() => {
-    return (calSummary.byType || [])
-      .filter(
-        (r) =>
-          selectedCalamityType === "all" ||
-          (r.calamity_type || "Unknown") === selectedCalamityType
-      )
-      .map((r) => ({
-        type: r.calamity_type || "Unknown",
-        area: Number(r.total_area || 0),
-        incidents: Number(r.incidents || 0),
-      }));
+    const rows = (calSummary.byType || []).map((r) => ({
+      type: r.calamity_type,
+      area: Number(r.total_area || 0),
+      incidents: Number(r.incidents || 0),
+      loss: Number(r.total_loss || 0),
+    }));
+
+    if (!rows.length) {
+      const types =
+        selectedCalamityType === "all"
+          ? DEFAULT_CALAMITY_TYPES
+          : [selectedCalamityType];
+      return types.map((t) => ({ type: t, area: 0, incidents: 0, loss: 0 }));
+    }
+
+    return rows;
   }, [calSummary, selectedCalamityType]);
 
-  const monthsOfYear = (y) =>
-    Array.from({ length: 12 }, (_, i) =>
-      `${y}-${String(i + 1).padStart(2, "0")}`
-    );
+  /* =========================
+     ✅ CALAMITY REPORT (Quarterly / Yearly / Annual + Download CSV/PDF)
+  ========================= */
+  const activeCalReportYear = useMemo(() => {
+    if (selectedYear !== "all") return Number(selectedYear);
+    const latest = years.find((y) => y !== "all");
+    return Number(latest || new Date().getFullYear());
+  }, [selectedYear, years]);
 
-  const last12Months = () => {
-    const out = [];
-    const d = new Date();
-    for (let i = 11; i >= 0; i--) {
-      const dt = new Date(d.getFullYear(), d.getMonth() - i, 1);
-      out.push(
-        `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`
-      );
+  const calamityReportRows = useMemo(() => {
+    const add = (key, label, inc, area, loss, map) => {
+      const rec = map.get(key) || {
+        key,
+        Period: label,
+        Incidents: 0,
+        "Damaged Area (ha)": 0,
+        "Total Loss (PHP)": 0,
+      };
+      rec.Incidents += inc;
+      rec["Damaged Area (ha)"] += area;
+      rec["Total Loss (PHP)"] += loss;
+      map.set(key, rec);
+    };
+
+    // yearly
+    if (calReportPeriod === "yearly") {
+      const map = new Map();
+      for (const r of filteredImpacts) {
+        const d = getImpactDate(r);
+        if (!d) continue;
+        const y = d.getFullYear();
+        add(
+          String(y),
+          String(y),
+          1,
+          getImpactDamagedAreaHa(r),
+          getImpactLossPHP(r),
+          map
+        );
+      }
+      return Array.from(map.values())
+        .sort((a, b) => String(a.Period).localeCompare(String(b.Period)))
+        .map((r) => ({
+          ...r,
+          Incidents: Number(r.Incidents || 0),
+          "Damaged Area (ha)": Number(toNum(r["Damaged Area (ha)"]).toFixed(4)),
+          "Total Loss (PHP)": Number(toNum(r["Total Loss (PHP)"]).toFixed(2)),
+        }));
     }
-    return out;
-  };
 
-  const calamityTimelineFilled = useMemo(() => {
-    const idx = new Map((calTimeline || []).map((r) => [String(r.month), r]));
-    const months =
-      selectedYear === "all" ? last12Months() : monthsOfYear(Number(selectedYear));
-    return months.map((m) => {
-      const row = idx.get(m);
+    // quarterly (4 buckets for active year)
+    if (calReportPeriod === "quarterly") {
+      const buckets = [
+        { key: `Q1-${activeCalReportYear}`, Period: `Q1 ${activeCalReportYear}` },
+        { key: `Q2-${activeCalReportYear}`, Period: `Q2 ${activeCalReportYear}` },
+        { key: `Q3-${activeCalReportYear}`, Period: `Q3 ${activeCalReportYear}` },
+        { key: `Q4-${activeCalReportYear}`, Period: `Q4 ${activeCalReportYear}` },
+      ];
+      const map = new Map(
+        buckets.map((b) => [
+          b.key,
+          { ...b, Incidents: 0, "Damaged Area (ha)": 0, "Total Loss (PHP)": 0 },
+        ])
+      );
+
+      for (const r of filteredImpacts) {
+        const d = getImpactDate(r);
+        if (!d) continue;
+        if (d.getFullYear() !== activeCalReportYear) continue;
+        const q = Math.floor(d.getMonth() / 3) + 1;
+        const key = `Q${q}-${activeCalReportYear}`;
+        add(
+          key,
+          `Q${q} ${activeCalReportYear}`,
+          1,
+          getImpactDamagedAreaHa(r),
+          getImpactLossPHP(r),
+          map
+        );
+      }
+
+      return buckets.map((b) => {
+        const r = map.get(b.key) || {
+          ...b,
+          Incidents: 0,
+          "Damaged Area (ha)": 0,
+          "Total Loss (PHP)": 0,
+        };
+        return {
+          ...r,
+          Incidents: Number(r.Incidents || 0),
+          "Damaged Area (ha)": Number(toNum(r["Damaged Area (ha)"]).toFixed(4)),
+          "Total Loss (PHP)": Number(toNum(r["Total Loss (PHP)"]).toFixed(2)),
+        };
+      });
+    }
+
+    // annual (months of active year)
+    const monthBuckets = MONTHS_SHORT.map((m, i) => {
+      const key = `${activeCalReportYear}-${pad2(i + 1)}`;
       return {
-        month: m,
-        incidents: Number(row?.incidents || 0),
-        area: Number(row?.area || 0),
+        key,
+        Period: `${m} ${activeCalReportYear}`,
+        Incidents: 0,
+        "Damaged Area (ha)": 0,
+        "Total Loss (PHP)": 0,
       };
     });
-  }, [calTimeline, selectedYear]);
+    const map = new Map(monthBuckets.map((b) => [b.key, { ...b }]));
+
+    for (const r of filteredImpacts) {
+      const d = getImpactDate(r);
+      if (!d) continue;
+      if (d.getFullYear() !== activeCalReportYear) continue;
+      const key = `${activeCalReportYear}-${pad2(d.getMonth() + 1)}`;
+      add(
+        key,
+        `${MONTHS_SHORT[d.getMonth()]} ${activeCalReportYear}`,
+        1,
+        getImpactDamagedAreaHa(r),
+        getImpactLossPHP(r),
+        map
+      );
+    }
+
+    return monthBuckets.map((b) => {
+      const r = map.get(b.key) || b;
+      return {
+        ...r,
+        Incidents: Number(r.Incidents || 0),
+        "Damaged Area (ha)": Number(toNum(r["Damaged Area (ha)"]).toFixed(4)),
+        "Total Loss (PHP)": Number(toNum(r["Total Loss (PHP)"]).toFixed(2)),
+      };
+    });
+  }, [filteredImpacts, calReportPeriod, activeCalReportYear]);
+
+  const CAL_REPORT_COLUMNS = [
+    "Period",
+    "Incidents",
+    "Damaged Area (ha)",
+    "Total Loss (PHP)",
+  ];
+
+  const exportCalamityCSV = () => {
+    const rows = (calamityReportRows || []).map((r) => ({
+      Period: r.Period,
+      Incidents: r.Incidents,
+      "Damaged Area (ha)": r["Damaged Area (ha)"],
+      "Total Loss (PHP)": r["Total Loss (PHP)"],
+    }));
+    downloadCSV(rows, "Calamity_Report.csv", CAL_REPORT_COLUMNS);
+  };
+
+  const exportCalamityPDF = async () => {
+    const rows = (calamityReportRows || []).map((r) => ({
+      Period: r.Period,
+      Incidents: r.Incidents,
+      "Damaged Area (ha)": r["Damaged Area (ha)"],
+      "Total Loss (PHP)": r["Total Loss (PHP)"],
+    }));
+    await downloadPDFGeneric(
+      rows,
+      "Calamity_Report.pdf",
+      "Calamity Report",
+      CAL_REPORT_COLUMNS
+    );
+  };
 
   /* ---------- Actions ---------- */
   const resetFilters = () => {
@@ -613,9 +996,12 @@ function Graphs() {
     setSelectedCrop("all");
     setSelectedYear("all");
     setMetric("count");
-    setCalMetric("area");
+
     setSelectedCalamityType("all");
+    setSelectedCalamityCrop("all");
+
     setReportPeriod("quarterly");
+    setCalReportPeriod("quarterly");
   };
 
   const exportTop5CSV = () => {
@@ -632,6 +1018,7 @@ function Graphs() {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
+
     const yr = selectedYear === "all" ? "all-years" : selectedYear;
     const brgy =
       selectedBarangay === "all"
@@ -639,6 +1026,7 @@ function Graphs() {
         : selectedBarangay.replace(/\s+/g, "_");
     const crop =
       selectedCrop === "all" ? "all-crops" : selectedCrop.replace(/\s+/g, "_");
+
     a.href = url;
     a.download = `top5-barangays-${yr}-${brgy}-${crop}.csv`;
     document.body.appendChild(a);
@@ -647,12 +1035,35 @@ function Graphs() {
     URL.revokeObjectURL(url);
   };
 
-  /* ---------- NEW: Build period-specific report rows ---------- */
+  const exportTop5PDF = async () => {
+    if (!top5Barangays.length) return;
+
+    const columns = ["Barangay", "Crops", "Area (ha)"];
+    const rows = top5Barangays.map((r) => ({
+      Barangay: r.barangay,
+      Crops: Number(r.crops || 0),
+      "Area (ha)": Number(Number(r.hectares || 0).toFixed(4)),
+    }));
+
+    const yr = selectedYear === "all" ? "all-years" : selectedYear;
+    const brgy =
+      selectedBarangay === "all"
+        ? "all-brgys"
+        : selectedBarangay.replace(/\s+/g, "_");
+    const crop =
+      selectedCrop === "all" ? "all-crops" : selectedCrop.replace(/\s+/g, "_");
+
+    await downloadPDFGeneric(
+      rows,
+      `top5-barangays-${yr}-${brgy}-${crop}.pdf`,
+      "Top Barangays by Planted Area",
+      columns
+    );
+  };
+
   const buildReportRows = (periodType) => {
-    // Group by: Period + Crop + Variety
-    const group = new Map(); // key: periodKey||crop||variety -> agg
-    // For Top Variety: Period + Crop -> Map(variety -> area)
-    const topMap = new Map(); // key: periodKey||crop -> Map
+    const group = new Map();
+    const topMap = new Map();
 
     for (const c of filtered) {
       const d = getPlantedDate(c);
@@ -668,14 +1079,15 @@ function Graphs() {
         periodKey = `${year}-${quarter}`;
         outQuarter = quarter;
       } else {
-        // Yearly and Annual are both per year (separate files; same grouping)
         periodKey = `${year}`;
         outQuarter = "";
       }
 
       const crop = getCropType(c);
       const variety = getVarietyName(c);
+
       const area = safeNum(getAreaHa(c));
+      const estValue = safeNum(getEstimatedValuePHP(c));
 
       const key = `${periodKey}||${crop}||${variety}`;
 
@@ -689,10 +1101,13 @@ function Graphs() {
           "Number of Records": 0,
           "Top Variety": "",
           "Top Variety Area (ha)": 0,
+          "Estimated Crop Value (PHP)": 0,
         };
 
       rec["Total Area (ha)"] += area;
       rec["Number of Records"] += 1;
+      rec["Estimated Crop Value (PHP)"] += estValue;
+
       group.set(key, rec);
 
       const topKey = `${periodKey}||${crop}`;
@@ -701,8 +1116,7 @@ function Graphs() {
       topMap.set(topKey, vm);
     }
 
-    // Compute top variety for each Period+Crop
-    const topByPeriodCrop = new Map(); // key -> {variety, area}
+    const topByPeriodCrop = new Map();
     for (const [k, vm] of topMap.entries()) {
       let bestVar = "Unknown";
       let bestArea = 0;
@@ -715,7 +1129,6 @@ function Graphs() {
       topByPeriodCrop.set(k, { bestVar, bestArea });
     }
 
-    // Attach top variety fields
     const rows = Array.from(group.values()).map((r) => {
       const periodKey =
         periodType === "quarterly" ? `${r.Year}-${r.Quarter}` : `${r.Year}`;
@@ -730,10 +1143,12 @@ function Graphs() {
         "Top Variety": best.bestVar,
         "Top Variety Area (ha)": Number(best.bestArea.toFixed(4)),
         "Total Area (ha)": Number(r["Total Area (ha)"].toFixed(4)),
+        "Estimated Crop Value (PHP)": Number(
+          r["Estimated Crop Value (PHP)"].toFixed(2)
+        ),
       };
     });
 
-    // Sort: Year asc, Quarter Q1..Q4, Crop, Variety
     const qNum = (q) => (q ? Number(String(q).replace("Q", "")) : 0);
     rows.sort((a, b) => {
       if (a.Year !== b.Year) return a.Year - b.Year;
@@ -746,7 +1161,6 @@ function Graphs() {
       return a.Variety.localeCompare(b.Variety);
     });
 
-    // Ensure all columns exist
     return rows.map((r) => {
       const out = {};
       REPORT_COLUMNS.forEach((c) => (out[c] = r[c] ?? ""));
@@ -754,37 +1168,56 @@ function Graphs() {
     });
   };
 
-  /* ---------- NEW: Export 3 distinct files (CSV and XLSX) ---------- */
-  const exportQuarterlyCSV = () => {
-    const rows = buildReportRows("quarterly");
-    downloadCSV(rows, "Crop_Report_Quarterly.csv");
-  };
-  const exportQuarterlyXLSX = () => {
-    const rows = buildReportRows("quarterly");
-    downloadXLSX(rows, "Crop_Report_Quarterly.xlsx");
+  const exportQuarterlyCSV = () =>
+    downloadCSV(
+      buildReportRows("quarterly"),
+      "Crop_Report_Quarterly.csv",
+      REPORT_COLUMNS
+    );
+  const exportQuarterlyPDF = async () =>
+    await downloadPDFGeneric(
+      buildReportRows("quarterly"),
+      "Crop_Report_Quarterly.pdf",
+      "Crop Report - Quarterly",
+      REPORT_COLUMNS
+    );
+
+  const exportYearlyCSV = () =>
+    downloadCSV(buildReportRows("yearly"), "Crop_Report_Yearly.csv", REPORT_COLUMNS);
+  const exportYearlyPDF = async () =>
+    await downloadPDFGeneric(
+      buildReportRows("yearly"),
+      "Crop_Report_Yearly.pdf",
+      "Crop Report - Yearly",
+      REPORT_COLUMNS
+    );
+
+  const exportAnnualCSV = () =>
+    downloadCSV(
+      buildReportRows("annual"),
+      "Crop_Report_Annual.csv",
+      REPORT_COLUMNS
+    );
+  const exportAnnualPDF = async () =>
+    await downloadPDFGeneric(
+      buildReportRows("annual"),
+      "Crop_Report_Annual.pdf",
+      "Crop Report - Annual",
+      REPORT_COLUMNS
+    );
+
+  const exportSelectedCSV = () => {
+    if (reportPeriod === "quarterly") return exportQuarterlyCSV();
+    if (reportPeriod === "yearly") return exportYearlyCSV();
+    return exportAnnualCSV();
   };
 
-  const exportYearlyCSV = () => {
-    const rows = buildReportRows("yearly");
-    downloadCSV(rows, "Crop_Report_Yearly.csv");
-  };
-  const exportYearlyXLSX = () => {
-    const rows = buildReportRows("yearly");
-    downloadXLSX(rows, "Crop_Report_Yearly.xlsx");
+  const exportSelectedPDF = async () => {
+    if (reportPeriod === "quarterly") return exportQuarterlyPDF();
+    if (reportPeriod === "yearly") return exportYearlyPDF();
+    return exportAnnualPDF();
   };
 
-  const exportAnnualCSV = () => {
-    const rows = buildReportRows("annual");
-    downloadCSV(rows, "Crop_Report_Annual.csv");
-  };
-  const exportAnnualXLSX = () => {
-    const rows = buildReportRows("annual");
-    downloadXLSX(rows, "Crop_Report_Annual.xlsx");
-  };
-
-  /* ---------- Render ---------- */
-  const valueLabel = metric === "area" ? "Hectares" : "Total";
-  const suffix = metric === "area" ? " ha" : "";
   const topVarTitle =
     metric === "area"
       ? "Top Crop Varieties by Area (ha)"
@@ -806,22 +1239,28 @@ function Graphs() {
               Crops & Calamity Overview
             </h1>
             <p className="text-gray-600 mt-1">
-              Simple, clear snapshots with filters, KPIs, charts, and downloadable
-              summarized reports.
+              KPIs, charts, filters, and downloadable summarized reports.
             </p>
           </div>
 
           {/* Tabs */}
-          <div className="mb-4 flex gap-2">
+          <div className="mb-4 flex gap-2 flex-wrap">
             <TabButton active={tab === "crops"} onClick={() => setTab("crops")}>
               Crops
             </TabButton>
-            <TabButton active={tab === "calamity"} onClick={() => setTab("calamity")}>
+            <TabButton
+              active={tab === "calamity"}
+              onClick={() => setTab("calamity")}
+            >
               Calamity
             </TabButton>
-            <TabButton active={tab === "rankings"} onClick={() => setTab("rankings")}>
+            <TabButton
+              active={tab === "rankings"}
+              onClick={() => setTab("rankings")}
+            >
               Rankings
             </TabButton>
+
             <button
               onClick={resetFilters}
               className="ml-auto text-sm px-3 py-2 rounded-md border border-gray-300 hover:bg-gray-50"
@@ -830,7 +1269,7 @@ function Graphs() {
             </button>
           </div>
 
-          {/* Filter Bar (adapts to tab) */}
+          {/* Filter Bar */}
           <Card className="mb-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <FilterField label="Barangay">
@@ -861,6 +1300,7 @@ function Graphs() {
                 </select>
               </FilterField>
 
+              {/* CROPS TAB filters */}
               {tab === "crops" && (
                 <>
                   <FilterField label="Crop">
@@ -904,33 +1344,9 @@ function Graphs() {
                 </>
               )}
 
+              {/* CALAMITY TAB filters (NO metric buttons, crop-type only) */}
               {tab === "calamity" && (
                 <>
-                  <FilterField label="Calamity Metric">
-                    <div className="inline-flex border rounded-md overflow-hidden">
-                      <button
-                        onClick={() => setCalMetric("area")}
-                        className={`px-3 py-2 text-sm ${
-                          calMetric === "area"
-                            ? "bg-green-600 text-white"
-                            : "bg-white text-gray-700"
-                        }`}
-                      >
-                        Area (ha)
-                      </button>
-                      <button
-                        onClick={() => setCalMetric("incidents")}
-                        className={`px-3 py-2 text-sm ${
-                          calMetric === "incidents"
-                            ? "bg-green-600 text-white"
-                            : "bg-white text-gray-700"
-                        }`}
-                      >
-                        Incidents
-                      </button>
-                    </div>
-                  </FilterField>
-
                   <FilterField label="Calamity Type">
                     <select
                       className="w-full border rounded-md px-3 py-2"
@@ -944,12 +1360,31 @@ function Graphs() {
                       ))}
                     </select>
                   </FilterField>
+
+                  <FilterField label="Crop Filter (Type only)">
+                    <select
+                      className="w-full border rounded-md px-3 py-2"
+                      value={selectedCalamityCrop}
+                      onChange={(e) => setSelectedCalamityCrop(e.target.value)}
+                    >
+                      {calamityCrops.map((c) => (
+                        <option key={c} value={c}>
+                          {c === "all" ? "All" : c}
+                        </option>
+                      ))}
+                    </select>
+                  </FilterField>
+
+                  <div className="lg:col-span-2 text-xs text-gray-500 flex items-center">
+                    Source: <b className="ml-1">{API_BASE}/api/impacts</b>
+                    {calLoading ? " • Loading..." : ` • Rows: ${impacts.length}`}
+                  </div>
                 </>
               )}
             </div>
           </Card>
 
-          {/* CROPS TAB */}
+          {/* ===================== CROPS TAB ===================== */}
           {tab === "crops" && (
             <>
               <Section title="Key Metrics">
@@ -971,10 +1406,70 @@ function Graphs() {
                 </div>
               </Section>
 
-              {/* ✅ Distribution + Varieties & Crop Leaders side-by-side */}
+              <Section title="Estimated Crop Value (₱)">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <Card className="lg:col-span-1">
+                    <CardTitle>Value Snapshot</CardTitle>
+                    <div className="grid grid-cols-1 gap-3">
+                      <Kpi
+                        title="Total Estimated Value"
+                        value={fmtPHP(totalEstimatedValue)}
+                        subtitle="expected yield × price"
+                      />
+                      <Kpi
+                        title="Avg Value per Record"
+                        value={fmtPHP(avgEstimatedValue)}
+                        subtitle="average across filtered records"
+                      />
+                      <Kpi
+                        title="Top Crop by Value"
+                        value={topCropByValue}
+                        subtitle="highest total ₱"
+                      />
+                      <div className="text-xs text-gray-500 mt-2">
+                        If DB has no yield/price fields, it uses defaults.
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="lg:col-span-2">
+                    <CardTitle>Estimated Value by Crop</CardTitle>
+
+                    {loading ? (
+                      <ChartSkeleton />
+                    ) : !hasValueData ? (
+                      <EmptyChart message="No estimated value available." />
+                    ) : (
+                      <div className="h-[320px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={valueByCropData}
+                            margin={{ top: 10, right: 16, left: 0, bottom: 10 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                            <XAxis dataKey="crop_type" tickMargin={8} />
+                            <YAxis tickFormatter={(v) => fmtPHP(v)} />
+                            <Tooltip
+                              formatter={(value) => fmtPHP(value)}
+                              labelFormatter={(label) => `Crop: ${label}`}
+                            />
+                            <Bar dataKey="totalValue" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    <CardFooter>
+                      {selectedYear !== "all" ? `Year: ${selectedYear}` : "All years"}
+                      {selectedBarangay !== "all" ? ` • Barangay: ${selectedBarangay}` : ""}
+                      {selectedCrop !== "all" ? ` • Crop: ${selectedCrop}` : ""}
+                    </CardFooter>
+                  </Card>
+                </div>
+              </Section>
+
               <Section title="Distribution and Varieties & Crop Leaders">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* LEFT: Distribution (Pie only) */}
                   <Card>
                     <CardTitle>Distribution</CardTitle>
 
@@ -1010,21 +1505,23 @@ function Graphs() {
                                 />
                               ))}
                             </Pie>
-                            <Tooltip content={<NiceTooltip suffix={suffix} />} />
+                            <Tooltip
+                              content={<NiceTooltip suffix={metric === "area" ? " ha" : ""} />}
+                            />
                             <Legend verticalAlign="bottom" height={36} />
                           </PieChart>
                         </ResponsiveContainer>
                       </div>
                     )}
 
-                    <CardFooter>Metric: {valueLabel}</CardFooter>
+                    <CardFooter>
+                      Metric: {metric === "area" ? "Area" : "Count"}
+                    </CardFooter>
                   </Card>
 
-                  {/* RIGHT: Varieties & Crop Leaders */}
                   <Card>
                     <CardTitle>Varieties & Crop Leaders</CardTitle>
 
-                    {/* Variety bar */}
                     <div className="mb-6">
                       <div className="text-sm font-semibold text-gray-700 mb-2">
                         {topVarTitle}
@@ -1055,16 +1552,9 @@ function Graphs() {
                                     ? fmt(v)
                                     : fmt(v, { maximumFractionDigits: 0 })
                                 }
-                                label={{
-                                  value: metric === "area" ? "Area (ha)" : "Count",
-                                  angle: -90,
-                                  position: "insideLeft",
-                                }}
                               />
                               <Tooltip
-                                content={
-                                  <NiceTooltip suffix={metric === "area" ? " ha" : ""} />
-                                }
+                                content={<NiceTooltip suffix={metric === "area" ? " ha" : ""} />}
                               />
                               <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                                 {topVarietiesData.map((_, i) => (
@@ -1078,14 +1568,8 @@ function Graphs() {
                           </ResponsiveContainer>
                         </div>
                       )}
-
-                      <div className="mt-2 text-xs text-gray-500">
-                        Showing top {TOP_VARIETY_LIMIT} varieties by{" "}
-                        {metric === "area" ? "Area (ha)" : "Count"}.
-                      </div>
                     </div>
 
-                    {/* Crop → Top Variety table */}
                     <div>
                       <div className="text-sm font-semibold text-gray-700 mb-2">
                         Crop → Top Variety Summary
@@ -1124,10 +1608,6 @@ function Graphs() {
                               ))}
                             </tbody>
                           </table>
-                          <div className="mt-3 text-xs text-gray-500">
-                            Sorted by Total Area (ha) descending. Top Variety is based on the
-                            highest total planted area per crop.
-                          </div>
                         </div>
                       )}
                     </div>
@@ -1135,7 +1615,6 @@ function Graphs() {
                 </div>
               </Section>
 
-              {/* CROPS REPORT */}
               <Section title="Crops Report (Quarterly / Yearly / Annual)">
                 <Card>
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
@@ -1144,17 +1623,11 @@ function Graphs() {
                         Report Period
                       </div>
                       <div className="text-sm text-gray-500">
-                        {reportPeriod === "annually"
-                          ? "Year-by-year summary"
-                          : reportPeriod === "quarterly"
-                          ? `Quarterly breakdown for ${activeReportYear}`
-                          : `Monthly breakdown for ${activeReportYear}`}{" "}
-                        • Metric: {metric === "area" ? "Area (ha)" : "Count"} • Export
-                        generates distinct files per period.
+                        Metric: {metric === "area" ? "Area (ha)" : "Count"} • Export
+                        includes “Estimated Crop Value (PHP)”.
                       </div>
                     </div>
 
-                    {/* ✅ NEW: 3 separate exports (CSV + XLSX) */}
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="inline-flex border rounded-md overflow-hidden">
                         <button
@@ -1189,58 +1662,21 @@ function Graphs() {
                         </button>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={exportQuarterlyCSV}
-                          disabled={!filtered.length}
-                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                          title="Download Quarterly CSV"
-                        >
-                          Quarterly CSV
-                        </button>
-                        <button
-                          onClick={exportQuarterlyXLSX}
-                          disabled={!filtered.length}
-                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                          title="Download Quarterly Excel"
-                        >
-                          Quarterly XLSX
-                        </button>
+                      <button
+                        onClick={exportSelectedCSV}
+                        disabled={!filtered.length}
+                        className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Download CSV
+                      </button>
 
-                        <button
-                          onClick={exportYearlyCSV}
-                          disabled={!filtered.length}
-                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                          title="Download Yearly CSV"
-                        >
-                          Yearly CSV
-                        </button>
-                        <button
-                          onClick={exportYearlyXLSX}
-                          disabled={!filtered.length}
-                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                          title="Download Yearly Excel"
-                        >
-                          Yearly XLSX
-                        </button>
-
-                        <button
-                          onClick={exportAnnualCSV}
-                          disabled={!filtered.length}
-                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                          title="Download Annual CSV"
-                        >
-                          Annual CSV
-                        </button>
-                        <button
-                          onClick={exportAnnualXLSX}
-                          disabled={!filtered.length}
-                          className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                          title="Download Annual Excel"
-                        >
-                          Annual XLSX
-                        </button>
-                      </div>
+                      <button
+                        onClick={exportSelectedPDF}
+                        disabled={!filtered.length}
+                        className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Download PDF
+                      </button>
                     </div>
                   </div>
 
@@ -1248,7 +1684,6 @@ function Graphs() {
                     <EmptyChart message="No crop report data for this filter." />
                   ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Chart (total by period) */}
                       <div className="h-[280px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
@@ -1259,16 +1694,13 @@ function Graphs() {
                             <XAxis dataKey="label" tickMargin={8} />
                             <YAxis tickFormatter={(v) => fmt(v)} />
                             <Tooltip
-                              content={
-                                <NiceTooltip suffix={metric === "area" ? " ha" : ""} />
-                              }
+                              content={<NiceTooltip suffix={metric === "area" ? " ha" : ""} />}
                             />
                             <Bar dataKey="total" radius={[6, 6, 0, 0]} fill="#16A34A" />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
 
-                      {/* Table (total by period) */}
                       <div className="overflow-x-auto">
                         <table className="min-w-full text-sm">
                           <thead>
@@ -1295,12 +1727,6 @@ function Graphs() {
                             ))}
                           </tbody>
                         </table>
-
-                        <div className="mt-3 text-xs text-gray-500">
-                          Exports create separate files with columns: Year, Quarter, Crop,
-                          Variety, Total Area (ha), Number of Records, Top Variety, Top Variety
-                          Area (ha). Data is period-specific without manual filtering.
-                        </div>
                       </div>
                     </div>
                   )}
@@ -1309,34 +1735,38 @@ function Graphs() {
             </>
           )}
 
-          {/* CALAMITY TAB */}
+          {/* ===================== CALAMITY TAB ===================== */}
           {tab === "calamity" && (
             <>
-              <Section title="Key Metrics">
+              <Section title="Key Metrics (from tbl_calamity_crop_impacts)">
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <Kpi
-                    title="Total Affected Area"
+                    title="Total Damaged Area"
                     value={`${fmt(calSummary.totalAffectedArea)} ha`}
-                    subtitle={
-                      selectedBarangay === "all" ? "All barangays" : selectedBarangay
-                    }
+                    subtitle={selectedBarangay === "all" ? "All barangays" : selectedBarangay}
+                  />
+                  <Kpi title="Total Loss Value" value={fmtPHP(calSummary.totalLossValue)} />
+                  <Kpi
+                    title="Affected Crops"
+                    value={fmt(calSummary.affectedCrops, { maximumFractionDigits: 0 })}
                   />
                   <Kpi
-                    title="Affected Farmers"
-                    value={fmt(calSummary.affectedFarmers, { maximumFractionDigits: 0 })}
-                    subtitle={selectedYear === "all" ? "All years" : `Year ${selectedYear}`}
+                    title="Impact Records"
+                    value={fmt(filteredImpacts.length, { maximumFractionDigits: 0 })}
                   />
+                </div>
+
+                <div className="mt-3 text-xs text-gray-500">
+                  Data source: <b>GET {API_BASE}/api/impacts</b> (tbl_calamity_crop_impacts)
+                  {calLoading ? " • Loading..." : ` • Loaded rows: ${impacts.length}`}
+                  {selectedCalamityCrop !== "all" ? ` • Crop: ${selectedCalamityCrop}` : ""}
                 </div>
               </Section>
 
-              <Section
-                title={`By Calamity Type (${calMetric === "area" ? "Area" : "Incidents"})`}
-              >
+              <Section title="By Calamity Type (Damaged Area)">
                 <Card>
                   {calLoading ? (
                     <ChartSkeleton />
-                  ) : !calSummary.byType.length ? (
-                    <EmptyChart message="No calamity data for this filter." />
                   ) : (
                     <div className="h-[260px]">
                       <ResponsiveContainer width="100%" height="100%">
@@ -1347,15 +1777,8 @@ function Graphs() {
                           <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                           <XAxis dataKey="type" tickMargin={8} />
                           <YAxis tickFormatter={(v) => fmt(v)} />
-                          <Tooltip
-                            content={
-                              <NiceTooltip suffix={calMetric === "area" ? " ha" : ""} />
-                            }
-                          />
-                          <Bar
-                            dataKey={calMetric === "area" ? "area" : "incidents"}
-                            radius={[6, 6, 0, 0]}
-                          >
+                          <Tooltip content={<NiceTooltip suffix=" ha" />} />
+                          <Bar dataKey="area" radius={[6, 6, 0, 0]}>
                             {calamityByTypeChart.map((_, i) => (
                               <Cell
                                 key={i}
@@ -1367,63 +1790,161 @@ function Graphs() {
                       </ResponsiveContainer>
                     </div>
                   )}
+
                   <CardFooter>
                     {selectedYear !== "all" ? `Year: ${selectedYear}` : "All years"}
                     {selectedBarangay !== "all" ? ` • Barangay: ${selectedBarangay}` : ""}
                     {selectedCalamityType !== "all" ? ` • Type: ${selectedCalamityType}` : ""}
+                    {selectedCalamityCrop !== "all" ? ` • Crop: ${selectedCalamityCrop}` : ""}
                   </CardFooter>
                 </Card>
               </Section>
 
-              <Section title="Incidents Over Time (Monthly)">
+              {/* ✅ Requested: Quarterly / Yearly / Annual + Download CSV/PDF (Calamity) */}
+              <Section title="Calamity Report (Quarterly / Yearly / Annual)">
                 <Card>
-                  {!calamityTimelineFilled.length ? (
-                    <EmptyChart message="No calamity timeline data." />
-                  ) : (
-                    <div className="h-[260px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                          data={calamityTimelineFilled}
-                          margin={{ top: 8, right: 16, left: 0, bottom: 8 }}
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+                    <div>
+                      <div className="text-base font-semibold text-gray-800">
+                        Report Period
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Includes: Incidents, Damaged Area (ha), Total Loss (PHP)
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex border rounded-md overflow-hidden">
+                        <button
+                          onClick={() => setCalReportPeriod("quarterly")}
+                          className={`px-3 py-2 text-sm ${
+                            calReportPeriod === "quarterly"
+                              ? "bg-green-600 text-white"
+                              : "bg-white text-gray-700 hover:bg-gray-50"
+                          }`}
                         >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                          <XAxis dataKey="month" />
-                          <YAxis
-                            tickFormatter={(v) => fmt(v)}
-                            label={{
-                              value: calMetric === "area" ? "Area (ha)" : "Incidents",
-                              angle: -90,
-                              position: "insideLeft",
-                            }}
-                          />
-                          <Tooltip
-                            content={
-                              <NiceTooltip suffix={calMetric === "area" ? " ha" : ""} />
-                            }
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey={calMetric === "area" ? "area" : "incidents"}
-                            stroke="#EF4444"
-                            strokeWidth={2}
-                            dot
-                            activeDot={{ r: 5 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
+                          Quarterly
+                        </button>
+                        <button
+                          onClick={() => setCalReportPeriod("yearly")}
+                          className={`px-3 py-2 text-sm ${
+                            calReportPeriod === "yearly"
+                              ? "bg-green-600 text-white"
+                              : "bg-white text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          Yearly
+                        </button>
+                        <button
+                          onClick={() => setCalReportPeriod("annually")}
+                          className={`px-3 py-2 text-sm ${
+                            calReportPeriod === "annually"
+                              ? "bg-green-600 text-white"
+                              : "bg-white text-gray-700 hover:bg-gray-50"
+                          }`}
+                        >
+                          Annual
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={exportCalamityCSV}
+                        disabled={!calamityReportRows.length}
+                        className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Download CSV
+                      </button>
+
+                      <button
+                        onClick={exportCalamityPDF}
+                        disabled={!calamityReportRows.length}
+                        className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Download PDF
+                      </button>
+                    </div>
+                  </div>
+
+                  {!calamityReportRows.length ? (
+                    <EmptyChart message="No calamity report data for this filter." />
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="h-[280px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart
+                            data={calamityReportRows}
+                            margin={{ top: 10, right: 16, left: 0, bottom: 10 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                            <XAxis dataKey="Period" tickMargin={8} />
+                            <YAxis tickFormatter={(v) => fmt(v)} />
+                            <Tooltip
+                              content={({ active, payload, label }) => {
+                                if (!active || !payload?.length) return null;
+                                const row = payload[0].payload;
+                                return (
+                                  <div className="rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm">
+                                    <div className="text-sm font-medium text-gray-900">
+                                      {label}
+                                    </div>
+                                    <div className="text-sm text-gray-700">
+                                      Incidents:{" "}
+                                      <b>{fmt(row.Incidents, { maximumFractionDigits: 0 })}</b>
+                                    </div>
+                                    <div className="text-sm text-gray-700">
+                                      Damaged Area: <b>{fmt(row["Damaged Area (ha)"])} ha</b>
+                                    </div>
+                                    <div className="text-sm text-gray-700">
+                                      Total Loss: <b>{fmtPHP(row["Total Loss (PHP)"])}</b>
+                                    </div>
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Legend />
+                            <Line type="monotone" dataKey="Incidents" dot={false} />
+                            <Line type="monotone" dataKey="Damaged Area (ha)" dot={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-600 border-b">
+                              <th className="py-2 pr-4">Period</th>
+                              <th className="py-2 pr-4">Incidents</th>
+                              <th className="py-2 pr-4">Damaged Area (ha)</th>
+                              <th className="py-2 pr-4">Total Loss (PHP)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {calamityReportRows.map((r) => (
+                              <tr
+                                key={r.key}
+                                className="border-b last:border-0 hover:bg-gray-50/60"
+                              >
+                                <td className="py-2 pr-4">{r.Period}</td>
+                                <td className="py-2 pr-4">
+                                  {fmt(r.Incidents, { maximumFractionDigits: 0 })}
+                                </td>
+                                <td className="py-2 pr-4">
+                                  {fmt(r["Damaged Area (ha)"])} ha
+                                </td>
+                                <td className="py-2 pr-4">{fmtPHP(r["Total Loss (PHP)"])}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
-                  <CardFooter>
-                    {selectedYear !== "all" ? `Year: ${selectedYear}` : "Last 12 months"}
-                    {selectedBarangay !== "all" ? ` • Barangay: ${selectedBarangay}` : ""}
-                    {selectedCalamityType !== "all" ? ` • Type: ${selectedCalamityType}` : ""}
-                  </CardFooter>
                 </Card>
               </Section>
             </>
           )}
 
-          {/* RANKINGS TAB */}
+          {/* ===================== RANKINGS TAB ===================== */}
           {tab === "rankings" && (
             <Section title="Top Barangays by Planted Area">
               <div className="flex items-center justify-between mb-3 text-sm text-gray-500">
@@ -1432,14 +1953,24 @@ function Graphs() {
                   {selectedCrop !== "all" ? ` • Crop: ${selectedCrop}` : ""}
                   {selectedBarangay !== "all" ? ` • Barangay: ${selectedBarangay}` : ""}
                 </div>
-                <button
-                  onClick={exportTop5CSV}
-                  disabled={!top5Barangays.length}
-                  className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                  title={top5Barangays.length ? "Download CSV" : "No data to export"}
-                >
-                  Download CSV
-                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={exportTop5CSV}
+                    disabled={!top5Barangays.length}
+                    className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Download CSV
+                  </button>
+
+                  <button
+                    onClick={exportTop5PDF}
+                    disabled={!top5Barangays.length}
+                    className="px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Download PDF
+                  </button>
+                </div>
               </div>
 
               <Card>
@@ -1503,7 +2034,7 @@ function Graphs() {
 
 export default Graphs;
 
-/* ---------- UI bits (simple & consistent) ---------- */
+/* ---------- UI bits ---------- */
 function TabButton({ active, onClick, children }) {
   return (
     <button
@@ -1545,13 +2076,17 @@ function Kpi({ title, value, subtitle }) {
 }
 function Card({ children, className = "" }) {
   return (
-    <div className={`rounded-xl border border-gray-200 bg-white p-5 shadow-sm ${className}`}>
+    <div
+      className={`rounded-xl border border-gray-200 bg-white p-5 shadow-sm ${className}`}
+    >
       {children}
     </div>
   );
 }
 function CardTitle({ children }) {
-  return <h3 className="text-base font-semibold text-gray-800 mb-3">{children}</h3>;
+  return (
+    <h3 className="text-base font-semibold text-gray-800 mb-3">{children}</h3>
+  );
 }
 function CardFooter({ children }) {
   return <div className="mt-2 text-xs text-gray-500">{children}</div>;

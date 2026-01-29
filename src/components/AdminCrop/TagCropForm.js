@@ -2594,20 +2594,7 @@ const TagCropForm = ({
     )}
 
     {/* 4. TOTAL CROP VALUE CARD (bottom separate bordered div) */}
-    {displayFarmgate && (
-      <div className="rounded-2xl border border-gray-200 bg-white p-5">
-        <p className="text-sm font-medium text-gray-800 mb-1">
-          Total crop value (all crops)
-        </p>
-        <p className="text-lg font-bold text-gray-900">
-          ₱{peso(displayFarmgate.low)} – ₱{peso(displayFarmgate.high)}
-        </p>
-        <p className="text-xs text-gray-500 mt-1">
-          Combined main{isIntercropMode ? " and secondary" : ""} crop value
-          based on current yields and prices.
-        </p>
-      </div>
-    )}
+  
   </div>
 </Section>
 

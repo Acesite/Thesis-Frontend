@@ -4104,64 +4104,7 @@ useEffect(() => {
 )}             
             </div>
 
-            {/* past season */}
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-              <p className="text-[11px] font-semibold text-gray-800">
-                Previous season
-              </p>
-
-              {hasPastSeason ? (
-                <>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {pastCropName}
-                  </p>
-                  {pastVarietyName && (
-                    <p className="text-[11px] text-gray-500">
-                      Variety: {pastVarietyName}
-                    </p>
-                  )}
-
-                  <div className="mt-2 space-y-1 text-[11px] text-gray-700">
-                    <div className="flex justify-between">
-                      <span>Area</span>
-                      <span className="font-semibold">
-                        {pastHectares != null
-                          ? `${formatNum(pastHectares)} ha`
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Volume</span>
-                      <span className="font-semibold">
-                        {pastVolume != null
-                          ? `${formatNum(pastVolume)} ${pastUnit}`
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Planted</span>
-                      <span className="font-semibold">
-                        {pastPlantedDate
-                          ? new Date(pastPlantedDate).toLocaleDateString()
-                          : "—"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Harvest</span>
-                      <span className="font-semibold">
-                        {pastHarvestDate
-                          ? new Date(pastHarvestDate).toLocaleDateString()
-                          : "—"}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <p className="mt-1 text-[11px] text-gray-500">
-                  No past season recorded for this field.
-                </p>
-              )}
-            </div>
+           
           </div>
         </div>
       )}

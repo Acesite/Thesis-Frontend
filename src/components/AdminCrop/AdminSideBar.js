@@ -616,7 +616,7 @@ const AdminSideBar = ({
                       : "Not yet harvested"}
                   </p>
 
-                  {/* {!isHarvested && (
+                  {!isHarvested && (
                     <button
                       type="button"
                       onClick={handleMarkHarvested}
@@ -630,7 +630,7 @@ const AdminSideBar = ({
                     >
                       Mark as harvested
                     </button>
-                  )} */}
+                  )}
 
                   {isHarvested && onStartNewSeason && (
                     <button
@@ -832,11 +832,7 @@ const AdminSideBar = ({
               })}
             </ol>
 
-            <p className="mt-3 text-xs text-gray-500">
-              Tip: make sure your history endpoint returns{" "}
-              <span className="font-semibold">est_farmgate_value_display</span>{" "}
-              for each season so values stay consistent.
-            </p>
+           
           </Section>
         )}
 
@@ -897,7 +893,7 @@ const AdminSideBar = ({
         </Section>
 
         {/* harvest history (time filter) */}
-        {/* <Section title="Harvest history on map">
+        <Section title="Harvest history on map">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-700">
               Filter map by harvested date
@@ -975,7 +971,7 @@ const AdminSideBar = ({
               month range.
             </p>
           )}
-        </Section> */}
+        </Section>
 
         {/* year vs year analytics */}
         

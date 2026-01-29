@@ -1,3 +1,4 @@
+// src/Admin/SuperAdminManageCalamity.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AOS from "aos";
@@ -319,18 +320,32 @@ const SuperAdminManageCalamity = () => {
   const [expandedImpactIds, setExpandedImpactIds] = useState(() => new Set());
   const [viewingImpact, setViewingImpact] = useState(null);
 
+  // NEW: separate edit modal for impact rows
+  const [editingImpact, setEditingImpact] = useState(null);
+  const [impactEditForm, setImpactEditForm] = useState({});
+
+  // kebab + delete for impact cards
+  const [activeImpactMenuId, setActiveImpactMenuId] = useState(null);
+  const [pendingImpactDelete, setPendingImpactDelete] = useState(null);
+
   // Close kebab on outside click / Escape
   const pageRef = useRef(null);
   useEffect(() => {
     const onDown = (e) => {
-      if (!activeActionId) return;
+      if (!activeActionId && !activeImpactMenuId) return;
       const el = e.target;
       const insideMenu = el.closest?.("[data-kebab-menu='true']");
       const isButton = el.closest?.("[data-kebab-trigger='true']");
-      if (!insideMenu && !isButton) setActiveActionId(null);
+      if (!insideMenu && !isButton) {
+        setActiveActionId(null);
+        setActiveImpactMenuId(null);
+      }
     };
     const onEsc = (e) => {
-      if (e.key === "Escape") setActiveActionId(null);
+      if (e.key === "Escape") {
+        setActiveActionId(null);
+        setActiveImpactMenuId(null);
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onEsc);
@@ -338,7 +353,7 @@ const SuperAdminManageCalamity = () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onEsc);
     };
-  }, [activeActionId]);
+  }, [activeActionId, activeImpactMenuId]);
 
   const fetchImpactRows = async () => {
     try {
@@ -430,12 +445,34 @@ const SuperAdminManageCalamity = () => {
 
   /* ------- filter + search ------- */
   const filtered = useMemo(() => {
-    const byType = incidents.filter((c) => {
+    // 1) remove "empty" incidents that would just render as N/A
+    const nonEmpty = incidents.filter((c) => {
+      const hasType = c.calamity_type || c.incident_type || c.type_name;
+      const hasOtherFields =
+        c.date_reported ||
+        c.reported_at ||
+        c.location ||
+        c.barangay ||
+        c.affected_area ||
+        c.crop_stage ||
+        c.crop_type_name ||
+        c.ecosystem_name ||
+        c.variety_name;
+
+      // keep only incidents that have at least a type or some real data
+      return hasType || hasOtherFields;
+    });
+
+    // 2) filter by selected type (same as before)
+    const byType = nonEmpty.filter((c) => {
       const t = c.calamity_type || c.incident_type || c.type_name;
       return !selectedType || t === selectedType;
     });
+
+    // 3) search (same as before)
     if (!search.trim()) return byType;
     const q = search.toLowerCase();
+
     return byType.filter((c) =>
       [
         c.calamity_type,
@@ -516,7 +553,14 @@ const SuperAdminManageCalamity = () => {
   const start = (page - 1) * pageSize;
   const pageItems = sorted.slice(start, start + pageSize);
 
-  /* ------- edit/update ------- */
+  /* ------- helpers ------- */
+  const coerceNum = (v) => {
+    if (v === "" || v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  /* ------- edit/update (INCIDENT) ------- */
   const handleEdit = async (incident) => {
     const latest = incident;
     setEditingIncident(latest);
@@ -574,12 +618,6 @@ const SuperAdminManageCalamity = () => {
       setEditFarmerDraft(null);
       setIsEditingFarmer(false);
     }
-  };
-
-  const coerceNum = (v) => {
-    if (v === "" || v === null || v === undefined) return null;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
   };
 
   /* ------- dependent dropdowns helpers ------- */
@@ -700,6 +738,21 @@ const SuperAdminManageCalamity = () => {
     }
   };
 
+  const confirmImpactDelete = async () => {
+    if (!pendingImpactDelete) return;
+    try {
+      await axios.delete(`${IMPACTS_API}/${pendingImpactDelete.id}`);
+      setImpactRows((prev) =>
+        prev.filter((r) => r.id !== pendingImpactDelete.id)
+      );
+      setPendingImpactDelete(null);
+      alert("Damage record deleted successfully!");
+    } catch (err) {
+      console.error("Impact delete error:", err);
+      alert("Failed to delete damage record.");
+    }
+  };
+
   const impactFiltered = useMemo(() => {
     // 1) remove impact rows that don't have a proper crop OR calamity
     const cleaned = (impactRows || []).filter((r) => {
@@ -816,6 +869,92 @@ const SuperAdminManageCalamity = () => {
     if (s === "high") return "#ef4444";
     if (s === "severe") return "#b91c1c";
     return "#94a3b8";
+  };
+
+  /* ------- IMPACT EDIT HELPERS ------- */
+  const startImpactEdit = (row) => {
+    setEditingImpact(row);
+    setImpactEditForm({
+      ...row,
+      severity: row.severity ?? "",
+      level: row.level ?? "",
+      distance_meters: row.distance_meters ?? "",
+      damage_fraction: row.damage_fraction ?? "",
+      damaged_area_ha: row.damaged_area_ha ?? "",
+      loss_value_php: row.loss_value_php ?? "",
+      base_area_ha: row.base_area_ha ?? "",
+      damaged_volume: row.damaged_volume ?? "",
+      base_volume: row.base_volume ?? "",
+      base_unit: row.base_unit ?? "",
+      is_resolved: impactResolved(row),
+      resolved_at: row.resolved_at || null,
+      resolved_at_input: toDatetimeLocalValue(row.resolved_at),
+    });
+  };
+
+  const handleImpactEditChange = (e) => {
+    const { name, value, type, checked } = e.target;
+
+    if (name === "resolved_at_input") {
+      return setImpactEditForm((prev) => ({
+        ...prev,
+        resolved_at_input: value,
+        resolved_at: fromDatetimeLocalToISO(value),
+      }));
+    }
+
+    if (type === "checkbox") {
+      return setImpactEditForm((prev) => ({
+        ...prev,
+        [name]: checked,
+      }));
+    }
+
+    setImpactEditForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleImpactUpdate = async () => {
+    if (!editingImpact) return;
+
+    try {
+      const payload = {
+        severity: coerceNum(impactEditForm.severity),
+        level: impactEditForm.level ?? null,
+        distance_meters: coerceNum(impactEditForm.distance_meters),
+        damage_fraction:
+          impactEditForm.damage_fraction === "" ||
+          impactEditForm.damage_fraction === null ||
+          impactEditForm.damage_fraction === undefined
+            ? null
+            : Number(impactEditForm.damage_fraction),
+        damaged_area_ha: coerceNum(impactEditForm.damaged_area_ha),
+        loss_value_php: coerceNum(impactEditForm.loss_value_php),
+        base_area_ha: coerceNum(impactEditForm.base_area_ha),
+        damaged_volume: coerceNum(impactEditForm.damaged_volume),
+        base_volume: coerceNum(impactEditForm.base_volume),
+        base_unit: impactEditForm.base_unit || null,
+        is_resolved: impactEditForm.is_resolved ? 1 : 0,
+        resolved_at: impactEditForm.resolved_at || null,
+      };
+
+      await axios.put(`${IMPACTS_API}/${editingImpact.id}`, payload);
+
+      // update local list so UI reflects changes immediately
+      setImpactRows((prev) =>
+        prev.map((r) =>
+          r.id === editingImpact.id ? { ...r, ...payload } : r
+        )
+      );
+
+      setEditingImpact(null);
+      alert("Damage record updated successfully!");
+    } catch (err) {
+      console.error("Impact update error:", err);
+      alert("Failed to update damage record.");
+    }
   };
 
   /* ---------- RENDER ---------- */
@@ -982,7 +1121,7 @@ const SuperAdminManageCalamity = () => {
                         key={`impact-card-${id}`}
                         className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 flex flex-col"
                       >
-                        {/* Header similar to Banana card */}
+                        {/* Header with 3-dot menu */}
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 mb-1">
@@ -999,23 +1138,69 @@ const SuperAdminManageCalamity = () => {
                             </div>
                           </div>
 
-                          <div className="flex flex-col items-end gap-1">
-                            {sevText !== "N/A" && (
+                          <div className="flex items-start gap-2">
+                            <div className="flex flex-col items-end gap-1">
+                              {sevText !== "N/A" && (
+                                <span
+                                  className={`px-2.5 py-1 rounded-full text-[11px] ${severityBadge(
+                                    sevText
+                                  )}`}
+                                >
+                                  {sevText} severity
+                                </span>
+                              )}
                               <span
-                                className={`px-2.5 py-1 rounded-full text-[11px] ${severityBadge(
-                                  sevText
+                                className={`px-2.5 py-1 rounded-full text-[11px] ${resolveStatusPill(
+                                  resolved
                                 )}`}
                               >
-                                {sevText} severity
+                                {resolved ? "Resolved" : "Ongoing"}
                               </span>
-                            )}
-                            <span
-                              className={`px-2.5 py-1 rounded-full text-[11px] ${resolveStatusPill(
-                                resolved
-                              )}`}
-                            >
-                              {resolved ? "Resolved" : "Ongoing"}
-                            </span>
+                            </div>
+
+                            {/* 3-dot kebab menu */}
+                            <div className="relative">
+                              <button
+                                data-kebab-trigger="true"
+                                aria-label="More actions"
+                                aria-expanded={activeImpactMenuId === id}
+                                onClick={() =>
+                                  setActiveImpactMenuId((current) =>
+                                    current === id ? null : id
+                                  )
+                                }
+                                className="h-8 w-8 flex items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                              >
+                                <span className="text-xl leading-none">⋯</span>
+                              </button>
+
+                              {activeImpactMenuId === id && (
+                                <div
+                                  data-kebab-menu="true"
+                                  className="absolute right-0 mt-2 w-32 rounded-2xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 py-2"
+                                >
+                                  <button
+                                    onClick={() => {
+                                      setActiveImpactMenuId(null);
+                                      // open EDIT modal for impact
+                                      startImpactEdit(r);
+                                    }}
+                                    className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setActiveImpactMenuId(null);
+                                      setPendingImpactDelete(r);
+                                    }}
+                                    className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -1320,7 +1505,7 @@ const SuperAdminManageCalamity = () => {
         </div>
       </main>
 
-      {/* EDIT MODAL */}
+      {/* EDIT MODAL (INCIDENT) */}
       {editingIncident && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden">
@@ -1782,6 +1967,261 @@ const SuperAdminManageCalamity = () => {
         </div>
       )}
 
+      {/* IMPACT EDIT MODAL */}
+      {editingImpact &&
+        (() => {
+          const calamityName = impactCalamityName(editingImpact);
+          const cropName = impactCropName(editingImpact);
+
+          return (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
+              <div className="bg-white p-5 sm:p-6 md:p-8 rounded-2xl w-full max-w-2xl shadow-2xl relative">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-semibold text-slate-900">
+                      Edit Damage Record
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      {cropName} · {calamityName}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setEditingImpact(null)}
+                    className="p-2 -m-2 rounded-md hover:bg-slate-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                    aria-label="Close"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="max-h-[75vh] overflow-auto space-y-5">
+                  <section>
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      Severity &amp; status
+                    </h4>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Adjust severity level and resolution status.
+                    </p>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Severity (numeric)
+                        </label>
+                        <input
+                          type="number"
+                          name="severity"
+                          value={impactEditForm.severity ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 1–10"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Level / Category
+                        </label>
+                        <input
+                          type="text"
+                          name="level"
+                          value={impactEditForm.level ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. Partial, Severe"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="inline-flex items-center gap-2 mt-1 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            name="is_resolved"
+                            checked={!!impactEditForm.is_resolved}
+                            onChange={handleImpactEditChange}
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                          <span>Mark as resolved</span>
+                        </label>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-medium text-slate-700">
+                          Resolved at
+                        </label>
+                        <input
+                          type="datetime-local"
+                          name="resolved_at_input"
+                          value={impactEditForm.resolved_at_input || ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section>
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      Damage &amp; loss values
+                    </h4>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Update physical damage and estimated losses.
+                    </p>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Distance (meters)
+                        </label>
+                        <input
+                          type="number"
+                          name="distance_meters"
+                          value={impactEditForm.distance_meters ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 200"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Damage fraction (0–1 or %)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="damage_fraction"
+                          value={impactEditForm.damage_fraction ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 0.4 or 40"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Damaged area (ha)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="damaged_area_ha"
+                          value={impactEditForm.damaged_area_ha ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 1.25"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Base area (ha)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="base_area_ha"
+                          value={impactEditForm.base_area_ha ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 2.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Loss value (PHP)
+                        </label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          name="loss_value_php"
+                          value={impactEditForm.loss_value_php ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 15000"
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section>
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      Volume &amp; units
+                    </h4>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Define production volume and measurement units.
+                    </p>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Base volume
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="base_volume"
+                          value={impactEditForm.base_volume ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 200"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-slate-700">
+                          Damaged volume
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="damaged_volume"
+                          value={impactEditForm.damaged_volume ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. 80"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-medium text-slate-700">
+                          Base unit (e.g. kg, sacks)
+                        </label>
+                        <input
+                          type="text"
+                          name="base_unit"
+                          value={impactEditForm.base_unit ?? ""}
+                          onChange={handleImpactEditChange}
+                          className="mt-1 h-10 w-full rounded-md border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                          placeholder="e.g. kg, sacks"
+                        />
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2">
+                  <button
+                    onClick={() => setEditingImpact(null)}
+                    className="px-4 py-2 rounded-md border border-slate-300 hover:bg-slate-50 text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleImpactUpdate}
+                    className="px-4 py-2 rounded-md bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                  >
+                    Update record
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {/* VIEW MODAL (INCIDENT) */}
       {viewingIncident && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-50">
@@ -2182,6 +2622,17 @@ const SuperAdminManageCalamity = () => {
           }" in ${pendingDelete.barangay || pendingDelete.location || "—"}.`}
           onCancel={() => setPendingDelete(null)}
           onConfirm={confirmDelete}
+        />
+      )}
+
+      {pendingImpactDelete && (
+        <ConfirmDialog
+          title="Delete damage record"
+          message={`This will permanently delete the damage record for "${impactCropName(
+            pendingImpactDelete
+          )}" under "${impactCalamityName(pendingImpactDelete)}".`}
+          onCancel={() => setPendingImpactDelete(null)}
+          onConfirm={confirmImpactDelete}
         />
       )}
 

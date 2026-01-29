@@ -866,7 +866,7 @@ const CalamityImpactSidebar = ({
                         : "Mark this field as resolved for this calamity"
                     }
                   >
-                    {resolvingImpact ? "Resolving..." : "Resolve impact"}
+                    {resolvingImpact ? "Resolving..." : "Verified"}
                   </button>
 
                   <dl className="mt-2 grid grid-cols-2 gap-3 text-sm">
