@@ -983,65 +983,90 @@ const AdminCropMap = () => {
     timelineFrom,
     timelineTo,
   ]);
-  /* ---------- crop polygon label layer helper ---------- */
-function ensureCropPolygonLabelsLayer(m) {
+  function ensureCropPolygonLabelsLayer(m) {
   if (!m) return;
 
-  // Layer id
   const LABEL_LAYER = "crop-polygons-labels";
-
-  // If layer already exists, do nothing
   if (m.getLayer(LABEL_LAYER)) return;
-
-  // Make sure source exists first
   if (!m.getSource("crop-polygons")) return;
+
+  // helper expression: SN-0001
+  const snExpr = [
+    "let",
+    "n",
+    ["to-number", ["get", "id"]],
+    [
+      "concat",
+      "SN-",
+      [
+        "case",
+        ["<", ["var", "n"], 10],
+        "000",
+        ["<", ["var", "n"], 100],
+        "00",
+        ["<", ["var", "n"], 1000],
+        "0",
+        "",
+      ],
+      ["to-string", ["var", "n"]],
+    ],
+  ];
 
   m.addLayer({
     id: LABEL_LAYER,
     type: "symbol",
     source: "crop-polygons",
+
+    // ✅ Don’t even try to show labels when super zoomed out
+    minzoom: 11.5,
+
     layout: {
-      // ✅ "CropName • SN-0001" format
+      // ✅ SHORT when zoomed out, FULL when zoomed in
       "text-field": [
-        "let",
-        "n",
-        ["to-number", ["get", "id"]],
+        "step",
+        ["zoom"],
+        snExpr, // zoom < 13 => "SN-0001"
+        13,
         [
           "concat",
           ["coalesce", ["get", "crop_name"], "Crop"],
-          " • SN-",
-          [
-            "case",
-            ["<", ["var", "n"], 10],
-            "000",
-            ["<", ["var", "n"], 100],
-            "00",
-            ["<", ["var", "n"], 1000],
-            "0",
-            "",
-          ],
-          ["to-string", ["var", "n"]],
+          " • ",
+          snExpr, // zoom >= 13 => "Crop • SN-0001"
         ],
       ],
+
       "symbol-placement": "point",
+
+      // ✅ Collision avoidance ON (this is the main fix)
+      "text-allow-overlap": false,
+      "text-ignore-placement": false,
+
+      // ✅ If it collides, it's allowed to disappear instead of overlapping
+      "text-optional": true,
+
+      // ✅ Let Mapbox try alternative placements around the point
+      "text-variable-anchor": ["top", "bottom", "left", "right"],
+      "text-radial-offset": 0.8,
+
+      // ✅ Add a bit of collision padding
+      "text-padding": 2,
+
       "text-size": [
         "interpolate",
         ["linear"],
         ["zoom"],
-        11,
-        10,
+        11.5,
+        9,
         14,
         12,
         16,
         14,
       ],
+
       "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-      "text-offset": [0, 0],
     },
+
     paint: {
-      // ✅ Gray if harvested
       "text-color": [
         "case",
         ["==", ["get", "is_harvested"], 1],
@@ -1051,17 +1076,25 @@ function ensureCropPolygonLabelsLayer(m) {
       "text-halo-color": "rgba(255,255,255,0.95)",
       "text-halo-width": 2,
       "text-halo-blur": 0.2,
+
+      // ✅ Optional: fade labels out earlier to reduce clutter
+      "text-opacity": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        11.5,
+        0,
+        12.3,
+        1,
+      ],
     },
   });
 
   // keep labels above polygons
   try {
-    if (m.getLayer("crop-polygons-outline")) {
-      m.moveLayer(LABEL_LAYER);
-    }
+    if (m.getLayer("crop-polygons-outline")) m.moveLayer(LABEL_LAYER);
   } catch {}
 }
-
 
   /* ---------- polygon loader ---------- */
   const loadPolygons = useCallback(
