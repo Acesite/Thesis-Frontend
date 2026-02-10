@@ -71,6 +71,21 @@ function calamityNormalizeName(s) {
     .trim();
 }
 
+// ✅ SN formatter: 116 -> SN-0116
+function formatSN(id) {
+  const n = Number(id);
+  if (!Number.isFinite(n)) return "SN-0000";
+  return `SN-${String(n).padStart(4, "0")}`;
+}
+
+// ✅ text label like: "Rice • SN-0116"
+function buildCropLabel(props) {
+  const crop = props?.crop_name || "Crop";
+  const sn = formatSN(props?.id);
+  return `${crop} • ${sn}`;
+}
+
+
 function calamityPeso(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return "—";
@@ -1448,6 +1463,95 @@ const activeImpactIsResolved = useMemo(() => {
     }
   };
 
+
+ const ensureCropPolygonLabelsLayer = useCallback(() => {
+  if (!map.current) return;
+  const m = map.current;
+
+  const LABEL_LAYER = "crop-polygons-labels";
+
+  // already added
+  if (m.getLayer(LABEL_LAYER)) return;
+
+  // must exist first
+  if (!m.getSource("crop-polygons")) return;
+
+  // Build SN: 116 -> SN-0116
+  const snExpr = [
+    "let",
+    "n",
+    ["to-number", ["get", "id"]],
+    [
+      "concat",
+      "SN-",
+      [
+        "case",
+        ["<", ["var", "n"], 10],
+        "000",
+        ["<", ["var", "n"], 100],
+        "00",
+        ["<", ["var", "n"], 1000],
+        "0",
+        "",
+      ],
+      ["to-string", ["var", "n"]],
+    ],
+  ];
+
+  // "Rice • SN-0116"
+ const labelExpr = [
+  "step",
+  ["zoom"],
+  snExpr, // zoom < 13 => "SN-0116"
+  13,
+  [
+    "concat",
+    ["coalesce", ["get", "crop_name"], "Crop"],
+    " • ",
+    snExpr, // zoom >= 13 => "Rice • SN-0116"
+  ],
+];
+
+
+  m.addLayer({
+    id: LABEL_LAYER,
+    type: "symbol",
+    source: "crop-polygons",
+    minzoom: 11,
+
+    layout: {
+      "text-field": labelExpr,
+
+      // ✅ center of polygon (Mapbox chooses a good point inside)
+      "symbol-placement": "point",
+      "text-anchor": "center",
+      "text-offset": [0, 0],
+
+      "text-size": ["interpolate", ["linear"], ["zoom"], 11, 11, 16, 14],
+      "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+
+      "text-allow-overlap": false,
+      "text-ignore-placement": false,
+      "text-optional": true,
+    },
+
+   paint: {
+  "text-color": "#111827",
+  "text-halo-color": "rgba(255,255,255,0.95)",
+  "text-halo-width": 2,
+  "text-halo-blur": 0.2,
+}
+
+
+  });
+
+  // keep labels above polygon layers
+  try {
+    if (m.getLayer("crop-polygons-outline")) m.moveLayer(LABEL_LAYER);
+  } catch {}
+}, []);
+
+
   /* ---------- TERRAIN helper (DEM + terrain) ---------- */
   const ensureTerrain = useCallback(() => {
     if (!map.current) return;
@@ -1803,77 +1907,87 @@ const renderSavedMarkers = useCallback(async () => {
 
   /* ---------- polygon loader with harvested color ---------- */
   const loadPolygons = useCallback(
-    async (cropsOverride = null) => {
-      if (!map.current) return;
+  async (cropsOverride = null) => {
+    if (!map.current) return;
 
-      let crops = cropsOverride;
+    let crops = cropsOverride;
 
-      if (!crops) {
-        const res = await axios.get("http://localhost:5000/api/crops");
-        const rows = res.data || [];
-        crops = rows.filter((c) => !isSoftDeletedCrop(c));
-      } else {
-        crops = (crops || []).filter((c) => !isSoftDeletedCrop(c));
-      }
+    if (!crops) {
+      const res = await axios.get("http://localhost:5000/api/crops");
+      const rows = res.data || [];
+      crops = rows.filter((c) => !isSoftDeletedCrop(c));
+    } else {
+      crops = (crops || []).filter((c) => !isSoftDeletedCrop(c));
+    }
 
-      const fullData = buildPolygonsFromCrops(crops);
+    const fullData = buildPolygonsFromCrops(crops);
 
-      const baseColorByCrop = [
-        "match",
-        ["get", "crop_name"],
-        "Rice",
-        "#facc15",
-        "Corn",
-        "#fb923c",
-        "Banana",
-        "#a3e635",
-        "Sugarcane",
-        "#34d399",
-        "Cassava",
-        "#60a5fa",
-        "Vegetables",
-        "#f472b6",
-        "#10B981",
-      ];
+    const baseColorByCrop = [
+      "match",
+      ["get", "crop_name"],
+      "Rice",
+      "#facc15",
+      "Corn",
+      "#fb923c",
+      "Banana",
+      "#a3e635",
+      "Sugarcane",
+      "#34d399",
+      "Cassava",
+      "#60a5fa",
+      "Vegetables",
+      "#f472b6",
+      "#10B981",
+    ];
 
-      const paintStyle = {
-        "fill-color": [
-          "case",
-          ["==", ["get", "is_harvested"], 1],
-          "#9CA3AF",
-          baseColorByCrop,
-        ],
-        "fill-opacity": 0.4,
-      };
+    const paintStyle = {
+      "fill-color": [
+        "case",
+        ["==", ["get", "is_harvested"], 1],
+        "#9CA3AF",
+        baseColorByCrop,
+      ],
+      "fill-opacity": 0.4,
+    };
 
-      if (map.current.getSource("crop-polygons")) {
-        map.current.getSource("crop-polygons").setData(fullData);
-        map.current.setPaintProperty(
-          "crop-polygons-layer",
-          "fill-color",
-          paintStyle["fill-color"]
-        );
-      } else {
-        map.current.addSource("crop-polygons", {
-          type: "geojson",
-          data: fullData,
-        });
-        map.current.addLayer({
-          id: "crop-polygons-layer",
-          type: "fill",
-          source: "crop-polygons",
-          paint: paintStyle,
-        });
-        map.current.addLayer({
-          id: "crop-polygons-outline",
-          type: "line",
-          source: "crop-polygons",
-          paint: { "line-color": "#065F46", "line-width": 1 },
-        });
-      }
-    },
-    []
-  );
+    if (map.current.getSource("crop-polygons")) {
+      map.current.getSource("crop-polygons").setData(fullData);
+
+      // keep fill colors updated
+      map.current.setPaintProperty(
+        "crop-polygons-layer",
+        "fill-color",
+        paintStyle["fill-color"]
+      );
+
+      // ✅ ensure labels exist
+      ensureCropPolygonLabelsLayer();
+    } else {
+      map.current.addSource("crop-polygons", {
+        type: "geojson",
+        data: fullData,
+      });
+
+      map.current.addLayer({
+        id: "crop-polygons-layer",
+        type: "fill",
+        source: "crop-polygons",
+        paint: paintStyle,
+      });
+
+      map.current.addLayer({
+        id: "crop-polygons-outline",
+        type: "line",
+        source: "crop-polygons",
+        paint: { "line-color": "#065F46", "line-width": 1 },
+      });
+
+      // ✅ add labels after polygons exist
+      ensureCropPolygonLabelsLayer();
+    }
+  },
+  [ensureCropPolygonLabelsLayer]
+);
 
   const ensureBarangayLayers = useCallback(() => {
     if (!map.current) return;
