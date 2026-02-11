@@ -115,10 +115,13 @@ function isCropHarvested(crop) {
 /*  AdminSidebar MUST NOT recalculate farmgate value.                  */
 /*  It only displays what TagCropForm saved to DB/state.               */
 /*                                                                     */
-/*  Expected fields from backend (recommended):                        */
-/*   - est_farmgate_value_display (string, e.g. "₱139,590 – ₱164,970")  */
-/*   - est_farmgate_value_low (number)                                 */
-/*   - est_farmgate_value_high (number)                                */
+/*  farmgate **range** fields we expect from backend:                   */
+/*   - est_farmgate_value_display (string, "₱X – ₱Y")                  */
+/*   - est_farmgate_value_low (number or "12345" or "12,345")          */
+/*   - est_farmgate_value_high (number or "12345" or "12,345")         */
+/*                                                                     */
+/*  For the exact value on the map + sidebar, we use the midpoint      */
+/*  of [low, high], or parse it out of the range string.               */
 /* ------------------------------------------------------------------ */
 
 const peso = (n) => {
@@ -144,22 +147,29 @@ function getEstFarmgateDisplay(crop) {
     return d;
   }
 
-  const low =
+  const rawLow =
     crop.est_farmgate_value_low ??
     crop.estFarmgateValueLow ??
     crop.estimated_farmgate_value_low ??
     crop.estimatedFarmgateValueLow ??
     null;
 
-  const high =
+  const rawHigh =
     crop.est_farmgate_value_high ??
     crop.estFarmgateValueHigh ??
     crop.estimated_farmgate_value_high ??
     crop.estimatedFarmgateValueHigh ??
     null;
 
-  const lo = Number(low);
-  const hi = Number(high);
+  let lo = Number(rawLow);
+  let hi = Number(rawHigh);
+
+  if (!Number.isFinite(lo) && typeof rawLow === "string") {
+    lo = Number(rawLow.replace(/,/g, ""));
+  }
+  if (!Number.isFinite(hi) && typeof rawHigh === "string") {
+    hi = Number(rawHigh.replace(/,/g, ""));
+  }
 
   if (Number.isFinite(lo) && Number.isFinite(hi)) {
     if (lo === 0 && hi === 0) return null; // ✅ ignore 0–0
@@ -172,6 +182,83 @@ function getEstFarmgateDisplay(crop) {
   return null;
 }
 
+// 🔹 exact value used by the green "Crop overview" card AND the sidebar
+function getEstFarmgateExact(crop) {
+  if (!crop) return null;
+
+  // If backend already has an explicit exact field, prefer it.
+  const explicit =
+    crop.est_farmgate_exact_value ??
+    crop.estFarmgateExactValue ??
+    crop.estimated_farmgate_exact_value ??
+    crop.estimatedFarmgateExactValue ??
+    null;
+
+  let explicitNum = Number(explicit);
+  if (!Number.isFinite(explicitNum) && typeof explicit === "string") {
+    explicitNum = Number(explicit.replace(/,/g, ""));
+  }
+  if (Number.isFinite(explicitNum) && explicitNum > 0) {
+    return explicitNum;
+  }
+
+  // Otherwise, try midpoint of low/high numeric fields
+  const rawLow =
+    crop.est_farmgate_value_low ??
+    crop.estFarmgateValueLow ??
+    crop.estimated_farmgate_value_low ??
+    crop.estimatedFarmgateValueLow ??
+    null;
+
+  const rawHigh =
+    crop.est_farmgate_value_high ??
+    crop.estFarmgateValueHigh ??
+    crop.estimated_farmgate_value_high ??
+    crop.estimatedFarmgateValueHigh ??
+    null;
+
+  let lo = Number(rawLow);
+  let hi = Number(rawHigh);
+
+  if (!Number.isFinite(lo) && typeof rawLow === "string") {
+    lo = Number(rawLow.replace(/,/g, ""));
+  }
+  if (!Number.isFinite(hi) && typeof rawHigh === "string") {
+    hi = Number(rawHigh.replace(/,/g, ""));
+  }
+
+  if (Number.isFinite(lo) && Number.isFinite(hi) && lo > 0 && hi > 0) {
+    return (lo + hi) / 2;
+  }
+
+  // Fallback: parse the range out of the display string itself
+  const displayRaw =
+    crop.est_farmgate_value_display ??
+    crop.estFarmgateValueDisplay ??
+    crop.estimated_farmgate_value_display ??
+    crop.estimatedFarmgateValueDisplay ??
+    null;
+
+  if (typeof displayRaw === "string" && displayRaw.trim()) {
+    const nums = displayRaw
+      .replace(/[^0-9.,]+/g, " ") // keep digits, comma, dot
+      .split(/\s+/)
+      .map((s) => s.replace(/,/g, ""))
+      .map((s) => Number(s))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    if (nums.length >= 2) {
+      const a = nums[0];
+      const b = nums[1];
+      return (a + b) / 2;
+    }
+    if (nums.length === 1) {
+      return nums[0];
+    }
+  }
+
+  return null;
+}
 
 const AdminSideBar = ({
   visible,
@@ -496,6 +583,7 @@ const AdminSideBar = ({
   };
 
   const estFarmgateDisplay = getEstFarmgateDisplay(selectedCrop);
+  const estFarmgateExact = getEstFarmgateExact(selectedCrop);
 
   return (
     <div
@@ -740,13 +828,17 @@ const AdminSideBar = ({
                 </div>
               )}
 
-              {/* ✅ Estimated Farmgate Value (PHP) — DISPLAY ONLY (no recalculation) */}
+              {/* ✅ Estimated Farmgate Value (PHP) — exact value to match Crop Overview card */}
               <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
                   Estimated farmgate value (PHP)
                 </p>
 
-                {estFarmgateDisplay ? (
+                {estFarmgateExact != null ? (
+                  <p className="text-lg font-bold text-emerald-700">
+                    ₱{peso(estFarmgateExact)}
+                  </p>
+                ) : estFarmgateDisplay ? (
                   <p className="text-sm font-bold text-emerald-700">
                     {estFarmgateDisplay}
                   </p>
@@ -755,7 +847,7 @@ const AdminSideBar = ({
                 )}
 
                 <p className="mt-1 text-[11px] text-gray-500">
-                  Source: value saved from TagCropForm
+                  Based on farmgate range saved from TagCropForm
                 </p>
               </div>
             </div>
@@ -808,7 +900,9 @@ const AdminSideBar = ({
                             <>
                               {" "}
                               · Harvested:{" "}
-                              {fmtDate(h.date_harvested || h.harvested_date || h.estimated_harvest)}
+                              {fmtDate(
+                                h.date_harvested || h.harvested_date || h.estimated_harvest
+                              )}
                             </>
                           )}
                         </p>
@@ -831,8 +925,6 @@ const AdminSideBar = ({
                 );
               })}
             </ol>
-
-           
           </Section>
         )}
 
@@ -973,8 +1065,6 @@ const AdminSideBar = ({
           )}
         </Section>
 
-        {/* year vs year analytics */}
-        
         {/* barangay overview */}
         {barangayDetails && (
           <Section title="Barangay overview">

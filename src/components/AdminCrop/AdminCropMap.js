@@ -694,6 +694,17 @@ const AdminCropMap = () => {
   const safeCurrentMid = midFromDisplay(currentFarmgateDisplay);
   const safePastMid = midFromDisplay(pastFarmgateDisplay);
 
+  // ✅ NEW: always show a single exact value for UI (no ranges)
+  const currentFarmgateExact =
+    safeCurrentMid != null && Number.isFinite(safeCurrentMid)
+      ? `₱${peso(safeCurrentMid)}`
+      : currentFarmgateDisplay || null;
+
+  const pastFarmgateExact =
+    safePastMid != null && Number.isFinite(safePastMid)
+      ? `₱${peso(safePastMid)}`
+      : pastFarmgateDisplay || null;
+
   const hasBothValues =
     !!currentFarmgateDisplay &&
     !!pastFarmgateDisplay &&
@@ -2374,7 +2385,7 @@ const AdminCropMap = () => {
                     </span>
                   </div>
 
-                  {currentFarmgateDisplay && (
+                  {currentFarmgateExact && (
                     <div className="flex justify-between pt-1 border-t border-emerald-100 mt-1">
                       <span>Est. crop value</span>
 
@@ -2387,7 +2398,7 @@ const AdminCropMap = () => {
                               : "text-emerald-800"
                           }`}
                         >
-                          {currentFarmgateDisplay}
+                          {currentFarmgateExact}
                         </span>
 
                         {/* arrow + % only */}
@@ -2470,7 +2481,7 @@ const AdminCropMap = () => {
                           </span>
                         </div>
 
-                        {pastFarmgateDisplay && (
+                        {pastFarmgateExact && (
                           <div className="flex justify-between pt-1 border-t border-gray-200 mt-1">
                             <span>Est. crop value</span>
                             <span
@@ -2485,7 +2496,7 @@ const AdminCropMap = () => {
                                   : "text-emerald-800")
                               }
                             >
-                              {pastFarmgateDisplay}
+                              {pastFarmgateExact}
                             </span>
                           </div>
                         )}

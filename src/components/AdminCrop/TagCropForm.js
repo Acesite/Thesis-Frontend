@@ -303,7 +303,21 @@ function listBarangayNamesFromFC(barangaysFC) {
     if (n) set.add(String(n));
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b));
+  
 }
+
+function exactFromRange(low, high) {
+  const lo = Number(low);
+  const hi = Number(high);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+
+  // If they are basically the same, just use that
+  if (almostEqual(lo, hi)) return lo;
+
+  // Otherwise use the midpoint (this matches your 1,127,000 example)
+  return (lo + hi) / 2;
+}
+
 
 /** Returns { name, feature } if centroid of farmGeometry is inside a barangay polygon */
 function detectBarangayFeature(farmGeometry, barangaysFC) {
@@ -982,6 +996,51 @@ const TagCropForm = ({
     return { low, high };
   }, [isIntercropMode, mainFarmgate, secondaryFarmgate]);
 
+  const mainFarmgateExact = useMemo(() => {
+  if (!mainFarmgate) return null;
+  return exactFromRange(mainFarmgate.valueLow, mainFarmgate.valueHigh);
+}, [mainFarmgate]);
+
+const secondaryFarmgateExact = useMemo(() => {
+  if (!secondaryFarmgate) return null;
+  return exactFromRange(
+    secondaryFarmgate.valueLow,
+    secondaryFarmgate.valueHigh
+  );
+}, [secondaryFarmgate]);
+
+const totalFarmgateExact = useMemo(() => {
+  if (!displayFarmgate) return null;
+  return exactFromRange(displayFarmgate.low, displayFarmgate.high);
+}, [displayFarmgate]);
+
+
+  // Single-value display for main farmgate (use midpoint of range)
+const mainFarmgateSingleValue = useMemo(() => {
+  if (!mainFarmgate) return null;
+  const lo = Number(mainFarmgate.valueLow);
+  const hi = Number(mainFarmgate.valueHigh);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+
+  // if already effectively the same (e.g. you entered an exact price)
+  if (almostEqual(lo, hi)) return lo;
+
+  // otherwise use midpoint as single estimate
+  return (lo + hi) / 2;
+}, [mainFarmgate]);
+
+// Same idea for secondary farmgate (if you also want no range there)
+const secondaryFarmgateSingleValue = useMemo(() => {
+  if (!secondaryFarmgate) return null;
+  const lo = Number(secondaryFarmgate.valueLow);
+  const hi = Number(secondaryFarmgate.valueHigh);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+
+  if (almostEqual(lo, hi)) return lo;
+  return (lo + hi) / 2;
+}, [secondaryFarmgate]);
+
+
   /* ---------- VALIDATION ---------- */
 
   const setFieldError = (field, message) =>
@@ -1258,17 +1317,12 @@ const TagCropForm = ({
 
     if (adminId) formData.append("admin_id", String(adminId));
 
-    // ✅ STORE ONLY THIS IN DB: tbl_crop.est_farmgate_value_display
-    // - If low==high (desired price), store single: "₱110,250"
-    // - Else store range: "₱99,225 – ₱121,275"
-    let totalDisplay = "";
-    if (displayFarmgate?.low != null && displayFarmgate?.high != null) {
-      const lo = Number(displayFarmgate.low);
-      const hi = Number(displayFarmgate.high);
-      if (Number.isFinite(lo) && Number.isFinite(hi) && !(lo === 0 && hi === 0)) {
-        totalDisplay = almostEqual(lo, hi)
-          ? `₱${peso(lo)}`
-          : `₱${peso(lo)} – ₱${peso(hi)}`;
+     let totalDisplay = "";
+    if (totalFarmgateExact != null) {
+      const v = Number(totalFarmgateExact);
+      if (Number.isFinite(v) && v > 0) {
+        // peso(v) = "623,250" → prepend "₱"
+        totalDisplay = `₱${peso(v)}`;
       }
     }
     formData.append("est_farmgate_value_display", totalDisplay);
@@ -2504,13 +2558,12 @@ const TagCropForm = ({
         <p className="text-sm font-medium text-gray-800 mb-1">
           Total Estimated Crop Value
         </p>
-        <p className="text-lg font-bold text-gray-900">
-          {mainFarmgate
-            ? `₱${peso(mainFarmgate.valueLow)} – ₱${peso(
-                mainFarmgate.valueHigh
-              )}`
-            : "—"}
-        </p>
+       <p className="text-lg font-bold text-gray-900">
+  {mainFarmgateSingleValue != null
+    ? `₱${peso(mainFarmgateSingleValue)}`
+    : "—"}
+</p>
+
         <p className="text-xs text-gray-500 mt-1">
           {mainFarmgate
   ? `${mainFarmgate.qty.toLocaleString(undefined, {
@@ -2572,12 +2625,11 @@ const TagCropForm = ({
             Total Estimated Crop Value
           </p>
           <p className="text-lg font-bold text-gray-900">
-            {secondaryFarmgate
-              ? `₱${peso(secondaryFarmgate.valueLow)} – ₱${peso(
-                  secondaryFarmgate.valueHigh
-                )}`
-              : "—"}
-          </p>
+  {secondaryFarmgateSingleValue != null
+    ? `₱${peso(secondaryFarmgateSingleValue)}`
+    : "—"}
+</p>
+
           <p className="text-xs text-gray-500 mt-1">
             {secondaryFarmgate
               ? `${secondaryFarmgate.qty.toLocaleString(undefined, {
@@ -3111,36 +3163,33 @@ const TagCropForm = ({
                           ],
                         ]
                       : []),
-                    ...(mainFarmgate
-                      ? [
-                          [
-                            "Main farmgate value (PHP)",
-                            `₱${peso(
-                              mainFarmgate.valueLow
-                            )} – ₱${peso(mainFarmgate.valueHigh)}`,
-                          ],
-                        ]
-                      : []),
-                    ...(isIntercropMode && secondaryFarmgate
-                      ? [
-                          [
-                            "Secondary farmgate value (PHP)",
-                            `₱${peso(
-                              secondaryFarmgate.valueLow
-                            )} – ₱${peso(secondaryFarmgate.valueHigh)}`,
-                          ],
-                        ]
-                      : []),
-                    ...(displayFarmgate
-                      ? [
-                          [
-                            "Total crop value (PHP)",
-                            `₱${peso(
-                              displayFarmgate.low
-                            )} – ₱${peso(displayFarmgate.high)}`,
-                          ],
-                        ]
-                      : []),
+                    ...(mainFarmgateExact != null
+  ? [
+      [
+        "Main farmgate value (PHP)",
+        `₱${peso(mainFarmgateExact)}`,
+      ],
+    ]
+  : []),
+
+...(isIntercropMode && secondaryFarmgateExact != null
+  ? [
+      [
+        "Secondary farmgate value (PHP)",
+        `₱${peso(secondaryFarmgateExact)}`,
+      ],
+    ]
+  : []),
+
+...(totalFarmgateExact != null
+  ? [
+      [
+        "Total crop value (PHP)",
+        `₱${peso(totalFarmgateExact)}`,
+      ],
+    ]
+  : []),
+
                     ["Conversion used", conversionSummary],
                     ...(mainPrice
                       ? [
