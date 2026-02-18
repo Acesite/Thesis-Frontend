@@ -23,12 +23,8 @@ import BARANGAYS_FC from "../Barangays/barangays.json";
 import DarSidebar from "./DARsidebar";
 import TagDarForm from "./TagDarForm";
 
-mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || "";
-if (!mapboxgl.accessToken) {
-  console.warn(
-    "Mapbox access token is missing. Set REACT_APP_MAPBOX_ACCESS_TOKEN in your .env file."
-  );
-}
+mapboxgl.accessToken =
+  "pk.eyJ1Ijoid29tcHdvbXAtNjkiLCJhIjoiY204emxrOHkwMGJsZjJrcjZtZmN4YXdtNSJ9.LIMPvoBNtGuj4O36r3F72w";
 
 const BAGO_CITY_BOUNDS = [
   [122.7333, 10.4958],
