@@ -367,6 +367,12 @@ const AdminDarMap = () => {
 
   const [statusFilter, setStatusFilter] = useState("all");
 
+  // 🔁 keep a ref of sidebarDarRecords so map click handler always sees latest
+  const sidebarDarRecordsRef = useRef([]);
+  useEffect(() => {
+    sidebarDarRecordsRef.current = sidebarDarRecords;
+  }, [sidebarDarRecords]);
+
   const userMarkerRef = useRef(null);
   const userMarkerElRef = useRef(null);
   const [userLoc, setUserLoc] = useState(null);
@@ -685,6 +691,17 @@ const AdminDarMap = () => {
     [clearSelection, showMarkerChipAndHalo, highlightPolygon]
   );
 
+  // ✅ single helper used for marker click, polygon click, sidebar list click, deep-link
+  const selectRecord = useCallback(
+    (rec) => {
+      if (!rec || isSoftDeletedDar(rec)) return;
+      setSelectedRecord(rec);
+      highlightSelection(rec);
+      setIsSidebarVisible(true);
+    },
+    [highlightSelection]
+  );
+
   /* ---------- DAR polygons loader ---------- */
   const loadPolygons = useCallback(async (recordsOverride = null) => {
     if (!map.current) return;
@@ -778,9 +795,8 @@ const AdminDarMap = () => {
         const marker = new mapboxgl.Marker({ color }).setLngLat(center).addTo(map.current);
 
         marker.getElement().addEventListener("click", () => {
-          setSelectedRecord(rec);
-          highlightSelection(rec);
-          setIsSidebarVisible(true);
+          // ✅ when you click marker, it will now show data in sidebar via selectRecord
+          selectRecord(rec);
         });
 
         const id = getDarId(rec);
@@ -790,12 +806,11 @@ const AdminDarMap = () => {
         savedMarkersRef.current.push(marker);
       }
 
+      // deep-link by darId
       if (!hasDeepLinkedRef.current && target.darId && records.length) {
         const hit = records.find((r) => String(getDarId(r)) === String(target.darId));
         if (hit) {
-          setSelectedRecord(hit);
-          setIsSidebarVisible(true);
-          highlightSelection(hit);
+          selectRecord(hit);
           hasDeepLinkedRef.current = true;
         }
       }
@@ -803,7 +818,7 @@ const AdminDarMap = () => {
       console.error("Failed to load DAR markers:", err);
       toast.error("Failed to load DAR records.");
     }
-  }, [statusFilter, target.darId, highlightSelection]);
+  }, [statusFilter, target.darId, selectRecord]);
 
   /* ---------- init map ---------- */
   useEffect(() => {
@@ -864,13 +879,12 @@ const AdminDarMap = () => {
         const id = feature?.properties?.id;
         if (!id) return;
 
-        const hit = sidebarDarRecords.find(
+        const hit = sidebarDarRecordsRef.current.find(
           (r) => String(getDarId(r)) === String(id)
         );
         if (hit && !isSoftDeletedDar(hit)) {
-          setSelectedRecord(hit);
-          highlightSelection(hit);
-          setIsSidebarVisible(true);
+          // ✅ polygon click also shows details using same logic
+          selectRecord(hit);
         }
       });
 
@@ -942,6 +956,7 @@ const AdminDarMap = () => {
     loadPolygons,
     renderSavedMarkers,
     highlightSelection,
+    selectRecord,
   ]);
 
   // lock toggle
@@ -1263,11 +1278,8 @@ const AdminDarMap = () => {
           onBarangaySelect={handleBarangaySelect}
           records={sidebarDarRecords}
           selectedRecord={selectedRecord}
-          onSelectRecord={(rec) => {
-            setSelectedRecord(rec);
-            highlightSelection(rec);
-            setIsSidebarVisible(true);
-          }}
+          // ✅ clicking from the list reuses same selectRecord logic
+          onSelectRecord={selectRecord}
           mapStyles={mapStyles}
           setMapStyle={setMapStyle}
           statusFilter={statusFilter}

@@ -9,6 +9,46 @@ import Button from "../AdminCrop/MapControls/Button"; // adjust path to your But
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
 const fmt = (v) => (v ?? v === 0 ? v : "—");
 
+// ✅ ARB helpers
+const formatFullName = (rec) => {
+  if (!rec) return "";
+  const parts = [
+    rec.first_name,
+    rec.middle_name,
+    rec.last_name,
+    rec.extension_name,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return parts || rec.owner_name || rec.arb_name || rec.beneficiary_name || "";
+};
+
+const formatYesNo = (val) => {
+  if (val === null || val === undefined) return "—";
+  const yesValues = [1, "1", true, "true", "yes", "y", "Y", "YES"];
+  const noValues = [0, "0", false, "false", "no", "n", "NO"];
+  if (yesValues.includes(val)) return "Yes";
+  if (noValues.includes(val)) return "No";
+  return String(val);
+};
+
+const formatCoordinate = (val) => {
+  if (val === null || val === undefined || val === "") return "—";
+  const num = Number(val);
+  if (Number.isNaN(num)) return String(val);
+  return num.toFixed(6);
+};
+
+// flexible ID getter (for markers/list highlight)
+const getDarId = (rec) =>
+  rec?.id ??
+  rec?.arb_id ??
+  rec?.cloa_id ??
+  rec?.cloaNo ??
+  rec?.dar_id ??
+  rec?.parcel_id ??
+  null;
+
 const Section = ({ title, children }) => (
   <div className="rounded-xl border border-gray-200 bg-white p-4 mb-4">
     {title && (
@@ -76,19 +116,6 @@ const DAR_LEGEND = [
   { label: "Cancelled / Revoked", color: "#EF4444" },
   { label: "Other", color: "#3B82F6" },
 ];
-
-/* ---------- DUMMY LAND DATA (The Land Data) ---------- */
-const dummyLandData = {
-  land_id: "LD-0001",
-  tct_oct_number: "TCT-2025-00123",
-  tax_dec_number: "TD-4567-2025",
-  total_area: "3.25 ha",
-  lot_number: "Lot 12-B",
-  land_classification: "Agricultural",
-  location_brgy: "Ma-ao",
-  municipality_id: "BAGO-01",
-  is_split_eligible: true,
-};
 
 const AdminDarSidebar = ({
   visible,
@@ -189,15 +216,22 @@ const AdminDarSidebar = ({
     }
   };
 
-  const selectedStatus = getDarStatus(selectedRecord);
-  const selectedColor = statusColor(selectedStatus);
-
   // ✅ hero preview image (optional)
   const heroUrl =
     selectedRecord?.photo_url ||
     selectedRecord?.image_url ||
     selectedRecord?.photos?.[0] ||
     null;
+
+  // display name + ARB ID for selected record
+  const selectedDisplayName =
+    selectedRecord?.owner_name ||
+    selectedRecord?.arb_name ||
+    selectedRecord?.beneficiary_name ||
+    formatFullName(selectedRecord) ||
+    "Agrarian Reform Beneficiary";
+
+  const selectedArbId = selectedRecord?.arb_id ?? getDarId(selectedRecord);
 
   return (
     <div
@@ -249,106 +283,100 @@ const AdminDarSidebar = ({
           </dl>
         </Section>
 
-        {/* THE LAND DATA (dummy) */}
-        <Section title="The Land Data">
-          <p className="text-[11px] text-gray-500 mb-2">
-            Dummy land data for layout only. Replace later with real DAR land table.
-          </p>
-          <dl className="grid grid-cols-2 gap-3">
-            <KV label="Land ID" value={fmt(dummyLandData.land_id)} />
-            <KV label="TCT/OCT Number" value={fmt(dummyLandData.tct_oct_number)} />
-            <KV label="Tax Dec Number" value={fmt(dummyLandData.tax_dec_number)} />
-            <KV label="Total Area" value={fmt(dummyLandData.total_area)} />
-            <KV label="Lot Number" value={fmt(dummyLandData.lot_number)} />
-            <KV
-              label="Land Classification"
-              value={fmt(dummyLandData.land_classification)}
-            />
-            <KV label="Location (Brgy)" value={fmt(dummyLandData.location_brgy)} />
-            <KV label="Municipality ID" value={fmt(dummyLandData.municipality_id)} />
-            <KV
-              label="Split Eligible"
-              value={dummyLandData.is_split_eligible ? "Yes" : "No"}
-            />
-          </dl>
-        </Section>
-
-        {/* selected record */}
+        {/* selected ARB details – ONLY ARB TABLE FIELDS */}
         {selectedRecord && (
           <Section title="Agrarian Reform Beneficiary">
             <div className="space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {selectedRecord.owner_name ||
-                      selectedRecord.arb_name ||
-                      selectedRecord.beneficiary_name ||
-                      "Agrarian Reform Beneficiary"}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {selectedRecord.barangay ? `Barangay ${selectedRecord.barangay}` : "—"}
-                  </p>
-
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-1 text-xs font-medium"
-                      style={{ borderColor: `${selectedColor}55`, color: selectedColor }}
-                    >
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ backgroundColor: selectedColor }}
-                      />
-                      {selectedStatus}
-                    </span>
-
-                    {selectedRecord.area_ha != null && (
-                      <span className="inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-1 text-xs font-medium border-emerald-200 text-emerald-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        {Number(selectedRecord.area_ha).toFixed(2)} ha
-                      </span>
-                    )}
-
-                    {selectedRecord.cloa_no && (
-                      <span className="inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-1 text-xs font-medium border-gray-200 text-gray-700">
-                        CLOA {selectedRecord.cloa_no}
-                      </span>
-                    )}
-
-                    {selectedRecord.lot_no && (
-                      <span className="inline-flex items-center gap-1 rounded-full border bg-white px-2.5 py-1 text-xs font-medium border-gray-200 text-gray-700">
-                        Lot {selectedRecord.lot_no}
-                      </span>
-                    )}
-                  </div>
-                </div>
+              {/* header with name + ARB ID */}
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  {selectedDisplayName}
+                </p>
+                <p className="text-xs text-gray-500">
+                  ARB ID: {fmt(selectedArbId)}
+                </p>
               </div>
 
-              <dl className="grid grid-cols-2 gap-3">
-                <KV label="CLOA no." value={fmt(selectedRecord.cloa_no)} />
-                <KV label="Lot no." value={fmt(selectedRecord.lot_no)} />
-                <KV label="Barangay" value={fmt(selectedRecord.barangay)} />
-                <KV label="Area (ha)" value={fmt(selectedRecord.area_ha)} />
-                <KV
-                  label="Award date"
-                  value={fmtDate(
-                    selectedRecord.award_date || selectedRecord.date_awarded
-                  )}
-                />
-                <KV label="Status" value={fmt(selectedStatus)} />
-                <KV label="Tagged by" value={fmt(selectedRecord.admin_name)} />
-                <KV label="Tagged on" value={fmtDate(selectedRecord.created_at)} />
-              </dl>
-
-              {selectedRecord.note?.trim?.() && (
-                <div className="pt-2 border-t border-gray-100">
-                  <dt className="text-xs uppercase tracking-wide text-gray-500 mb-1">
-                    Note
-                  </dt>
-                  <dd className="text-sm text-gray-900">
-                    {selectedRecord.note.trim()}
-                  </dd>
+              {/* Basic information */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Basic Information
+                </h3>
+                <div className="bg-gray-50 rounded-md p-3 space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Full Name</span>
+                    <span className="font-medium text-gray-900 text-right">
+                      {formatFullName(selectedRecord)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Birth Date</span>
+                    <span className="text-gray-900">
+                      {fmtDate(selectedRecord.birth_date)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Civil Status</span>
+                    <span className="text-gray-900">
+                      {fmt(selectedRecord.civil_status)}
+                    </span>
+                  </div>
                 </div>
-              )}
+              </section>
+
+              {/* Household & farming */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Household & Farming
+                </h3>
+                <div className="bg-gray-50 rounded-md p-3 space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Household Size</span>
+                    <span className="text-gray-900">
+                      {fmt(selectedRecord.household_size)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Years Tilling</span>
+                    <span className="text-gray-900">
+                      {fmt(selectedRecord.years_tilling)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">TIN Number</span>
+                    <span className="text-gray-900">
+                      {fmt(selectedRecord.tin_number)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Affidavit Landless</span>
+                    <span className="text-gray-900">
+                      {formatYesNo(selectedRecord.affidavit_landles)}
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              {/* Geotag */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Geotag
+                </h3>
+                <div className="bg-gray-50 rounded-md p-3 space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Latitude</span>
+                    <span className="text-gray-900">
+                      {formatCoordinate(selectedRecord.latitude)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Longitude</span>
+                    <span className="text-gray-900">
+                      {formatCoordinate(selectedRecord.longitude)}
+                    </span>
+                  </div>
+                </div>
+              </section>
             </div>
           </Section>
         )}
@@ -411,76 +439,7 @@ const AdminDarSidebar = ({
           </div>
         </Section>
 
-        {/* list */}
-        <Section title="Agrarian Reform Beneficiaries">
-          {filteredRecords.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              No records match your filters.
-            </p>
-          ) : (
-            <ol className="space-y-2 text-xs">
-              {filteredRecords.map((r) => {
-                const st = getDarStatus(r);
-                const c = statusColor(st);
-                const isActive =
-                  selectedRecord && String(selectedRecord.id) === String(r.id);
-
-                const title =
-                  r.owner_name ||
-                  r.arb_name ||
-                  r.beneficiary_name ||
-                  r.cloa_no ||
-                  `DAR #${r.id}`;
-
-                return (
-                  <li
-                    key={r.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onSelectRecord?.(r)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelectRecord?.(r);
-                      }
-                    }}
-                    className={clsx(
-                      "rounded-lg border px-3 py-2 cursor-pointer transition-colors",
-                      isActive
-                        ? "border-emerald-300 bg-emerald-50"
-                        : "border-gray-100 bg-white hover:bg-gray-50"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          {title}
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                          {r.barangay ? `Brgy. ${r.barangay}` : "—"}
-                          {r.cloa_no ? ` · CLOA ${r.cloa_no}` : ""}
-                          {r.lot_no ? ` · Lot ${r.lot_no}` : ""}
-                        </p>
-                      </div>
-
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full border bg-white px-2 py-1 text-[11px] font-semibold"
-                        style={{ borderColor: `${c}55`, color: c }}
-                        title={st}
-                      >
-                        <span
-                          className="h-1.5 w-1.5 rounded-full"
-                          style={{ backgroundColor: c }}
-                        />
-                        {st}
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </Section>
+       
 
         {/* barangay overview */}
         {barangayDetails && (
@@ -490,33 +449,6 @@ const AdminDarSidebar = ({
               <div className="mt-1 text-xs text-gray-500">
                 Center: {barangayDetails.coordinates?.join(", ") || "—"}
               </div>
-            </div>
-          </Section>
-        )}
-
-        {/* map layers (optional) */}
-        {mapStyles && setMapStyle && Object.keys(mapStyles).length > 0 && (
-          <Section title="Map style">
-            <div className="grid grid-cols-4 gap-2">
-              {Object.entries(mapStyles).map(([label, cfg]) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => setMapStyle(cfg.url)}
-                  className="overflow-hidden rounded-lg border border-gray-200 bg-white hover:shadow-sm"
-                  title={label}
-                >
-                  <img
-                    src={cfg.thumbnail}
-                    alt={label}
-                    className="h-16 w-full object-cover"
-                    loading="lazy"
-                  />
-                  <div className="px-2 py-1 text-[11px] text-gray-700 text-center">
-                    {label}
-                  </div>
-                </button>
-              ))}
             </div>
           </Section>
         )}
