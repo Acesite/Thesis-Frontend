@@ -315,6 +315,15 @@ const AdminDarSidebar = ({
                       {fmtDate(selectedRecord.birth_date)}
                     </span>
                   </div>
+                  {/* ✅ NEW: Age row */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Age</span>
+                    <span className="text-gray-900">
+                      {selectedRecord.age != null
+                        ? `${selectedRecord.age} years old`
+                        : "—"}
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-gray-500">Civil Status</span>
                     <span className="text-gray-900">
@@ -438,8 +447,6 @@ const AdminDarSidebar = ({
             </div>
           </div>
         </Section>
-
-       
 
         {/* barangay overview */}
         {barangayDetails && (

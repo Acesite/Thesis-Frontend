@@ -281,6 +281,21 @@ const TagDarForm = ({
     return inferredTop && !uniq.has(inferredTop) ? [inferredTop, ...base] : base;
   }, [availableFromFC, detectedBarangayName, selectedBarangay]);
 
+  // ✅ computed age from birthDate (frontend preview only)
+  const computedAge = useMemo(() => {
+    if (!birthDate) return null;
+    const d = new Date(birthDate);
+    if (Number.isNaN(d.getTime())) return null;
+
+    const today = new Date();
+    let age = today.getFullYear() - d.getFullYear();
+    const m = today.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < d.getDate())) {
+      age--;
+    }
+    return age >= 0 ? age : null;
+  }, [birthDate]);
+
   /* ---------- PREFILL FROM LOCATION ---------- */
 
   // Default area from drawn polygon
@@ -810,11 +825,22 @@ const TagDarForm = ({
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <Field label="Birth date">
-                          <Input
-                            type="date"
-                            value={birthDate}
-                            onChange={(e) => setBirthDate(e.target.value)}
-                          />
+                          <>
+                            <Input
+                              type="date"
+                              value={birthDate}
+                              onChange={(e) => setBirthDate(e.target.value)}
+                            />
+                            {birthDate && computedAge != null && (
+                              <p className="mt-1 text-xs text-gray-500">
+                                Age:&nbsp;
+                                <span className="font-medium text-gray-900">
+                                  {computedAge}
+                                </span>{" "}
+                                years old
+                              </p>
+                            )}
+                          </>
                         </Field>
 
                         <Field
@@ -1036,13 +1062,14 @@ const TagDarForm = ({
                 </h4>
                 <div className="mt-3 rounded-xl border border-gray-200">
                   {[
-                    [
-                      "Name",
-                      fullNamePreview || ownerName || "—",
-                    ],
+                    ["Name", fullNamePreview || ownerName || "—"],
                     [
                       "Birth date",
                       birthDate ? new Date(birthDate).toLocaleDateString() : "—",
+                    ],
+                    [
+                      "Age",
+                      computedAge != null ? `${computedAge} years old` : "—",
                     ],
                     ["Civil status", civilStatus || "—"],
                     ["Household size", householdSize || "—"],
