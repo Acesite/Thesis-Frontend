@@ -30,6 +30,7 @@ import AdminGlossary from "../components/AdminCrop/AdminGlossary";
 import SuperAdminArchive from "../components/SuperAdmin/SuperAdminArchive";
 import UnifiedAgriMap from "../components/UnifiedMap/UnifiedAgriMap";
 import DARMap from "../components/DARmap/DARmap";
+import VotersMap from "../components/VotersMap/VotersMap";
 
 const AppRoutes = () => {
   return (
@@ -72,6 +73,9 @@ const AppRoutes = () => {
 
          {/*DAR*/}
          <Route path="/DARMap" element={<DARMap />} />
+
+          {/*VOTERS*/}
+          <Route path="/VotersMap" element={<VotersMap />} />
     </Routes>
   );
 };
