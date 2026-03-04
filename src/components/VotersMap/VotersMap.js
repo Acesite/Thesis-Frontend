@@ -8,19 +8,22 @@ import "react-toastify/dist/ReactToastify.css";
 
 import SidebarToggleButton from "../VotersMap/MapControls/SidebarToggleButton";
 import VotersSidebar from "./VotersSidebar";
+import TagVotersForm from "./TagVotersForm";
 
 import BARANGAYS_FC from "../Barangays/barangays.json";
 
-// helpers
 import {
-  getBrgyName,
+  DEFAULT_HOUSEHOLD_FORM,
+  validateHouseholdForm,
+  getLoggedInUserId,
+  buildBarangayOptions,
   detectBarangayForPoint,
   MarkCircleIcon,
-  clearMarkers as clearMarkersHelper,
-  clearTempMarker as clearTempMarkerHelper,
+  clearMarkers,
+  clearTempMarker,
   addTempMarker,
   getMarkerColor,
-  validateCounts,
+  buildHouseholdPopupHTML,
 } from "./VotersMapHelper";
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || "";
@@ -40,11 +43,12 @@ export default function VotersMap() {
   const mapRef = useRef(null);
 
   const savedMarkersRef = useRef([]);
-  const householdMarkerMapRef = useRef(new Map()); // householdId -> marker
+  const householdMarkerMapRef = useRef(new Map());
   const tempMarkerRef = useRef(null);
 
   const [householdRecords, setHouseholdRecords] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [candidates, setCandidates] = useState([]);
 
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
@@ -53,75 +57,33 @@ export default function VotersMap() {
   );
   const [lockToBago, setLockToBago] = useState(true);
 
-  // ✅ Barangays loaded from backend (with id, name, etc.)
   const [barangayList, setBarangayList] = useState([]);
-
-  // 🔐 Logged-in user id from localStorage
   const [currentUserId, setCurrentUserId] = useState(null);
 
-  // ✅ dropdown: prefer DB barangays, fallback to GeoJSON if DB is empty
-  const barangayOptions = useMemo(() => {
-    if (barangayList.length) {
-      const set = new Set();
-      for (const b of barangayList) {
-        if (b.barangay_name) set.add(b.barangay_name.trim());
-      }
-      return Array.from(set).sort((a, b) => a.localeCompare(b));
-    }
+  const barangayOptions = useMemo(
+    () => buildBarangayOptions(barangayList, BARANGAYS_FC),
+    [barangayList]
+  );
 
-    // fallback: use GeoJSON names when table is empty
-    const set = new Set();
-    for (const f of BARANGAYS_FC?.features || []) {
-      const name = getBrgyName(f?.properties || "");
-      if (name) set.add(name.trim());
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [barangayList]);
+  const mayorOptions = useMemo(
+  () => candidates.filter((c) => c.position === "mayor"),
+  [candidates]
+);
 
-  // tagging/modal state
+const viceMayorOptions = useMemo(
+  () => candidates.filter((c) => c.position === "vice_mayor"),
+  [candidates]
+);
+
   const [isTagging, setIsTagging] = useState(false);
   const [tagLngLat, setTagLngLat] = useState(null);
 
-  // mark tool
   const [isMarkMode, setIsMarkMode] = useState(false);
 
-  const [form, setForm] = useState({
-    barangay_id: "", // ✅ NEW
-    barangay_name: "",
-    precinct_id: "", // optional input (string)
-    purok: "",
-    sitio: "",
-    eligible_voters: 0,
-    voting_for_us: 0,
-    undecided: 0,
-    not_supporting: 0,
-    notes: "",
-  });
-
+  const [form, setForm] = useState(DEFAULT_HOUSEHOLD_FORM);
   const setField = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  const clearMarkers = useCallback(() => {
-    clearMarkersHelper(savedMarkersRef, householdMarkerMapRef);
-  }, []);
-
-  const clearTempMarker = useCallback(() => {
-    clearTempMarkerHelper(tempMarkerRef);
-  }, []);
-
-  const resetForm = useCallback(() => {
-    setForm({
-      barangay_id: "",
-      barangay_name: "",
-      precinct_id: "",
-      purok: "",
-      sitio: "",
-      eligible_voters: 0,
-      voting_for_us: 0,
-      undecided: 0,
-      not_supporting: 0,
-      notes: "",
-    });
-  }, []);
+  const resetForm = useCallback(() => setForm(DEFAULT_HOUSEHOLD_FORM), []);
 
   const zoomToLocation = useCallback((lngLatArr) => {
     const m = mapRef.current;
@@ -155,7 +117,7 @@ export default function VotersMap() {
       const rows = Array.isArray(res.data) ? res.data : [];
       setHouseholdRecords(rows);
 
-      clearMarkers();
+      clearMarkers(savedMarkersRef, householdMarkerMapRef);
 
       for (const row of rows) {
         const lng = Number(row.lng);
@@ -164,18 +126,9 @@ export default function VotersMap() {
 
         const color = getMarkerColor(row);
 
-        const popup = new mapboxgl.Popup({ offset: 18 }).setHTML(`
-          <div style="font-size:12px">
-            <div style="font-weight:700;margin-bottom:6px">Household #${row.id}</div>
-            <div><b>Barangay:</b> ${row.barangay_name ?? "-"}</div>
-            <div><b>Precinct:</b> ${row.precinct_no ?? "-"}</div>
-            <hr style="margin:6px 0"/>
-            <div><b>Eligible:</b> ${row.eligible_voters ?? 0}</div>
-            <div><b>For us:</b> ${row.voting_for_us ?? 0}</div>
-            <div><b>Undecided:</b> ${row.undecided ?? 0}</div>
-            <div><b>Not supporting:</b> ${row.not_supporting ?? 0}</div>
-          </div>
-        `);
+        const popup = new mapboxgl.Popup({ offset: 18 }).setHTML(
+          buildHouseholdPopupHTML(row)
+        );
 
         const marker = new mapboxgl.Marker({ color })
           .setLngLat([lng, lat])
@@ -195,25 +148,22 @@ export default function VotersMap() {
       console.error(err);
       toast.error("Failed to load household voter markers.");
     }
-  }, [clearMarkers]);
+  }, []);
 
-  const handleCloseModal = () => {
+  const handleCloseForm = () => {
     setIsTagging(false);
     setTagLngLat(null);
-    clearTempMarker();
-    // Mark mode stays ON
+    clearTempMarker(tempMarkerRef);
   };
 
   const handleSave = async () => {
     if (!tagLngLat) return;
 
-    const errMsg = validateCounts(form);
+    const errMsg = validateHouseholdForm(form);
     if (errMsg) return toast.error(errMsg);
 
-    // ✅ this is where your “Barangay not set.” comes from
     if (!form.barangay_id) return toast.error("Barangay not set.");
 
-    // ✅ must have a logged-in user
     if (!currentUserId) {
       toast.error("No logged-in user detected. Please log in again.");
       return;
@@ -222,19 +172,14 @@ export default function VotersMap() {
     try {
       await axios.post(`${API}/households`, {
         ...form,
-        barangay_id: form.barangay_id,
-        barangay_name: form.barangay_name,
         precinct_id: form.precinct_id ? String(form.precinct_id) : null,
         lat: tagLngLat.lat,
         lng: tagLngLat.lng,
-        encoded_by: currentUserId, // 🔥 use logged-in user's id
+        encoded_by: currentUserId,
       });
 
       toast.success("Household saved!");
-      setIsTagging(false);
-      setTagLngLat(null);
-      clearTempMarker();
-
+      handleCloseForm();
       await renderHouseholdMarkers();
     } catch (error) {
       const msg =
@@ -246,41 +191,24 @@ export default function VotersMap() {
     }
   };
 
-  // ✅ Load barangays from backend (id + name)
+  // load barangays
   useEffect(() => {
     axios
       .get(`${API}/barangays`)
-      .then((res) => {
-        setBarangayList(Array.isArray(res.data) ? res.data : []);
-      })
-      .catch((err) => {
-        console.error("Failed to load barangays", err);
-      });
+      .then((res) => setBarangayList(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => console.error("Failed to load barangays", err));
   }, []);
 
-  // 🔐 Load current user id from localStorage once
   useEffect(() => {
-    let uid = null;
+  axios
+    .get(`${API}/candidates?year=2025`)
+    .then((res) => setCandidates(Array.isArray(res.data) ? res.data : []))
+    .catch((err) => console.error("Failed to load candidates", err));
+}, []);
 
-    const adminUserJson = localStorage.getItem("adminUser");
-    if (adminUserJson) {
-      try {
-        const adminUser = JSON.parse(adminUserJson);
-        uid = adminUser.user_id || adminUser.id || null;
-      } catch (e) {
-        console.error("Failed to parse adminUser from localStorage", e);
-      }
-    }
-
-    if (!uid) {
-      const rawId =
-        localStorage.getItem("user_id") || localStorage.getItem("admin_id");
-      if (rawId) {
-        const n = Number(rawId);
-        if (Number.isFinite(n)) uid = n;
-      }
-    }
-
+  // load logged in user id
+  useEffect(() => {
+    const uid = getLoggedInUserId();
     if (uid) setCurrentUserId(uid);
   }, []);
 
@@ -314,7 +242,6 @@ export default function VotersMap() {
     }
   }, [mapStyle, lockToBago, renderHouseholdMarkers]);
 
-  // lock bounds sync
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
@@ -322,7 +249,7 @@ export default function VotersMap() {
     else m.setMaxBounds(null);
   }, [lockToBago]);
 
-  // ✅ Map click only when Mark Mode ON + auto-detect barangay from GeoJSON
+  // map click in mark mode
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
@@ -330,8 +257,7 @@ export default function VotersMap() {
     const handleMapClick = (e) => {
       if (!isMarkMode) return;
 
-      const clickedOnMarker =
-        e.originalEvent?.target?.closest?.(".mapboxgl-marker");
+      const clickedOnMarker = e.originalEvent?.target?.closest?.(".mapboxgl-marker");
       if (clickedOnMarker) return;
 
       addTempMarker(m, tempMarkerRef, e.lngLat.lng, e.lngLat.lat);
@@ -340,14 +266,9 @@ export default function VotersMap() {
       setIsTagging(true);
       resetForm();
 
-      const brgy = detectBarangayForPoint(
-        e.lngLat.lng,
-        e.lngLat.lat,
-        BARANGAYS_FC
-      );
+      const brgy = detectBarangayForPoint(e.lngLat.lng, e.lngLat.lat, BARANGAYS_FC);
 
       if (brgy) {
-        // map detected name -> barangay in DB to get id
         const match = barangayList.find(
           (b) =>
             b.barangay_name &&
@@ -361,7 +282,6 @@ export default function VotersMap() {
             barangay_id: match.id,
           }));
         } else {
-          // keep detected name; let user fix via dropdown
           setForm((prev) => ({
             ...prev,
             barangay_name: brgy,
@@ -380,8 +300,8 @@ export default function VotersMap() {
   // cleanup
   useEffect(() => {
     return () => {
-      clearMarkers();
-      clearTempMarker();
+      clearMarkers(savedMarkersRef, householdMarkerMapRef);
+      clearTempMarker(tempMarkerRef);
       if (mapRef.current) {
         try {
           mapRef.current.remove();
@@ -389,7 +309,7 @@ export default function VotersMap() {
         mapRef.current = null;
       }
     };
-  }, [clearMarkers, clearTempMarker]);
+  }, []);
 
   return (
     <div className="relative h-full w-full">
@@ -405,7 +325,7 @@ export default function VotersMap() {
               if (!next) {
                 setIsTagging(false);
                 setTagLngLat(null);
-                clearTempMarker?.();
+                clearTempMarker(tempMarkerRef);
               }
               return next;
             });
@@ -413,9 +333,7 @@ export default function VotersMap() {
           className={[
             "w-[29px] h-[29px] rounded-md border shadow-sm flex items-center justify-center mb-2 ",
             "bg-white hover:bg-gray-50 active:bg-gray-100 transition",
-            isMarkMode
-              ? "border-red-500 ring-1.5 ring-red-200"
-              : "border-gray-200",
+            isMarkMode ? "border-red-500 ring-1.5 ring-red-200" : "border-gray-200",
           ].join(" ")}
           title={isMarkMode ? "Mark Mode: ON" : "Mark Mode: OFF"}
         >
@@ -455,167 +373,25 @@ export default function VotersMap() {
         />
       </div>
 
-      {/* Modal */}
       {isTagging && tagLngLat && (
-        <div className="absolute inset-0 z-50 flex items-end md:items-center justify-center bg-black/40 p-3">
-          <div className="w-full max-w-xl bg-white rounded-xl shadow-lg overflow-hidden">
-            <div className="p-4 border-b flex items-center justify-between">
-              <div>
-                <div className="font-semibold">Tag Household Voters</div>
-                <div className="text-xs text-gray-600">
-                  Lat: {tagLngLat.lat.toFixed(6)} | Lng:{" "}
-                  {tagLngLat.lng.toFixed(6)}
-                </div>
-              </div>
-              <button
-                className="text-sm px-3 py-1 border rounded"
-                onClick={handleCloseModal}
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold">Barangay</label>
-                <select
-                  value={form.barangay_name}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    const match = barangayList.find(
-                      (b) =>
-                        b.barangay_name &&
-                        b.barangay_name.trim().toLowerCase() ===
-                          name.trim().toLowerCase()
-                    );
-
-                    setForm((prev) => ({
-                      ...prev,
-                      barangay_name: name,
-                      barangay_id: match ? match.id : "",
-                    }));
-                  }}
-                  className="w-full border rounded px-2 py-2 text-sm"
-                >
-                  <option value="">Select barangay</option>
-                  {barangayOptions.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-
-                {form.barangay_name && (
-                  <div className="text-[11px] text-gray-500 mt-1">
-                    Detected/Selected: {form.barangay_name}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold">Precinct</label>
-                <input
-                  value={form.precinct_id}
-                  onChange={(e) => setField("precinct_id", e.target.value)}
-                  className="w-full border rounded px-2 py-2 text-sm"
-                  placeholder="optional"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold">Purok</label>
-                <input
-                  value={form.purok}
-                  onChange={(e) => setField("purok", e.target.value)}
-                  className="w-full border rounded px-2 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold">Sitio</label>
-                <input
-                  value={form.sitio}
-                  onChange={(e) => setField("sitio", e.target.value)}
-                  className="w-full border rounded px-2 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold">Eligible voters</label>
-                <input
-                  type="number"
-                  value={form.eligible_voters}
-                  onChange={(e) =>
-                    setField("eligible_voters", Number(e.target.value))
-                  }
-                  className="w-full border rounded px-2 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold">Voting for us</label>
-                <input
-                  type="number"
-                  value={form.voting_for_us}
-                  onChange={(e) =>
-                    setField("voting_for_us", Number(e.target.value))
-                  }
-                  className="w-full border rounded px-2 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold">Undecided</label>
-                <input
-                  type="number"
-                  value={form.undecided}
-                  onChange={(e) =>
-                    setField("undecided", Number(e.target.value))
-                  }
-                  className="w-full border rounded px-2 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold">Not supporting</label>
-                <input
-                  type="number"
-                  value={form.not_supporting}
-                  onChange={(e) =>
-                    setField("not_supporting", Number(e.target.value))
-                  }
-                  className="w-full border rounded px-2 py-2 text-sm"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold">Notes</label>
-                <textarea
-                  value={form.notes}
-                  onChange={(e) => setField("notes", e.target.value)}
-                  className="w-full border rounded px-2 py-2 text-sm"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            <div className="p-4 border-t flex gap-2 justify-end">
-              <button
-                className="px-4 py-2 border rounded"
-                onClick={handleCloseModal}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 rounded bg-black text-white"
-                onClick={handleSave}
-              >
-                Save Household
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+  <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+    <div className="w-[420px] max-w-[95vw] pointer-events-auto">
+      <TagVotersForm
+        visible={isTagging && !!tagLngLat}
+        tagLngLat={tagLngLat}
+        form={form}
+        setForm={setForm}
+        setField={setField}
+        barangayList={barangayList}
+        barangayOptions={barangayOptions}
+        mayorOptions={mayorOptions}
+        viceMayorOptions={viceMayorOptions}
+        onClose={handleCloseForm}
+        onSave={handleSave}
+      />
+    </div>
+  </div>
+)}
 
       <ToastContainer
         position="top-center"
