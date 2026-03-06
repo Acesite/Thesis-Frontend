@@ -705,17 +705,32 @@ const AdminCropMap = () => {
       ? `₱${peso(safePastMid)}`
       : pastFarmgateDisplay || null;
 
-  const hasBothValues =
-    !!currentFarmgateDisplay &&
-    !!pastFarmgateDisplay &&
-    Number.isFinite(safeCurrentMid) &&
-    Number.isFinite(safePastMid) &&
-    safePastMid !== 0;
+      const hasBothValues =
+  !!currentFarmgateDisplay &&
+  !!pastFarmgateDisplay &&
+  Number.isFinite(safeCurrentMid) &&
+  Number.isFinite(safePastMid) &&
+  safePastMid !== 0;
 
-  const valueDeltaPct = hasBothValues
-    ? ((safeCurrentMid - safePastMid) / Math.abs(safePastMid)) * 100
-    : null;
+const valueDeltaPct = hasBothValues
+  ? ((safeCurrentMid - safePastMid) / Math.abs(safePastMid)) * 100
+  : null;
 
+const valueDeltaPctLabel =
+  valueDeltaPct == null
+    ? null
+    : valueDeltaPct > 100
+    ? "+100%+"
+    : valueDeltaPct < -100
+    ? "-100%+"
+    : `${valueDeltaPct > 0 ? "+" : ""}${valueDeltaPct.toFixed(0)}%`;
+
+const absValueDeltaPctLabel =
+  valueDeltaPct == null
+    ? null
+    : Math.abs(valueDeltaPct) > 100
+    ? "100%+"
+    : `${Math.abs(valueDeltaPct).toFixed(0)}%`;
   // debug
   console.log("COMPARE DEBUG", {
     currentFarmgateDisplay,
@@ -725,14 +740,6 @@ const AdminCropMap = () => {
     hasBothValues,
     valueDeltaPct,
   });
-
-  const valueDeltaPctLabel =
-    valueDeltaPct != null
-      ? `${valueDeltaPct > 0 ? "+" : ""}${valueDeltaPct.toFixed(0)}%`
-      : null;
-
-  const absValueDeltaPctLabel =
-    valueDeltaPct != null ? `${Math.abs(valueDeltaPct).toFixed(0)}%` : null;
 
   const currentHigher = hasBothValues && safeCurrentMid > safePastMid;
   const pastHigher = hasBothValues && safePastMid > safeCurrentMid;
@@ -2278,7 +2285,7 @@ const AdminCropMap = () => {
 
       {/* Crop overview (Current + Previous season only) */}
       {currentSeasonRec && !hideCompareCard && (
-        <div className="absolute top-28 right-4 z-40 w-[320px]">
+        <div className="absolute top-28 right-[90px] z-40 w-[320px]">
           <div className="relative rounded-xl border border-emerald-100 bg-white/95 backdrop-blur px-4 py-3 shadow-md max-h-[78vh] overflow-hidden flex flex-col">
             <button
               type="button"
@@ -2303,17 +2310,18 @@ const AdminCropMap = () => {
 
               {hasPastSeason && hasBothValues && (
                 <div
-                  className={
-                    "rounded-full px-2 py-1 text-[10px] font-semibold " +
-                    (valueDeltaPct > 0
-                      ? "bg-emerald-50 text-emerald-800"
-                      : valueDeltaPct < 0
-                      ? "bg-red-50 text-red-700"
-                      : "bg-gray-100 text-gray-600")
-                  }
-                >
-                  {valueDeltaPctLabel ?? ""}
-                </div>
+  className={
+    "inline-flex max-w-[90px] items-center justify-center truncate rounded-full px-2 py-1 text-[10px] font-semibold " +
+    (valueDeltaPct > 0
+      ? "bg-emerald-50 text-emerald-800"
+      : valueDeltaPct < 0
+      ? "bg-red-50 text-red-700"
+      : "bg-gray-100 text-gray-600")
+  }
+  title={valueDeltaPctLabel ?? ""}
+>
+  {valueDeltaPctLabel ?? ""}
+</div>
               )}
             </div>
 

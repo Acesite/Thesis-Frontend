@@ -395,9 +395,9 @@ const UnifiedAgriMap = () => {
   const [activeTab, setActiveTab] = useState("crop"); // crop | calamity | dar | voters | both
 
   const navLinks = [
-    // { to: "/AdminLanding", label: "Home", end: true },
-    // { to: "/AdminManageCrop", label: "Crops" },
-    // { to: "/AdminManageCalamity", label: "Calamity" },
+    { to: "/AdminLanding", label: "Home", end: true },
+    { to: "/AdminManageCrop", label: "Crops" },
+    { to: "/AdminManageCalamity", label: "Calamity" },
     // { to: "/AdminDAR", label: "DAR" },
     // { to: "/AdminGlossary", label: "Glossary" },
   ];
@@ -410,11 +410,11 @@ const UnifiedAgriMap = () => {
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 min-w-0">
               <h1 className="text-sm sm:text-base font-semibold text-slate-900 truncate">
-                Voters
+                AgriGIS
               </h1>
               <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-[2px] text-[11px] font-semibold text-emerald-700">
                 <MapPin className="h-3 w-3" />
-                Bacolod City
+                Department of Agriculture Bago City
               </span>
             </div>
             <p className="hidden sm:block text-xs text-slate-500">
@@ -444,7 +444,7 @@ const UnifiedAgriMap = () => {
 
           {/* Toggle */}
           <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-[3px] text-xs">
-            {/* <button
+            <button
               type="button"
               onClick={() => setActiveTab("crop")}
               className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
@@ -455,9 +455,9 @@ const UnifiedAgriMap = () => {
             >
               <Sprout className="w-3.5 h-3.5" />
               Crops
-            </button> */}
+            </button>
 
-            {/* <button
+            <button
               type="button"
               onClick={() => setActiveTab("calamity")}
               className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
@@ -468,7 +468,7 @@ const UnifiedAgriMap = () => {
             >
               <CloudLightning className="w-3.5 h-3.5" />
               Calamities
-            </button> */}
+            </button>
 
         
             {/* <button
@@ -485,7 +485,7 @@ const UnifiedAgriMap = () => {
             </button> */}
 
             {/* ✅ ADD: VOTERS button (no other changes) */}
-            <button
+            {/* <button
               type="button"
               onClick={() => setActiveTab("voters")}
               className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
@@ -496,7 +496,7 @@ const UnifiedAgriMap = () => {
             >
               <Users className="w-3.5 h-3.5" />
               Voters
-            </button>
+            </button> */}
 
             {/* (optional) keep this if you later add a "both" button */}
             {/* <button ... onClick={() => setActiveTab("both")}>Both</button> */}

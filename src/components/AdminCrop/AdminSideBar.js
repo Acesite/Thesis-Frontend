@@ -8,21 +8,59 @@ import axios from "axios";
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : "—");
 const fmt = (v) => (v ?? v === 0 ? v : "—");
 
-const Section = ({ title, children }) => (
-  <div className="rounded-xl border border-gray-200 bg-white p-4 mb-4">
-    {title && (
-      <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
+const Section = ({ title, children, action = null }) => (
+  <section className="mb-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+    {(title || action) && (
+      <div className="mb-3 flex items-center justify-between gap-3">
+        {title ? (
+          <h3 className="text-sm font-semibold tracking-tight text-gray-900">
+            {title}
+          </h3>
+        ) : (
+          <span />
+        )}
+        {action}
+      </div>
     )}
     {children}
-  </div>
+  </section>
 );
 
 const KV = ({ label, value }) => (
-  <div className="flex flex-col">
-    <dt className="text-xs uppercase tracking-wide text-gray-500">{label}</dt>
-    <dd className="text-sm text-gray-900">{value}</dd>
+  <div className="flex flex-col gap-1">
+    <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+      {label}
+    </dt>
+    <dd className="text-sm font-medium leading-5 text-gray-900 break-words">
+      {value}
+    </dd>
   </div>
 );
+
+const StatCard = ({ label, value, accent = "default" }) => {
+  const accents = {
+    default: "border-gray-200 bg-gray-50",
+    success: "border-gray-200 bg-gray-50",   
+    warning: "border-gray-200 bg-gray-50",   
+  };
+
+  return (
+    <div
+      className={clsx(
+        "rounded-xl border p-3",
+        accents[accent] || accents.default
+      )}
+    >
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+        {label}
+      </p>
+
+      <p className="mt-1 text-sm font-semibold text-gray-900 break-words">
+        {value}
+      </p>
+    </div>
+  );
+};
 
 // same mapping you used in ManageCrop
 const yieldUnitMap = {
@@ -109,21 +147,6 @@ function isCropHarvested(crop) {
     !!props.date_harvested
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  ✅ SINGLE SOURCE OF TRUTH: Estimated Farmgate Value (PHP)          */
-/*  AdminSidebar MUST NOT recalculate farmgate value.                  */
-/*  It only displays what TagCropForm saved to DB/state.               */
-/*                                                                     */
-/*  farmgate **range** fields we expect from backend:                   */
-/*   - est_farmgate_value_display (string, "₱X – ₱Y")                  */
-/*   - est_farmgate_value_low (number or "12345" or "12,345")          */
-/*   - est_farmgate_value_high (number or "12345" or "12,345")         */
-/*                                                                     */
-/*  For the exact value on the map + sidebar, we use the midpoint      */
-/*  of [low, high], or parse it out of the range string.               */
-/* ------------------------------------------------------------------ */
-
 const peso = (n) => {
   const x = Number(n);
   if (!Number.isFinite(x)) return "—";
@@ -588,19 +611,47 @@ const AdminSideBar = ({
   return (
     <div
       className={clsx(
-        "absolute top-0 left-0 h-full bg-gray-50 z-20 overflow-y-auto border-r border-gray-200",
+        "absolute top-0 left-0 z-20 h-full overflow-y-auto border-r border-gray-200 bg-[#f8fafc]/95 backdrop-blur-sm",
         visible ? "w-[500px]" : "w-0 overflow-hidden"
       )}
     >
-      <div className={clsx("transition-all", visible ? "px-6 py-6" : "px-0 py-0")}>
-        {/* hero image */}
+      <div className={clsx("transition-all", visible ? "px-5 py-5" : "px-0 py-0")}>
+        <div className="mb-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 ring-1 ring-emerald-100">
+                <img src={AgriGISLogo} alt="AgriGIS" className="h-8 w-8 object-contain" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                  AgriGIS
+                </p>
+                <h2 className="text-lg font-bold tracking-tight text-gray-900">
+                  Crop field sidebar
+                </h2>
+                <p className="text-xs text-gray-500">
+                  Clean view for crop, farmer, and field records
+                </p>
+              </div>
+            </div>
+
+           
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            <StatCard label="Region" value="NIR" />
+            <StatCard label="Province" value="Negros Occ" />
+            <StatCard label="City" value="Bago City" accent="success" />
+          </div>
+        </div>
+
         <div className="mb-4">
-          <div className="relative w-full overflow-hidden rounded-xl border border-gray-200 bg-gray-50 aspect-[16/9]">
+          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
             {selectedCrop?.photos ? (
               <img
                 src={`http://localhost:5000${JSON.parse(selectedCrop.photos)[0]}`}
                 alt={`${selectedCrop?.crop_name || "Crop"} photo`}
-                className="h-full w-full object-cover cursor-pointer"
+                className="h-full w-full cursor-pointer object-cover"
                 onClick={() =>
                   setEnlargedImage(
                     `http://localhost:5000${JSON.parse(selectedCrop.photos)[0]}`
@@ -608,36 +659,27 @@ const AdminSideBar = ({
                 }
               />
             ) : (
-              <div className="h-full w-full flex flex-col items-center justify-center gap-2">
-                <img src={AgriGISLogo} alt="AgriGIS" className="h-10 opacity-70" />
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-emerald-50 to-white">
+                <img src={AgriGISLogo} alt="AgriGIS" className="h-10 opacity-80" />
                 <p className="text-xs text-gray-500">
                   Select a field on the map to see details here.
                 </p>
               </div>
             )}
+
+            {selectedCrop && (
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/65 via-black/25 to-transparent p-4">
+                <p className="text-base font-semibold text-white">
+                  {selectedCrop.crop_name || "Crop"}
+                  {selectedCrop.variety_name ? ` · ${selectedCrop.variety_name}` : ""}
+                </p>
+                <p className="text-xs text-white/85">
+                  {selectedCrop.barangay || selectedCrop.farmer_barangay || "Bago City"}
+                </p>
+              </div>
+            )}
           </div>
         </div>
-
-        {/* 🔙 Back to Manage Crops */}
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={handleBackToCrops}
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            title="Go back to Manage Crops"
-          >
-            ← Back
-          </button>
-        </div>
-
-        {/* location */}
-        <Section title="Location">
-          <dl className="grid grid-cols-3 gap-3">
-            <KV label="Region" value="Western Visayas" />
-            <KV label="Province" value="Negros Occidental" />
-            <KV label="Municipality" value="Bago City" />
-          </dl>
-        </Section>
 
         {/* selected field */}
         {selectedCrop && (
@@ -732,9 +774,9 @@ const AdminSideBar = ({
                 </div>
               </div>
 
-              <dl className="grid grid-cols-2 gap-3">
-                <KV label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
-                <KV
+              <div className="grid grid-cols-2 gap-3">
+                <StatCard label="Hectares" value={fmt(selectedCrop.estimated_hectares)} />
+                <StatCard
                   label="Est. volume"
                   value={
                     selectedCrop.estimated_volume != null
@@ -743,20 +785,21 @@ const AdminSideBar = ({
                         }`.trim()
                       : "—"
                   }
+                  accent="success"
                 />
-                <KV label="Planted date" value={fmtDate(selectedCrop.planted_date)} />
-                <KV label="Est. harvest" value={fmtDate(selectedCrop.estimated_harvest)} />
+                <StatCard label="Planted date" value={fmtDate(selectedCrop.planted_date)} />
+                <StatCard label="Est. harvest" value={fmtDate(selectedCrop.estimated_harvest)} />
 
                 {avgElevation != null && (
-                  <KV label="Avg elevation (m)" value={fmt(avgElevation)} />
+                  <StatCard label="Avg elevation (m)" value={fmt(avgElevation)} />
                 )}
 
                 {croppingSystemLabel && (
-                  <KV label="Cropping system" value={croppingSystemLabel} />
+                  <StatCard label="Cropping system" value={croppingSystemLabel} />
                 )}
 
                 {hasSecondaryCrop && (
-                  <KV
+                  <StatCard
                     label="Secondary crop"
                     value={
                       secondaryCropName
@@ -771,7 +814,7 @@ const AdminSideBar = ({
                 )}
 
                 {hasSecondaryCrop && secondaryVolume != null && (
-                  <KV
+                  <StatCard
                     label="Secondary volume"
                     value={
                       secondaryUnit
@@ -781,9 +824,9 @@ const AdminSideBar = ({
                   />
                 )}
 
-                <KV label="Tagged by" value={fmt(selectedCrop.admin_name)} />
-                <KV label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
-              </dl>
+                <StatCard label="Tagged by" value={fmt(selectedCrop.admin_name)} />
+                <StatCard label="Tagged on" value={fmtDate(selectedCrop.created_at)} />
+              </div>
 
               {selectedCrop.note?.trim() && (
                 <div className="pt-2 border-t border-gray-100">
@@ -801,7 +844,7 @@ const AdminSideBar = ({
                 selectedCrop.farmer_mobile ||
                 selectedCrop.farmer_address ||
                 tenureDisplay) && (
-                <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50/80 px-4 py-3 shadow-sm">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">
                     Farmer details
                   </p>
@@ -829,8 +872,8 @@ const AdminSideBar = ({
               )}
 
               {/* ✅ Estimated Farmgate Value (PHP) — exact value to match Crop Overview card */}
-              <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+              <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
                   Estimated farmgate value (PHP)
                 </p>
 
@@ -1224,7 +1267,7 @@ const AdminSideBar = ({
         </Section>
 
         {/* home button */}
-        <div className="mt-5 flex gap-2">
+        <div className="mt-5 flex gap-2 pb-2">
           <Button to="/AdminLanding" variant="outline" size="md">
             Home
           </Button>
