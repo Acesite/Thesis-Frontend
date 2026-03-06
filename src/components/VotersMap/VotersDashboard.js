@@ -218,7 +218,7 @@ const AdminVotersDashboard = () => {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h1 className="text-[32px] leading-tight font-bold text-slate-900">
-                  Voters Dashboard
+                Dashboard
                 </h1>
                 <p className="text-[15px] text-slate-600">
                   View household, barangay, precinct, and candidate
