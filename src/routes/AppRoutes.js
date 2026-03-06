@@ -31,6 +31,7 @@ import SuperAdminArchive from "../components/SuperAdmin/SuperAdminArchive";
 import UnifiedAgriMap from "../components/UnifiedMap/UnifiedAgriMap";
 import DARMap from "../components/DARmap/DARmap";
 import VotersMap from "../components/VotersMap/VotersMap";
+import VotersDashboard from "../components/VotersMap/VotersDashboard";
 
 const AppRoutes = () => {
   return (
@@ -76,6 +77,7 @@ const AppRoutes = () => {
 
           {/*VOTERS*/}
           <Route path="/VotersMap" element={<VotersMap />} />
+          <Route path="/VotersDashboard" element={<VotersDashboard />} />
     </Routes>
   );
 };
