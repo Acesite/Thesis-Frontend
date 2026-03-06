@@ -484,8 +484,8 @@ const UnifiedAgriMap = () => {
               DAR
             </button> */}
 
-            {/* ✅ ADD: VOTERS button (no other changes) */}
-            {/* <button
+           
+            <button
               type="button"
               onClick={() => setActiveTab("voters")}
               className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
@@ -496,7 +496,7 @@ const UnifiedAgriMap = () => {
             >
               <Users className="w-3.5 h-3.5" />
               Voters
-            </button> */}
+            </button>
 
             {/* (optional) keep this if you later add a "both" button */}
             {/* <button ... onClick={() => setActiveTab("both")}>Both</button> */}

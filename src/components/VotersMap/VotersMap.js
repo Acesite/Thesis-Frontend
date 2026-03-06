@@ -28,9 +28,9 @@ import {
 
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || "";
 
-const BAGO_CITY_BOUNDS = [
-  [122.7333, 10.4958],
-  [123.5, 10.6333],
+const BACOLOD_CITY_BOUNDS = [
+  [122.87, 10.59],  // southwest
+  [123.03, 10.72],  // northeast
 ];
 
 const SIDEBAR_WIDTH = 500;
@@ -53,7 +53,7 @@ export default function VotersMap() {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
   const [mapStyle, setMapStyle] = useState(
-    "mapbox://styles/wompwomp-69/cm900xa91008j01t14w8u8i9d"
+    "mapbox://styles/wompwomp-69/cmm5q9kl7000l01so1g8m6tpx"
   );
   const [lockToBago, setLockToBago] = useState(true);
 
@@ -226,7 +226,7 @@ const viceMayorOptions = useMemo(
       });
       mapRef.current = m;
 
-      if (lockToBago) m.setMaxBounds(BAGO_CITY_BOUNDS);
+      if (lockToBago) m.setMaxBounds(BACOLOD_CITY_BOUNDS);
 
       m.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
@@ -245,7 +245,7 @@ const viceMayorOptions = useMemo(
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
-    if (lockToBago) m.setMaxBounds(BAGO_CITY_BOUNDS);
+    if (lockToBago) m.setMaxBounds(BACOLOD_CITY_BOUNDS);
     else m.setMaxBounds(null);
   }, [lockToBago]);
 
