@@ -2,7 +2,7 @@
 
 export const BACOLOD_PRECINCTS = [
   {
-    district: "📌 BACOLOD NORTH (District 1)",
+    district: " BACOLOD NORTH (District 1)",
     schools: [
       {
         name: "Andres Bonifacio Elementary School",

@@ -1,4 +1,4 @@
-// src/components/Voters/VotersMap.js
+// src/components/VotersMap/VotersMap.js
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -9,8 +9,7 @@ import "react-toastify/dist/ReactToastify.css";
 import SidebarToggleButton from "../VotersMap/MapControls/SidebarToggleButton";
 import VotersSidebar from "./VotersSidebar";
 import TagVotersForm from "./TagVotersForm";
-
-import BARANGAYS_FC from "../Barangays/barangays.json";
+import BARANGAYS_FC from "./Data/Bacolodgeojson";
 
 import {
   DEFAULT_HOUSEHOLD_FORM,
@@ -29,14 +28,62 @@ import {
 mapboxgl.accessToken = process.env.REACT_APP_MAPBOX_ACCESS_TOKEN || "";
 
 const BACOLOD_CITY_BOUNDS = [
-  [122.87, 10.59],  // southwest
-  [123.03, 10.72],  // northeast
+  [122.87, 10.59],
+  [123.03, 10.72],
 ];
 
 const SIDEBAR_WIDTH = 500;
 const SIDEBAR_PEEK = 1;
-
 const API = "http://localhost:5000/api/voters";
+
+const normalizeName = (name = "") =>
+  String(name)
+    .trim()
+    .toLowerCase()
+    .replace(/^brgy\.?\s*/i, "")
+    .replace(/^barangay\s*/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractBrgyNumber = (name = "") => {
+  const match = String(name).match(/\d+/);
+  return match ? match[0] : "";
+};
+
+function buildBarangayLookup(barangayList = []) {
+  const map = new Map();
+
+  for (const b of barangayList) {
+    if (!b?.id || !b?.barangay_name) continue;
+
+    const raw = String(b.barangay_name).trim();
+    const normalized = normalizeName(raw);
+
+    map.set(normalized, b);
+  }
+
+  return map;
+}
+
+function findBarangayMatch(lookup, detectedName = "") {
+  if (!lookup || !detectedName) return null;
+
+  const normalized = normalizeName(detectedName);
+
+  if (lookup.has(normalized)) return lookup.get(normalized);
+
+  for (const [, value] of lookup.entries()) {
+    const candidate = normalizeName(value?.barangay_name || "");
+    if (!candidate) continue;
+
+    if (candidate === normalized) return value;
+    if (candidate.includes(normalized)) return value;
+    if (normalized.includes(candidate)) return value;
+  }
+
+  return null;
+}
 
 export default function VotersMap() {
   const mapContainerRef = useRef(null);
@@ -49,16 +96,18 @@ export default function VotersMap() {
   const [householdRecords, setHouseholdRecords] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [candidates, setCandidates] = useState([]);
-
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
-
   const [mapStyle, setMapStyle] = useState(
     "mapbox://styles/wompwomp-69/cmm5q9kl7000l01so1g8m6tpx"
   );
   const [lockToBago, setLockToBago] = useState(true);
-
   const [barangayList, setBarangayList] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(null);
+
+  const barangayLookup = useMemo(
+    () => buildBarangayLookup(barangayList),
+    [barangayList]
+  );
 
   const barangayOptions = useMemo(
     () => buildBarangayOptions(barangayList, BARANGAYS_FC),
@@ -66,24 +115,21 @@ export default function VotersMap() {
   );
 
   const mayorOptions = useMemo(
-  () => candidates.filter((c) => c.position === "mayor"),
-  [candidates]
-);
+    () => candidates.filter((c) => c.position === "mayor"),
+    [candidates]
+  );
 
-const viceMayorOptions = useMemo(
-  () => candidates.filter((c) => c.position === "vice_mayor"),
-  [candidates]
-);
+  const viceMayorOptions = useMemo(
+    () => candidates.filter((c) => c.position === "vice_mayor"),
+    [candidates]
+  );
 
   const [isTagging, setIsTagging] = useState(false);
   const [tagLngLat, setTagLngLat] = useState(null);
-
   const [isMarkMode, setIsMarkMode] = useState(false);
 
   const [form, setForm] = useState(DEFAULT_HOUSEHOLD_FORM);
   const setField = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-
-  const resetForm = useCallback(() => setForm(DEFAULT_HOUSEHOLD_FORM), []);
 
   const zoomToLocation = useCallback((lngLatArr) => {
     const m = mapRef.current;
@@ -124,13 +170,11 @@ const viceMayorOptions = useMemo(
         const lat = Number(row.lat);
         if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
 
-        const color = getMarkerColor(row);
-
         const popup = new mapboxgl.Popup({ offset: 18 }).setHTML(
           buildHouseholdPopupHTML(row)
         );
 
-        const marker = new mapboxgl.Marker({ color })
+        const marker = new mapboxgl.Marker({ color: getMarkerColor(row) })
           .setLngLat([lng, lat])
           .setPopup(popup)
           .addTo(m);
@@ -162,7 +206,17 @@ const viceMayorOptions = useMemo(
     const errMsg = validateHouseholdForm(form);
     if (errMsg) return toast.error(errMsg);
 
-    if (!form.barangay_id) return toast.error("Barangay not set.");
+    const matchedBarangay = findBarangayMatch(barangayLookup, form.barangay_name);
+    const finalBarangayId = form.barangay_id || matchedBarangay?.id || "";
+    const finalBarangayName =
+      matchedBarangay?.barangay_name || form.barangay_name || "";
+
+    if (!finalBarangayId) {
+      console.log("barangayList:", barangayList);
+      console.log("form.barangay_name:", form.barangay_name);
+      console.log("matchedBarangay:", matchedBarangay);
+      return toast.error("Barangay not set.");
+    }
 
     if (!currentUserId) {
       toast.error("No logged-in user detected. Please log in again.");
@@ -172,10 +226,13 @@ const viceMayorOptions = useMemo(
     try {
       await axios.post(`${API}/households`, {
         ...form,
+        barangay_id: finalBarangayId,
+        barangay_name: finalBarangayName,
         precinct_id: form.precinct_id ? String(form.precinct_id) : null,
         lat: tagLngLat.lat,
         lng: tagLngLat.lng,
         encoded_by: currentUserId,
+        is_visited: 1,
       });
 
       toast.success("Household saved!");
@@ -191,7 +248,6 @@ const viceMayorOptions = useMemo(
     }
   };
 
-  // load barangays
   useEffect(() => {
     axios
       .get(`${API}/barangays`)
@@ -200,19 +256,17 @@ const viceMayorOptions = useMemo(
   }, []);
 
   useEffect(() => {
-  axios
-    .get(`${API}/candidates?year=2025`)
-    .then((res) => setCandidates(Array.isArray(res.data) ? res.data : []))
-    .catch((err) => console.error("Failed to load candidates", err));
-}, []);
+    axios
+      .get(`${API}/candidates?year=2025`)
+      .then((res) => setCandidates(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => console.error("Failed to load candidates", err));
+  }, []);
 
-  // load logged in user id
   useEffect(() => {
     const uid = getLoggedInUserId();
     if (uid) setCurrentUserId(uid);
   }, []);
 
-  // init map
   useEffect(() => {
     const container = mapContainerRef.current;
     if (!container) return;
@@ -249,7 +303,6 @@ const viceMayorOptions = useMemo(
     else m.setMaxBounds(null);
   }, [lockToBago]);
 
-  // map click in mark mode
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
@@ -261,43 +314,35 @@ const viceMayorOptions = useMemo(
       if (clickedOnMarker) return;
 
       addTempMarker(m, tempMarkerRef, e.lngLat.lng, e.lngLat.lat);
-
       setTagLngLat(e.lngLat);
       setIsTagging(true);
-      resetForm();
 
-      const brgy = detectBarangayForPoint(e.lngLat.lng, e.lngLat.lat, BARANGAYS_FC);
+      const detectedName = detectBarangayForPoint(
+        e.lngLat.lng,
+        e.lngLat.lat,
+        BARANGAYS_FC
+      );
 
-      if (brgy) {
-        const match = barangayList.find(
-          (b) =>
-            b.barangay_name &&
-            b.barangay_name.trim().toLowerCase() === brgy.trim().toLowerCase()
-        );
+      const matchedBarangay = findBarangayMatch(barangayLookup, detectedName);
 
-        if (match) {
-          setForm((prev) => ({
-            ...prev,
-            barangay_name: match.barangay_name,
-            barangay_id: match.id,
-          }));
-        } else {
-          setForm((prev) => ({
-            ...prev,
-            barangay_name: brgy,
-            barangay_id: "",
-          }));
-        }
-      } else {
+      console.log("detectedName:", detectedName);
+      console.log("matchedBarangay:", matchedBarangay);
+
+      setForm({
+        ...DEFAULT_HOUSEHOLD_FORM,
+        barangay_name: matchedBarangay?.barangay_name || detectedName || "",
+        barangay_id: matchedBarangay?.id || "",
+      });
+
+      if (!detectedName) {
         toast.info("No barangay detected for this location.");
       }
     };
 
     m.on("click", handleMapClick);
     return () => m.off("click", handleMapClick);
-  }, [isMarkMode, resetForm, barangayList]);
+  }, [isMarkMode, barangayLookup]);
 
-  // cleanup
   useEffect(() => {
     return () => {
       clearMarkers(savedMarkersRef, householdMarkerMapRef);
@@ -315,7 +360,6 @@ const viceMayorOptions = useMemo(
     <div className="relative h-full w-full">
       <div ref={mapContainerRef} className="h-full w-full" />
 
-      {/* Mark tool button */}
       <div className="absolute bottom-[118px] right-[10px] z-50 flex flex-col items-end">
         <button
           type="button"
@@ -331,7 +375,7 @@ const viceMayorOptions = useMemo(
             });
           }}
           className={[
-            "w-[29px] h-[29px] rounded-md border shadow-sm flex items-center justify-center mb-2 ",
+            "w-[29px] h-[29px] rounded-md border shadow-sm flex items-center justify-center mb-2",
             "bg-white hover:bg-gray-50 active:bg-gray-100 transition",
             isMarkMode ? "border-red-500 ring-1.5 ring-red-200" : "border-gray-200",
           ].join(" ")}
@@ -347,7 +391,6 @@ const viceMayorOptions = useMemo(
         )}
       </div>
 
-      {/* Sidebar toggle */}
       <SidebarToggleButton
         onClick={() => setIsSidebarVisible((v) => !v)}
         isSidebarVisible={isSidebarVisible}
@@ -355,7 +398,6 @@ const viceMayorOptions = useMemo(
         peek={SIDEBAR_PEEK}
       />
 
-      {/* Sidebar */}
       <div
         className={`absolute top-0 left-0 h-full z-40 bg-gray-50 border-r border-gray-200 transition-all duration-200 ease-in-out overflow-hidden ${
           isSidebarVisible ? "w-[500px]" : "w-0"
@@ -374,24 +416,24 @@ const viceMayorOptions = useMemo(
       </div>
 
       {isTagging && tagLngLat && (
-  <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
-    <div className="w-[420px] max-w-[95vw] pointer-events-auto">
-      <TagVotersForm
-        visible={isTagging && !!tagLngLat}
-        tagLngLat={tagLngLat}
-        form={form}
-        setForm={setForm}
-        setField={setField}
-        barangayList={barangayList}
-        barangayOptions={barangayOptions}
-        mayorOptions={mayorOptions}
-        viceMayorOptions={viceMayorOptions}
-        onClose={handleCloseForm}
-        onSave={handleSave}
-      />
-    </div>
-  </div>
-)}
+        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="w-[420px] max-w-[95vw] pointer-events-auto">
+            <TagVotersForm
+              visible={isTagging && !!tagLngLat}
+              tagLngLat={tagLngLat}
+              form={form}
+              setForm={setForm}
+              setField={setField}
+              barangayList={barangayList}
+              barangayOptions={barangayOptions}
+              mayorOptions={mayorOptions}
+              viceMayorOptions={viceMayorOptions}
+              onClose={handleCloseForm}
+              onSave={handleSave}
+            />
+          </div>
+        </div>
+      )}
 
       <ToastContainer
         position="top-center"

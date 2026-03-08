@@ -1,5 +1,5 @@
-// src/components/Voters/TagVotersForm.js
-import React from "react";
+// src/components/VotersMap/TagVotersForm.js
+import React, { useMemo, useEffect } from "react";
 
 const Label = ({ children }) => (
   <label className="text-[11px] font-semibold text-gray-700">{children}</label>
@@ -38,6 +38,38 @@ const Textarea = (props) => (
   />
 );
 
+const normalizeName = (name = "") =>
+  String(name)
+    .trim()
+    .toLowerCase()
+    .replace(/^brgy\.?\s*/i, "")
+    .replace(/^barangay\s*/i, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractBrgyNumber = (name = "") => {
+  const match = String(name).match(/\d+/);
+  return match ? match[0] : "";
+};
+
+const findBarangayMatch = (barangayList = [], name = "") => {
+  if (!name || !Array.isArray(barangayList)) return null;
+
+  const normalized = normalizeName(name);
+
+  for (const b of barangayList) {
+    const candidate = normalizeName(b?.barangay_name || "");
+    if (!candidate) continue;
+
+    if (candidate === normalized) return b;
+    if (candidate.includes(normalized)) return b;
+    if (normalized.includes(candidate)) return b;
+  }
+
+  return null;
+};
+
 export default function TagVotersForm({
   visible,
   tagLngLat,
@@ -51,7 +83,80 @@ export default function TagVotersForm({
   onClose,
   onSave,
 }) {
+  const finalBarangayOptions = useMemo(() => {
+    const base = Array.isArray(barangayOptions) ? [...barangayOptions] : [];
+
+    if (
+      form?.barangay_name &&
+      !base.some((name) => normalizeName(name) === normalizeName(form.barangay_name))
+    ) {
+      base.unshift(form.barangay_name);
+    }
+
+    return base;
+  }, [barangayOptions, form?.barangay_name]);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (!form?.barangay_name) return;
+    if (form?.barangay_id) return;
+
+    const match = findBarangayMatch(barangayList, form.barangay_name);
+    if (!match?.id) return;
+
+    setForm((prev) => ({
+      ...prev,
+      barangay_name: match.barangay_name,
+      barangay_id: match.id,
+    }));
+  }, [visible, form?.barangay_name, form?.barangay_id, barangayList, setForm]);
+
   if (!visible || !tagLngLat) return null;
+
+  const handleVoterCountChange = (value) => {
+    const total = Math.max(1, Number(value) || 1);
+    const extraCount = Math.max(0, total - 1);
+    const existing = Array.isArray(form.other_members) ? form.other_members : [];
+
+    const resized = Array.from({ length: extraCount }, (_, i) => {
+      return existing[i] || { age: "", gender: "" };
+    });
+
+    setForm((prev) => ({
+      ...prev,
+      voter_count: total,
+      other_members: resized,
+    }));
+  };
+
+  const handleOtherMemberChange = (index, key, value) => {
+    setForm((prev) => {
+      const updated = Array.isArray(prev.other_members)
+        ? [...prev.other_members]
+        : [];
+
+      updated[index] = {
+        ...(updated[index] || { age: "", gender: "" }),
+        [key]: value,
+      };
+
+      return {
+        ...prev,
+        other_members: updated,
+      };
+    });
+  };
+
+  const handleBarangayChange = (e) => {
+    const name = e.target.value;
+    const match = findBarangayMatch(barangayList, name);
+
+    setForm((prev) => ({
+      ...prev,
+      barangay_name: match?.barangay_name || name,
+      barangay_id: match?.id || "",
+    }));
+  };
 
   return (
     <div className="w-full max-w-[560px] bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-200">
@@ -62,6 +167,7 @@ export default function TagVotersForm({
             Lat: {tagLngLat.lat.toFixed(6)} | Lng: {tagLngLat.lng.toFixed(6)}
           </div>
         </div>
+
         <button
           type="button"
           className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
@@ -75,37 +181,14 @@ export default function TagVotersForm({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-1">
             <Label>Barangay</Label>
-            <Select
-              value={form.barangay_name}
-              onChange={(e) => {
-                const name = e.target.value;
-                const match = barangayList.find(
-                  (b) =>
-                    b.barangay_name &&
-                    b.barangay_name.trim().toLowerCase() ===
-                      name.trim().toLowerCase()
-                );
-
-                setForm((prev) => ({
-                  ...prev,
-                  barangay_name: name,
-                  barangay_id: match ? match.id : "",
-                }));
-              }}
-            >
+            <Select value={form.barangay_name || ""} onChange={handleBarangayChange}>
               <option value="">Select barangay</option>
-              {barangayOptions.map((name) => (
+              {finalBarangayOptions.map((name) => (
                 <option key={name} value={name}>
                   {name}
                 </option>
               ))}
             </Select>
-
-            {!!form.barangay_name && (
-              <div className="text-[11px] text-gray-500 mt-1">
-                Detected/Selected: {form.barangay_name}
-              </div>
-            )}
           </div>
 
           <div className="md:col-span-1">
@@ -145,7 +228,7 @@ export default function TagVotersForm({
           </div>
 
           <div>
-            <Label>Age</Label>
+            <Label>Family Leader Age</Label>
             <Input
               type="number"
               min="0"
@@ -157,14 +240,67 @@ export default function TagVotersForm({
           </div>
 
           <div>
-            <Label>Voter count</Label>
+            <Label>Family Leader Gender</Label>
+            <Select
+              value={form.family_leader_gender || ""}
+              onChange={(e) => setField("family_leader_gender", e.target.value)}
+            >
+              <option value="">Select gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </Select>
+          </div>
+
+          <div className="md:col-span-2">
+            <Label>Number of Voters</Label>
             <Input
               type="number"
-              min="0"
+              min="1"
               value={form.voter_count}
-              onChange={(e) => setField("voter_count", Number(e.target.value))}
+              onChange={(e) => handleVoterCountChange(e.target.value)}
             />
           </div>
+
+          {Number(form.voter_count || 0) > 1 && (
+            <div className="md:col-span-2">
+              <Label>Other Household Members</Label>
+
+              <div className="space-y-3 mt-2">
+                {(form.other_members || []).map((member, index) => (
+                  <div
+                    key={index}
+                    className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-gray-200 p-3"
+                  >
+                    <Input
+                      type="number"
+                      min="0"
+                      max="120"
+                      value={member.age}
+                      onChange={(e) =>
+                        handleOtherMemberChange(index, "age", e.target.value)
+                      }
+                      placeholder={`Member ${index + 2} age`}
+                    />
+
+                    <Select
+                      value={member.gender || ""}
+                      onChange={(e) =>
+                        handleOtherMemberChange(index, "gender", e.target.value)
+                      }
+                    >
+                      <option value="">Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+
+              <div className="text-[11px] text-gray-500 mt-2">
+                Family leader is already counted as 1 voter.
+              </div>
+            </div>
+          )}
 
           <div>
             <Label>Mayor (optional)</Label>

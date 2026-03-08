@@ -13,11 +13,36 @@ export const DEFAULT_HOUSEHOLD_FORM = {
   notes: "",
   family_leader_name: "",
   family_leader_age: "",
+  family_leader_gender: "",
+  other_members: [],
 };
 
 export function validateHouseholdForm(form) {
   const n = Number(form.voter_count);
-  if (!Number.isFinite(n) || n < 0) return "Voter count must be 0 or greater.";
+
+  if (!Number.isFinite(n) || n < 1) {
+    return "Voter count must be 1 or greater.";
+  }
+
+  const leaderAge = Number(form.family_leader_age);
+  if (!Number.isFinite(leaderAge) || leaderAge < 0) {
+    return "Family leader age is required.";
+  }
+
+  if (n > 1) {
+    const members = Array.isArray(form.other_members) ? form.other_members : [];
+    if (members.length !== n - 1) {
+      return "Please complete all household member ages.";
+    }
+
+    for (const m of members) {
+      const age = Number(m?.age);
+      if (!Number.isFinite(age) || age < 0) {
+        return "Please enter valid ages for all household members.";
+      }
+    }
+  }
+
   return "";
 }
 
@@ -79,11 +104,12 @@ export function buildBarangayOptions(barangayList, BARANGAYS_FC) {
 
 function pointInRing(lng, lat, ring) {
   let inside = false;
+
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0],
-      yi = ring[i][1];
-    const xj = ring[j][0],
-      yj = ring[j][1];
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
 
     const intersect =
       yi > lat !== yj > lat &&
@@ -91,27 +117,56 @@ function pointInRing(lng, lat, ring) {
 
     if (intersect) inside = !inside;
   }
+
   return inside;
 }
 
 function pointInPolygon(lng, lat, polygonCoords) {
   if (!Array.isArray(polygonCoords) || polygonCoords.length === 0) return false;
 
-  // outer ring
   if (!pointInRing(lng, lat, polygonCoords[0])) return false;
 
-  // holes
   for (let h = 1; h < polygonCoords.length; h++) {
     if (pointInRing(lng, lat, polygonCoords[h])) return false;
   }
+
   return true;
+}
+
+function normalizeBarangayName(name = "") {
+  return String(name)
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/^brgy\.?\s*/i, "Barangay ")
+    .replace(/^barangay\s*/i, "Barangay ");
+}
+
+function closeRing(coords) {
+  if (!Array.isArray(coords) || coords.length < 3) return null;
+
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+
+  if (
+    Array.isArray(first) &&
+    Array.isArray(last) &&
+    first[0] === last[0] &&
+    first[1] === last[1]
+  ) {
+    return coords;
+  }
+
+  return [...coords, first];
 }
 
 export function detectBarangayForPoint(lng, lat, barangaysFC) {
   const features = barangaysFC?.features || [];
+
   for (const f of features) {
     const geom = f?.geometry;
-    const name = getBrgyName(f?.properties || {});
+    const rawName = getBrgyName(f?.properties || {});
+    const name = normalizeBarangayName(rawName);
+
     if (!geom || !name) continue;
 
     if (geom.type === "Polygon") {
@@ -120,8 +175,17 @@ export function detectBarangayForPoint(lng, lat, barangaysFC) {
       for (const poly of geom.coordinates) {
         if (pointInPolygon(lng, lat, poly)) return name;
       }
+    } else if (geom.type === "LineString") {
+      const ring = closeRing(geom.coordinates);
+      if (ring && pointInPolygon(lng, lat, [ring])) return name;
+    } else if (geom.type === "MultiLineString") {
+      for (const line of geom.coordinates) {
+        const ring = closeRing(line);
+        if (ring && pointInPolygon(lng, lat, [ring])) return name;
+      }
     }
   }
+
   return "";
 }
 
@@ -165,7 +229,6 @@ export function buildHouseholdPopupHTML(row) {
   `;
 }
 
-
 export function MarkCircleIcon({ active }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -179,4 +242,4 @@ export function MarkCircleIcon({ active }) {
       <circle cx="12" cy="12" r="2.2" fill={active ? "#ef4444" : "#111827"} />
     </svg>
   );
-}
+};
