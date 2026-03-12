@@ -17,6 +17,7 @@ const FILTER_OPTIONS = {
   position: ["All", "Mayor", "Vice Mayor"],
 };
 
+// kept as a fallback sample dataset (unchanged)
 const CANDIDATE_ROWS = [
   { position: "Mayor", full_name: "Candidate A", party: "Sample Party", election_year: 2025 },
   { position: "Mayor", full_name: "Candidate B", party: "People First", election_year: 2025 },
@@ -71,6 +72,15 @@ const AdminVotersDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // New candidate states
+  const [candidates, setCandidates] = useState([]); // from API
+  const [candidateForm, setCandidateForm] = useState({
+    full_name: "",
+    position: "Mayor",
+    party: "",
+    election_year: "2025",
+  });
+
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -80,17 +90,20 @@ const AdminVotersDashboard = () => {
       axios.get(`${API_BASE}/api/managevoters/barangay-analytics`),
       axios.get(`${API_BASE}/api/managevoters/quick-insights`),
       axios.get(`${API_BASE}/api/managevoters/recent-activity`),
+      axios.get(`${API_BASE}/api/managevoters/candidates`), // load candidates
     ])
-      .then(([statsRes, barangayRes, insightsRes, activityRes]) => {
+      .then(([statsRes, barangayRes, insightsRes, activityRes, candidatesRes]) => {
         setStats(statsRes.data);
         setBarangayRows(barangayRes.data);
         setInsights(insightsRes.data);
         setRecentActivity(activityRes.data);
+        setCandidates(Array.isArray(candidatesRes.data) ? candidatesRes.data : []);
         setLoading(false);
       })
       .catch((err) => {
         console.error("Dashboard fetch error:", err);
-        setError(err.message);
+        setError(err.message || "Failed to fetch data");
+        // still set what we have and stop loader
         setLoading(false);
       });
   }, []);
@@ -100,19 +113,22 @@ const AdminVotersDashboard = () => {
     return ["All barangays", ...names];
   }, [barangayRows]);
 
+  // Use API candidates when available; fall back to static list if empty
+  const dataCandidates = candidates.length > 0 ? candidates : CANDIDATE_ROWS;
+
   const filteredCandidates = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return CANDIDATE_ROWS.filter((item) => {
+    return dataCandidates.filter((item) => {
       const matchYear = String(item.election_year) === selectedYear;
       const matchPosition =
         selectedPosition === "All" || item.position === selectedPosition;
       const matchSearch =
         !q ||
-        item.full_name.toLowerCase().includes(q) ||
-        item.party.toLowerCase().includes(q);
+        (item.full_name && item.full_name.toLowerCase().includes(q)) ||
+        (item.party && item.party.toLowerCase().includes(q));
       return matchYear && matchPosition && matchSearch;
     });
-  }, [search, selectedYear, selectedPosition]);
+  }, [search, selectedYear, selectedPosition, dataCandidates]);
 
   const filteredBarangays = useMemo(() => {
     if (selectedBarangay === "All barangays") return barangayRows;
@@ -140,7 +156,7 @@ const AdminVotersDashboard = () => {
     },
     {
       label: "Candidates",
-      value: CANDIDATE_ROWS.length.toString(),
+      value: dataCandidates.length.toString(),
       sub: "Mayor and Vice Mayor",
       tone: "amber",
     },
@@ -157,6 +173,88 @@ const AdminVotersDashboard = () => {
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
     if (diffDays === 1) return "Yesterday";
     return `${diffDays} days ago`;
+  };
+
+  // CRUD helper functions for candidates
+  const refreshCandidates = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/managevoters/candidates`);
+      setCandidates(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Failed to refresh candidates:", err);
+    }
+  };
+
+  const addCandidate = async () => {
+    // basic validation
+    if (!candidateForm.full_name || !candidateForm.position || !candidateForm.election_year) {
+      alert("Please provide name, position and year.");
+      return;
+    }
+
+    try {
+      await axios.post(`${API_BASE}/api/managevoters/candidates`, candidateForm);
+      setCandidateForm({
+        full_name: "",
+        position: "Mayor",
+        party: "",
+        election_year: "2025",
+      });
+      await refreshCandidates();
+    } catch (err) {
+      console.error("Failed to add candidate:", err);
+      alert("Failed to add candidate.");
+    }
+  };
+
+  const deleteCandidate = async (id) => {
+    if (!id) {
+      // If using fallback static rows there's no id to delete
+      alert("Cannot delete sample candidate (no id).");
+      return;
+    }
+    if (!window.confirm("Delete this candidate?")) return;
+    try {
+      await axios.delete(`${API_BASE}/api/managevoters/candidates/${id}`);
+      await refreshCandidates();
+    } catch (err) {
+      console.error("Failed to delete candidate:", err);
+      alert("Failed to delete candidate.");
+    }
+  };
+
+  const editCandidate = async (row) => {
+    if (!row) return;
+    // If the row has no id (fallback sample rows) we just allow editing in-place with an alert
+    if (!row.id) {
+      const newName = prompt("Candidate Name", row.full_name);
+      const newParty = prompt("Party", row.party);
+      if (!newName) return;
+      // edit fallback array locally (non-persistent)
+      const updated = dataCandidates.map((c) =>
+        c === row ? { ...c, full_name: newName, party: newParty } : c
+      );
+      setCandidates([]); // clear API candidates so fallback uses updated array
+      // Because fallback is static constant, we can't mutate it; instead show message
+      alert("This is a sample candidate. To edit persistent candidates use real DB entries.");
+      return;
+    }
+
+    const name = prompt("Candidate Name", row.full_name);
+    if (!name) return;
+    const party = prompt("Party", row.party || "");
+    try {
+      await axios.put(`${API_BASE}/api/managevoters/candidates/${row.id}`, {
+        full_name: name,
+        position: row.position,
+        party,
+        election_year: row.election_year,
+      });
+      await refreshCandidates();
+    } catch (err) {
+      console.error("Failed to edit candidate:", err);
+      alert("Failed to update candidate.");
+    }
   };
 
   return (
@@ -432,6 +530,58 @@ const AdminVotersDashboard = () => {
             </div>
           </section>
 
+          {/* Add Candidate (inline form) */}
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">Add Candidate</h3>
+
+            <div className="flex flex-wrap gap-2">
+              <input
+                placeholder="Full Name"
+                value={candidateForm.full_name}
+                onChange={(e) =>
+                  setCandidateForm({ ...candidateForm, full_name: e.target.value })
+                }
+                className="border px-3 py-2 rounded-md text-sm"
+              />
+
+              <select
+                value={candidateForm.position}
+                onChange={(e) =>
+                  setCandidateForm({ ...candidateForm, position: e.target.value })
+                }
+                className="border px-3 py-2 rounded-md text-sm"
+              >
+                <option>Mayor</option>
+                <option>Vice Mayor</option>
+              </select>
+
+              <input
+                placeholder="Party"
+                value={candidateForm.party}
+                onChange={(e) =>
+                  setCandidateForm({ ...candidateForm, party: e.target.value })
+                }
+                className="border px-3 py-2 rounded-md text-sm"
+              />
+
+              <input
+                type="number"
+                value={candidateForm.election_year}
+                onChange={(e) =>
+                  setCandidateForm({ ...candidateForm, election_year: e.target.value })
+                }
+                className="border px-3 py-2 rounded-md text-sm w-[110px]"
+              />
+
+              <button
+                onClick={addCandidate}
+                className="bg-emerald-600 text-white px-4 py-2 rounded-md text-sm"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
           {/* Candidates Table */}
           <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
@@ -459,7 +609,7 @@ const AdminVotersDashboard = () => {
               ) : (
                 filteredCandidates.map((row, idx) => (
                   <div
-                    key={idx}
+                    key={row.id ?? idx}
                     className="grid grid-cols-[minmax(0,1fr)_140px_180px_100px] items-center px-6 py-4 text-sm hover:bg-slate-50 transition"
                   >
                     <div className="font-semibold text-slate-800">{row.full_name}</div>
@@ -473,7 +623,22 @@ const AdminVotersDashboard = () => {
                       </span>
                     </div>
                     <div className="text-slate-600">{row.party}</div>
-                    <div className="text-slate-500">{row.election_year}</div>
+                    <div className="text-slate-500 flex items-center gap-2">
+                      {row.election_year}
+                      <button
+                        onClick={() => editCandidate(row)}
+                        className="text-xs text-blue-600"
+                      >
+                        Edit
+                      </button>
+
+                      <button
+                        onClick={() => deleteCandidate(row.id)}
+                        className="text-xs text-red-600"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
