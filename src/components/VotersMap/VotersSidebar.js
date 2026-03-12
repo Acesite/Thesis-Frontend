@@ -164,8 +164,6 @@ export default function VotersSidebar({
                     label="Vice Mayor"
                     value={fmt(selectedRecord.vice_mayor_vote)}
                   />
-                  <KV label="Latitude" value={fmt(selectedRecord.lat)} />
-                  <KV label="Longitude" value={fmt(selectedRecord.lng)} />
                 </dl>
 
                 <div>
