@@ -33,6 +33,8 @@ export default function VotersSidebar({
   selectedRecord,
   onSelectRecord,
   onRefresh,
+  onFilterChange, // ✅ new prop to emit filter changes to parent
+  candidates = [], // ✅ new prop for legend
 }) {
   const navigate = useNavigate();
 
@@ -78,20 +80,25 @@ export default function VotersSidebar({
 
   const selectedId = getHouseholdId(selectedRecord);
 
-  const familyLeaderMembers = useMemo(() => {
-    if (!selectedRecord?.members?.length) return [];
-    return selectedRecord.members.filter((m) => Number(m?.is_family_leader) === 1);
-  }, [selectedRecord]);
+  const mayorCandidates = useMemo(
+    () => candidates.filter((c) => c.position === "mayor"),
+    [candidates]
+  );
 
-  const otherMembers = useMemo(() => {
-    if (!selectedRecord?.members?.length) return [];
-    return selectedRecord.members.filter((m) => Number(m?.is_family_leader) !== 1);
-  }, [selectedRecord]);
-
+  // ✅ Barangay filter handler
   const handleBarangayChange = (e) => {
     const barangay = e.target.value;
     setSelectedBarangay(barangay);
+    setSelectedPrecinct(""); // reset precinct when barangay changes
     onBarangaySelect?.(barangay ? { name: barangay } : null);
+    onFilterChange?.({ barangay, precinct: "" }); // ✅ emit up to VotersMap
+  };
+
+  // ✅ Precinct filter handler
+  const handlePrecinctChange = (e) => {
+    const precinct = e.target.value;
+    setSelectedPrecinct(precinct);
+    onFilterChange?.({ barangay: selectedBarangay, precinct }); // ✅ emit up to VotersMap
   };
 
   return (
@@ -111,73 +118,92 @@ export default function VotersSidebar({
         </Section>
 
         {selectedRecord && (
-          <>
-            <Section title="Household Details">
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">
-                    Household #{fmt(selectedId)}
-                  </p>
-
-                  <p className="text-xs text-gray-500">
-                    Barangay: {fmt(selectedRecord.barangay_name)}
-                    {(selectedRecord.precinct_no ?? selectedRecord.precinct_id)
-                      ? ` • Precinct: ${fmt(
-                          selectedRecord.precinct_no ?? selectedRecord.precinct_id
-                        )}`
-                      : ""}
-                  </p>
-                </div>
-
-                <span
-                  className={[
-                    "inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold border",
-                    selectedRecord.is_visited
-                      ? "bg-green-50 text-green-700 border-green-200"
-                      : "bg-yellow-50 text-yellow-700 border-yellow-200",
-                  ].join(" ")}
-                >
-                  {selectedRecord.is_visited ? "Visited" : "Not visited"}
-                </span>
-
-                <dl className="grid grid-cols-2 gap-3">
-                  <KV
-                    label="Family leader"
-                    value={fmt(selectedRecord.family_leader_name)}
-                  />
-                  <KV
-                    label="Number of Voters"
-                    value={fmt(selectedRecord.voter_count)}
-                  />
-                  <KV
-                    label="Leader age"
-                    value={fmt(selectedRecord.family_leader_age)}
-                  />
-                  <KV
-                    label="Leader gender"
-                    value={fmt(selectedRecord.family_leader_gender)}
-                  />
-                  <KV label="Purok" value={fmt(selectedRecord.purok)} />
-                  <KV label="Sitio" value={fmt(selectedRecord.sitio)} />
-                  <KV label="Mayor" value={fmt(selectedRecord.mayor_vote)} />
-                  <KV
-                    label="Vice Mayor"
-                    value={fmt(selectedRecord.vice_mayor_vote)}
-                  />
-                </dl>
-
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
-                    Notes
-                  </p>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 min-h-[44px]">
-                    {fmt(selectedRecord.notes)}
-                  </div>
-                </div>                
+          <Section title="Household Details">
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  Household #{fmt(selectedId)}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Barangay: {fmt(selectedRecord.barangay_name)}
+                  {(selectedRecord.precinct_no ?? selectedRecord.precinct_id)
+                    ? ` • Precinct: ${fmt(
+                        selectedRecord.precinct_no ?? selectedRecord.precinct_id
+                      )}`
+                    : ""}
+                </p>
               </div>
-            </Section>
 
-          </>
+              <span
+                className={[
+                  "inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold border",
+                  selectedRecord.is_visited
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : "bg-yellow-50 text-yellow-700 border-yellow-200",
+                ].join(" ")}
+              >
+                {selectedRecord.is_visited ? "Visited" : "Not visited"}
+              </span>
+
+              <dl className="grid grid-cols-2 gap-3">
+                <KV
+                  label="Family leader"
+                  value={fmt(selectedRecord.family_leader_name)}
+                />
+                <KV
+                  label="Number of Voters"
+                  value={fmt(selectedRecord.voter_count)}
+                />
+                <KV
+                  label="Leader age"
+                  value={fmt(selectedRecord.family_leader_age)}
+                />
+                <KV
+                  label="Leader gender"
+                  value={fmt(selectedRecord.family_leader_gender)}
+                />
+                <KV label="Purok" value={fmt(selectedRecord.purok)} />
+                <KV label="Sitio" value={fmt(selectedRecord.sitio)} />
+                <KV label="Mayor" value={fmt(selectedRecord.mayor_vote)} />
+                <KV
+                  label="Vice Mayor"
+                  value={fmt(selectedRecord.vice_mayor_vote)}
+                />
+              </dl>
+
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 mb-1">
+                  Notes
+                </p>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 min-h-[44px]">
+                  {fmt(selectedRecord.notes)}
+                </div>
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* ✅ Mayor Color Legend */}
+        {mayorCandidates.length > 0 && (
+          <Section title="Mayor Legend">
+            <div className="space-y-2">
+              {mayorCandidates.map((c) => (
+                <div key={c.id} className="flex items-center gap-2 text-sm">
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: c.color || "#6b7280" }}
+                  />
+                  <span className="text-gray-800 font-medium">{c.full_name}</span>
+                  <span className="text-xs text-gray-400 ml-auto">{c.party}</span>
+                </div>
+              ))}
+              {/* Gray fallback entry */}
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-3 h-3 rounded-full flex-shrink-0 bg-gray-500" />
+                <span className="text-gray-500">No mayor assigned</span>
+              </div>
+            </div>
+          </Section>
         )}
 
         <Section title="Map Filters">
@@ -186,14 +212,12 @@ export default function VotersSidebar({
               <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
                 Barangay
               </label>
-
               <select
                 value={selectedBarangay}
-                onChange={handleBarangayChange}
+                onChange={handleBarangayChange} // ✅ uses new handler
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               >
                 <option value="">All barangays</option>
-
                 {barangayOptions.map((b) => (
                   <option key={b} value={b}>
                     {b}
@@ -206,14 +230,12 @@ export default function VotersSidebar({
               <label className="block text-xs uppercase tracking-wide text-gray-500 mb-1">
                 Precinct
               </label>
-
               <select
                 value={selectedPrecinct}
-                onChange={(e) => setSelectedPrecinct(e.target.value)}
+                onChange={handlePrecinctChange} // ✅ uses new handler
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               >
                 <option value="">All precincts</option>
-
                 {BACOLOD_PRECINCTS.map((district, dIndex) => (
                   <optgroup
                     key={district.district}
@@ -224,11 +246,7 @@ export default function VotersSidebar({
                       const precincts = [];
 
                       for (let p = start; p <= end; p++) {
-                        const code = `${String(dIndex + 1).padStart(
-                          2,
-                          "0"
-                        )}${String(p).padStart(2, "0")}A`;
-
+                        const code = `${String(dIndex + 1).padStart(2, "0")}${String(p).padStart(2, "0")}A`;
                         precincts.push(
                           <option key={code} value={p}>
                             {code}
@@ -251,6 +269,7 @@ export default function VotersSidebar({
             </div>
           </div>
 
+          {/* Filter summary counts */}
           <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="flex justify-between">
@@ -259,7 +278,6 @@ export default function VotersSidebar({
                   {totals.households}
                 </span>
               </div>
-
               <div className="flex justify-between">
                 <span className="text-gray-500">Total voters</span>
                 <span className="font-semibold text-gray-900">
@@ -268,6 +286,21 @@ export default function VotersSidebar({
               </div>
             </div>
           </div>
+
+          {/* ✅ Clear filters button */}
+          {(selectedBarangay || selectedPrecinct) && (
+            <button
+              onClick={() => {
+                setSelectedBarangay("");
+                setSelectedPrecinct("");
+                onFilterChange?.({ barangay: "", precinct: "" });
+                onBarangaySelect?.(null);
+              }}
+              className="mt-2 w-full text-xs text-purple-600 hover:text-purple-800 underline text-center"
+            >
+              Clear filters
+            </button>
+          )}
         </Section>
 
         <div className="mt-5 flex gap-2">

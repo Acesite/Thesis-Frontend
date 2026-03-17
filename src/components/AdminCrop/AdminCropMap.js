@@ -1194,73 +1194,92 @@ const absValueDeltaPctLabel =
   );
 
   const ensureBarangayLayers = useCallback(() => {
-    if (!map.current) return;
-    const m = map.current;
-    if (!BARANGAYS_FC?.features?.length) return;
+  if (!map.current) return;
+  const m = map.current;
+  if (!BARANGAYS_FC?.features?.length) return;
 
-    if (!m.getSource("barangays-src")) {
-      m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
+  if (!m.getSource("barangays-src")) {
+    m.addSource("barangays-src", { type: "geojson", data: BARANGAYS_FC });
+  }
+
+  // ✅ Fill layer — subtle tint
+  if (!m.getLayer("barangays-fill")) {
+  m.addLayer({
+    id: "barangays-fill",
+    type: "fill",
+    source: "barangays-src",
+    paint: {
+      "fill-color": "#10b981",
+      "fill-opacity": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10, 0.12,   // zoom 10 → visible (12% opacity)
+        13, 0.06,   // zoom 13 → fading
+        15, 0.02,   // zoom 15 → almost gone
+        16, 0,      // zoom 16+ → completely invisible
+      ],
+    },
+  });
+}
+
+  // ✅ Thicker boundary line
+  if (!m.getLayer("barangays-line")) {
+    m.addLayer({
+      id: "barangays-line",
+      type: "line",
+      source: "barangays-src",
+      paint: {
+        "line-color": "#10b981",
+        "line-width": 2,
+        "line-opacity": 0.9,
+      },
+    });
+  }
+
+  // ✅ Name labels with white text + dark halo for satellite readability
+  if (!m.getLayer("barangays-labels")) {
+    m.addLayer({
+      id: "barangays-labels",
+      type: "symbol",
+      source: "barangays-src",
+      layout: {
+        "text-field": [
+          "coalesce",
+          ["get", "Barangay"],
+          ["get", "barangay"],
+          ["get", "NAME"],
+          ["get", "name"],
+          "",
+        ],
+        "symbol-placement": "point",
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          10, 10,
+          12, 12,
+          14, 14,
+          16, 18,
+        ],
+        "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+        "text-allow-overlap": false,
+      },
+      paint: {
+        "text-color": "#ffffff",
+        "text-halo-color": "rgba(0,0,0,0.8)",
+        "text-halo-width": 1.5,
+        "text-halo-blur": 0.2,
+      },
+    });
+  }
+
+  try {
+    if (m.getLayer("crop-polygons-outline")) {
+      m.moveLayer("barangays-labels");
     }
-
-    if (!m.getLayer("barangays-line")) {
-      m.addLayer({
-        id: "barangays-line",
-        type: "line",
-        source: "barangays-src",
-        paint: {
-          "line-color": "#1f2937",
-          "line-width": 1,
-          "line-opacity": 0.7,
-        },
-      });
-    }
-
-    if (!m.getLayer("barangays-labels")) {
-      m.addLayer({
-        id: "barangays-labels",
-        type: "symbol",
-        source: "barangays-src",
-        layout: {
-          "text-field": [
-            "coalesce",
-            ["get", "Barangay"],
-            ["get", "barangay"],
-            ["get", "NAME"],
-            ["get", "name"],
-            "",
-          ],
-          "symbol-placement": "point",
-          "text-size": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            10,
-            10,
-            12,
-            12,
-            14,
-            14,
-            16,
-            18,
-          ],
-          "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
-          "text-allow-overlap": false,
-        },
-        paint: {
-          "text-color": "#111827",
-          "text-halo-color": "rgba(255,255,255,0.9)",
-          "text-halo-width": 1.5,
-          "text-halo-blur": 0.2,
-        },
-      });
-    }
-
-    try {
-      if (m.getLayer("crop-polygons-outline")) {
-        m.moveLayer("barangays-labels");
-      }
-    } catch {}
-  }, []);
+  } catch {}
+}, []);
 
   
 

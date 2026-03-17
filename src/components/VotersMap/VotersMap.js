@@ -11,6 +11,12 @@ import VotersSidebar from "./VotersSidebar";
 import TagVotersForm from "./TagVotersForm";
 import BARANGAYS_FC from "./Data/Bacolodgeojson";
 
+// ✅ Map style thumbnails
+import DefaultThumbnail from "../MapboxImages/map-default.png";
+import SatelliteThumbnail from "../MapboxImages/map-satellite.png";
+import DarkThumbnail from "../MapboxImages/map-dark.png";
+import LightThumbnail from "../MapboxImages/map-light.png";
+
 import {
   DEFAULT_HOUSEHOLD_FORM,
   validateHouseholdForm,
@@ -35,6 +41,7 @@ const BACOLOD_CITY_BOUNDS = [
 const SIDEBAR_WIDTH = 500;
 const SIDEBAR_PEEK = 1;
 const API = "http://localhost:5000/api/voters";
+const MANAGE_API = "http://localhost:5000/api/managevoters";
 
 const normalizeName = (name = "") =>
   String(name)
@@ -46,42 +53,28 @@ const normalizeName = (name = "") =>
     .replace(/\s+/g, " ")
     .trim();
 
-const extractBrgyNumber = (name = "") => {
-  const match = String(name).match(/\d+/);
-  return match ? match[0] : "";
-};
-
 function buildBarangayLookup(barangayList = []) {
   const map = new Map();
-
   for (const b of barangayList) {
     if (!b?.id || !b?.barangay_name) continue;
-
     const raw = String(b.barangay_name).trim();
     const normalized = normalizeName(raw);
-
     map.set(normalized, b);
   }
-
   return map;
 }
 
 function findBarangayMatch(lookup, detectedName = "") {
   if (!lookup || !detectedName) return null;
-
   const normalized = normalizeName(detectedName);
-
   if (lookup.has(normalized)) return lookup.get(normalized);
-
   for (const [, value] of lookup.entries()) {
     const candidate = normalizeName(value?.barangay_name || "");
     if (!candidate) continue;
-
     if (candidate === normalized) return value;
     if (candidate.includes(normalized)) return value;
     if (normalized.includes(candidate)) return value;
   }
-
   return null;
 }
 
@@ -93,6 +86,9 @@ export default function VotersMap() {
   const householdMarkerMapRef = useRef(new Map());
   const tempMarkerRef = useRef(null);
 
+  // ✅ Ref to track active filter without causing re-renders
+  const activeFilterRef = useRef({ barangay: "", precinct: "" });
+
   const [householdRecords, setHouseholdRecords] = useState([]);
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [candidates, setCandidates] = useState([]);
@@ -103,6 +99,34 @@ export default function VotersMap() {
   const [lockToBago, setLockToBago] = useState(true);
   const [barangayList, setBarangayList] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(null);
+
+  // ✅ Map style switcher
+  const [isSwitcherVisible, setIsSwitcherVisible] = useState(false);
+
+  // ✅ Map styles definition
+  const mapStyles = {
+    Default: {
+      url: "mapbox://styles/wompwomp-69/cmm5q9kl7000l01so1g8m6tpx",
+      thumbnail: DefaultThumbnail,
+    },
+    Satellite: {
+      url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n",
+      thumbnail: SatelliteThumbnail,
+    },
+    Dark: {
+      url: "mapbox://styles/wompwomp-69/cm96veqvt009101szf7g42jps",
+      thumbnail: DarkThumbnail,
+    },
+    Light: {
+      url: "mapbox://styles/wompwomp-69/cm976c2u700ab01rc0cns2pe0",
+      thumbnail: LightThumbnail,
+    },
+  };
+
+  // ✅ Track readiness of map and candidates separately
+  const [mapReady, setMapReady] = useState(false);
+  const [candidatesReady, setCandidatesReady] = useState(false);
+  const [activeFilter, setActiveFilter] = useState({ barangay: "", precinct: "" });
 
   const barangayLookup = useMemo(
     () => buildBarangayLookup(barangayList),
@@ -141,19 +165,122 @@ export default function VotersMap() {
     (rec) => {
       if (!rec) return;
       setSelectedRecord(rec);
-
       const lng = Number(rec.lng);
       const lat = Number(rec.lat);
       if (Number.isFinite(lng) && Number.isFinite(lat)) {
         zoomToLocation([lng, lat]);
       }
-
       const marker = householdMarkerMapRef.current.get(String(rec.id));
       if (marker) marker.togglePopup();
     },
     [zoomToLocation]
   );
 
+  const ensureBarangayLayers = useCallback(() => {
+  const m = mapRef.current;
+  if (!m || !BARANGAYS_FC?.features?.length) return;
+
+  // source
+  if (!m.getSource("barangays-src")) {
+    m.addSource("barangays-src", {
+      type: "geojson",
+      data: BARANGAYS_FC,
+    });
+  }
+
+  // ✅ Fill layer — subtle tint so boundaries are easy to spot
+  if (!m.getLayer("barangays-fill")) {
+    m.addLayer({
+      id: "barangays-fill",
+      type: "fill",
+      source: "barangays-src",
+      paint: {
+        "fill-color": "#10b981",   // emerald green tint
+        "fill-opacity": 0.08,      // very subtle — adjust 0.05–0.15
+      },
+    });
+  }
+
+  // ✅ Thicker boundary line
+  if (!m.getLayer("barangays-line")) {
+    m.addLayer({
+      id: "barangays-line",
+      type: "line",
+      source: "barangays-src",
+      paint: {
+        "line-color": "#10b981",   // matching green
+        "line-width": 2,           // thicker than before
+        "line-opacity": 0.9,
+      },
+    });
+  }
+
+  // name labels
+  if (!m.getLayer("barangays-labels")) {
+    m.addLayer({
+      id: "barangays-labels",
+      type: "symbol",
+      source: "barangays-src",
+      layout: {
+        "text-field": [
+          "coalesce",
+          ["get", "barangay_name"],
+          ["get", "Barangay"],
+          ["get", "barangay"],
+          ["get", "NAME"],
+          ["get", "name"],
+          "",
+        ],
+        "symbol-placement": "point",
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          10, 10,
+          12, 12,
+          14, 14,
+          16, 18,
+        ],
+        "text-font": ["Open Sans Semibold", "Arial Unicode MS Regular"],
+        "text-allow-overlap": false,
+      },
+      paint: {
+        "text-color": "#ffffff",              // ✅ white text for satellite
+        "text-halo-color": "rgba(0,0,0,0.8)", // ✅ dark halo for contrast
+        "text-halo-width": 1.5,
+        "text-halo-blur": 0.2,
+      },
+    });
+  }
+}, []);
+
+  // ✅ Apply filter to markers
+  const applyMarkerFilter = useCallback(
+    ({ barangay, precinct }) => {
+      activeFilterRef.current = { barangay, precinct };
+      setActiveFilter({ barangay, precinct });
+
+      for (const [id, marker] of householdMarkerMapRef.current.entries()) {
+        const row = householdRecords.find((r) => String(r.id) === id);
+        if (!row) continue;
+
+        const matchBarangay =
+          !barangay ||
+          String(row.barangay_name || "").toLowerCase() ===
+            barangay.toLowerCase();
+
+        const matchPrecinct =
+          !precinct ||
+          String(row.precinct_no ?? row.precinct_id ?? "") === precinct;
+
+        marker.getElement().style.display =
+          matchBarangay && matchPrecinct ? "block" : "none";
+      }
+    },
+    [householdRecords]
+  );
+
+  // ✅ renderHouseholdMarkers only depends on candidates
   const renderHouseholdMarkers = useCallback(async () => {
     const m = mapRef.current;
     if (!m) return;
@@ -174,13 +301,32 @@ export default function VotersMap() {
           buildHouseholdPopupHTML(row)
         );
 
-        const marker = new mapboxgl.Marker({ color: getMarkerColor(row) })
+        const el = document.createElement("div");
+        el.className = "marker-dot";
+        el.style.backgroundColor = getMarkerColor(row, candidates);
+
+        // ✅ Re-apply current filter from ref
+        const { barangay, precinct } = activeFilterRef.current;
+        const matchBarangay =
+          !barangay ||
+          String(row.barangay_name || "").toLowerCase() ===
+            barangay.toLowerCase();
+        const matchPrecinct =
+          !precinct ||
+          String(row.precinct_no ?? row.precinct_id ?? "") === precinct;
+        el.style.display = matchBarangay && matchPrecinct ? "block" : "none";
+
+        const marker = new mapboxgl.Marker(el)
           .setLngLat([lng, lat])
           .setPopup(popup)
           .addTo(m);
 
-        marker.getElement().addEventListener("click", (ev) => {
+        el.addEventListener("click", (ev) => {
           ev.stopPropagation();
+          savedMarkersRef.current.forEach((mk) => {
+            mk.getElement().classList.remove("active");
+          });
+          el.classList.add("active");
           setIsSidebarVisible(true);
           setSelectedRecord(row);
         });
@@ -192,7 +338,7 @@ export default function VotersMap() {
       console.error(err);
       toast.error("Failed to load household voter markers.");
     }
-  }, []);
+  }, [candidates]);
 
   const handleCloseForm = () => {
     setIsTagging(false);
@@ -211,12 +357,7 @@ export default function VotersMap() {
     const finalBarangayName =
       matchedBarangay?.barangay_name || form.barangay_name || "";
 
-    if (!finalBarangayId) {
-      console.log("barangayList:", barangayList);
-      console.log("form.barangay_name:", form.barangay_name);
-      console.log("matchedBarangay:", matchedBarangay);
-      return toast.error("Barangay not set.");
-    }
+    if (!finalBarangayId) return toast.error("Barangay not set.");
 
     if (!currentUserId) {
       toast.error("No logged-in user detected. Please log in again.");
@@ -248,6 +389,7 @@ export default function VotersMap() {
     }
   };
 
+  // Load barangays
   useEffect(() => {
     axios
       .get(`${API}/barangays`)
@@ -255,18 +397,27 @@ export default function VotersMap() {
       .catch((err) => console.error("Failed to load barangays", err));
   }, []);
 
+  // ✅ Load candidates from correct endpoint
   useEffect(() => {
     axios
-      .get(`${API}/candidates?year=2025`)
-      .then((res) => setCandidates(Array.isArray(res.data) ? res.data : []))
-      .catch((err) => console.error("Failed to load candidates", err));
+      .get(`${MANAGE_API}/candidates`)
+      .then((res) => {
+        setCandidates(Array.isArray(res.data) ? res.data : []);
+        setCandidatesReady(true);
+      })
+      .catch((err) => {
+        console.error("Failed to load candidates", err);
+        setCandidatesReady(true);
+      });
   }, []);
 
+  // Load current user
   useEffect(() => {
     const uid = getLoggedInUserId();
     if (uid) setCurrentUserId(uid);
   }, []);
 
+  // ✅ Map init — only signals mapReady, does NOT render markers directly
   useEffect(() => {
     const container = mapContainerRef.current;
     if (!container) return;
@@ -281,21 +432,26 @@ export default function VotersMap() {
       mapRef.current = m;
 
       if (lockToBago) m.setMaxBounds(BACOLOD_CITY_BOUNDS);
-
       m.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-      m.on("load", async () => {
-        await renderHouseholdMarkers();
-      });
+      // ✅ Just signal ready
+      m.on("load", () => setMapReady(true));
     } else {
       const m = mapRef.current;
+      setMapReady(false); // reset while style reloads
       m.setStyle(mapStyle);
-      m.once("style.load", async () => {
-        await renderHouseholdMarkers();
-      });
+      m.once("style.load", () => setMapReady(true));
     }
-  }, [mapStyle, lockToBago, renderHouseholdMarkers]);
+  }, [mapStyle, lockToBago]);
 
+  // ✅ Render markers + barangay layers when BOTH map AND candidates are ready
+  useEffect(() => {
+    if (!mapReady || !candidatesReady) return;
+    ensureBarangayLayers(); // ✅ re-add borders/labels after every style load
+    renderHouseholdMarkers();
+  }, [mapReady, candidatesReady, renderHouseholdMarkers, ensureBarangayLayers]);
+
+  // Bounds lock toggle
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
@@ -303,6 +459,7 @@ export default function VotersMap() {
     else m.setMaxBounds(null);
   }, [lockToBago]);
 
+  // Map click for mark mode
   useEffect(() => {
     const m = mapRef.current;
     if (!m) return;
@@ -325,9 +482,6 @@ export default function VotersMap() {
 
       const matchedBarangay = findBarangayMatch(barangayLookup, detectedName);
 
-      console.log("detectedName:", detectedName);
-      console.log("matchedBarangay:", matchedBarangay);
-
       setForm({
         ...DEFAULT_HOUSEHOLD_FORM,
         barangay_name: matchedBarangay?.barangay_name || detectedName || "",
@@ -343,6 +497,7 @@ export default function VotersMap() {
     return () => m.off("click", handleMapClick);
   }, [isMarkMode, barangayLookup]);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       clearMarkers(savedMarkersRef, householdMarkerMapRef);
@@ -360,6 +515,7 @@ export default function VotersMap() {
     <div className="relative h-full w-full">
       <div ref={mapContainerRef} className="h-full w-full" />
 
+      {/* Mark mode button */}
       <div className="absolute bottom-[118px] right-[10px] z-50 flex flex-col items-end">
         <button
           type="button"
@@ -391,6 +547,52 @@ export default function VotersMap() {
         )}
       </div>
 
+      {/* ✅ Layer switcher button — shows when sidebar is hidden */}
+      {!isSidebarVisible && (
+        <button
+          onClick={() => setIsSwitcherVisible((v) => !v)}
+          className="absolute bottom-6 left-4 w-20 h-20 rounded-xl shadow-md overflow-hidden z-30 bg-white border border-gray-300 hover:shadow-lg transition"
+          title="Map layers"
+        >
+          <div className="w-full h-full relative">
+            <img
+              src={DefaultThumbnail}
+              alt="Layers"
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute bottom-0 left-0 right-0 text-white text-xs font-semibold px-2 py-1 bg-black/60 text-center">
+              Layers
+            </div>
+          </div>
+        </button>
+      )}
+
+      {/* ✅ Layer switcher panel */}
+      {!isSidebarVisible && isSwitcherVisible && (
+        <div className="absolute bottom-28 left-4 bg-white p-2 rounded-xl shadow-xl flex space-x-2 z-30">
+          {Object.entries(mapStyles).map(([label, { url, thumbnail }]) => (
+            <button
+              key={label}
+              onClick={() => {
+                setMapStyle(url);
+                setIsSwitcherVisible(false);
+              }}
+              className="w-16 h-16 rounded-md border border-gray-300 overflow-hidden relative hover:shadow-md"
+              title={label}
+            >
+              <img
+                src={thumbnail}
+                alt={label}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute bottom-0 w-full text-[10px] text-white text-center bg-black/60 py-[2px]">
+                {label}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
       <SidebarToggleButton
         onClick={() => setIsSidebarVisible((v) => !v)}
         isSidebarVisible={isSidebarVisible}
@@ -398,6 +600,7 @@ export default function VotersMap() {
         peek={SIDEBAR_PEEK}
       />
 
+      {/* Sidebar */}
       <div
         className={`absolute top-0 left-0 h-full z-40 bg-gray-50 border-r border-gray-200 transition-all duration-200 ease-in-out overflow-hidden ${
           isSidebarVisible ? "w-[500px]" : "w-0"
@@ -410,8 +613,10 @@ export default function VotersMap() {
           selectedRecord={selectedRecord}
           onSelectRecord={selectRecord}
           setMapStyle={setMapStyle}
+          mapStyles={mapStyles}
           onRefresh={renderHouseholdMarkers}
-          mapStyles={{}}
+          onFilterChange={applyMarkerFilter}
+          candidates={candidates}
         />
       </div>
 

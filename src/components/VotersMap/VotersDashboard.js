@@ -17,15 +17,30 @@ const FILTER_OPTIONS = {
   position: ["All", "Mayor", "Vice Mayor"],
 };
 
-// kept as a fallback sample dataset (unchanged)
 const CANDIDATE_ROWS = [
-  { position: "Mayor", full_name: "Candidate A", party: "Sample Party", election_year: 2025 },
-  { position: "Mayor", full_name: "Candidate B", party: "People First", election_year: 2025 },
-  { position: "Vice Mayor", full_name: "Candidate C", party: "Unity Bloc", election_year: 2025 },
-  { position: "Vice Mayor", full_name: "Candidate D", party: "Citizens Party", election_year: 2025 },
-  { position: "Mayor", full_name: "Candidate E", party: "Local Reform", election_year: 2025 },
-  { position: "Vice Mayor", full_name: "Candidate F", party: "Grassroots Alliance", election_year: 2025 },
+  { position: "mayor", full_name: "Candidate A", party: "Sample Party", election_year: 2025 },
+  { position: "mayor", full_name: "Candidate B", party: "People First", election_year: 2025 },
+  { position: "vice_mayor", full_name: "Candidate C", party: "Unity Bloc", election_year: 2025 },
+  { position: "vice_mayor", full_name: "Candidate D", party: "Citizens Party", election_year: 2025 },
+  { position: "mayor", full_name: "Candidate E", party: "Local Reform", election_year: 2025 },
+  { position: "vice_mayor", full_name: "Candidate F", party: "Grassroots Alliance", election_year: 2025 },
 ];
+
+// ✅ Helper to normalize position label for display
+const formatPosition = (pos) => {
+  if (!pos) return "—";
+  if (pos === "vice_mayor") return "Vice Mayor";
+  if (pos === "mayor") return "Mayor";
+  return pos;
+};
+
+// ✅ Helper to normalize position value for DB
+const normalizePosition = (pos) => {
+  if (!pos) return "";
+  if (pos === "Vice Mayor") return "vice_mayor";
+  if (pos === "Mayor") return "mayor";
+  return pos.toLowerCase().replace(/\s+/g, "_");
+};
 
 const StatCard = ({ label, value, sub, tone = "emerald", loading }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -72,13 +87,13 @@ const AdminVotersDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // New candidate states
-  const [candidates, setCandidates] = useState([]); // from API
+  const [candidates, setCandidates] = useState([]);
   const [candidateForm, setCandidateForm] = useState({
     full_name: "",
     position: "Mayor",
     party: "",
     election_year: "2025",
+    color: "#10b981",
   });
 
   useEffect(() => {
@@ -90,7 +105,7 @@ const AdminVotersDashboard = () => {
       axios.get(`${API_BASE}/api/managevoters/barangay-analytics`),
       axios.get(`${API_BASE}/api/managevoters/quick-insights`),
       axios.get(`${API_BASE}/api/managevoters/recent-activity`),
-      axios.get(`${API_BASE}/api/managevoters/candidates`), // load candidates
+      axios.get(`${API_BASE}/api/managevoters/candidates`),
     ])
       .then(([statsRes, barangayRes, insightsRes, activityRes, candidatesRes]) => {
         setStats(statsRes.data);
@@ -103,7 +118,6 @@ const AdminVotersDashboard = () => {
       .catch((err) => {
         console.error("Dashboard fetch error:", err);
         setError(err.message || "Failed to fetch data");
-        // still set what we have and stop loader
         setLoading(false);
       });
   }, []);
@@ -113,19 +127,23 @@ const AdminVotersDashboard = () => {
     return ["All barangays", ...names];
   }, [barangayRows]);
 
-  // Use API candidates when available; fall back to static list if empty
   const dataCandidates = candidates.length > 0 ? candidates : CANDIDATE_ROWS;
 
   const filteredCandidates = useMemo(() => {
     const q = search.trim().toLowerCase();
     return dataCandidates.filter((item) => {
       const matchYear = String(item.election_year) === selectedYear;
+
+      // ✅ Compare against normalized DB values
       const matchPosition =
-        selectedPosition === "All" || item.position === selectedPosition;
+        selectedPosition === "All" ||
+        normalizePosition(selectedPosition) === item.position;
+
       const matchSearch =
         !q ||
         (item.full_name && item.full_name.toLowerCase().includes(q)) ||
         (item.party && item.party.toLowerCase().includes(q));
+
       return matchYear && matchPosition && matchSearch;
     });
   }, [search, selectedYear, selectedPosition, dataCandidates]);
@@ -175,7 +193,6 @@ const AdminVotersDashboard = () => {
     return `${diffDays} days ago`;
   };
 
-  // CRUD helper functions for candidates
   const refreshCandidates = async () => {
     try {
       const res = await axios.get(`${API_BASE}/api/managevoters/candidates`);
@@ -186,19 +203,22 @@ const AdminVotersDashboard = () => {
   };
 
   const addCandidate = async () => {
-    // basic validation
     if (!candidateForm.full_name || !candidateForm.position || !candidateForm.election_year) {
       alert("Please provide name, position and year.");
       return;
     }
 
     try {
-      await axios.post(`${API_BASE}/api/managevoters/candidates`, candidateForm);
+      await axios.post(`${API_BASE}/api/managevoters/candidates`, {
+        ...candidateForm,
+        position: normalizePosition(candidateForm.position), // ✅ normalize before saving
+      });
       setCandidateForm({
         full_name: "",
         position: "Mayor",
         party: "",
         election_year: "2025",
+        color: "#10b981",
       });
       await refreshCandidates();
     } catch (err) {
@@ -209,7 +229,6 @@ const AdminVotersDashboard = () => {
 
   const deleteCandidate = async (id) => {
     if (!id) {
-      // If using fallback static rows there's no id to delete
       alert("Cannot delete sample candidate (no id).");
       return;
     }
@@ -225,30 +244,23 @@ const AdminVotersDashboard = () => {
 
   const editCandidate = async (row) => {
     if (!row) return;
-    // If the row has no id (fallback sample rows) we just allow editing in-place with an alert
     if (!row.id) {
-      const newName = prompt("Candidate Name", row.full_name);
-      const newParty = prompt("Party", row.party);
-      if (!newName) return;
-      // edit fallback array locally (non-persistent)
-      const updated = dataCandidates.map((c) =>
-        c === row ? { ...c, full_name: newName, party: newParty } : c
-      );
-      setCandidates([]); // clear API candidates so fallback uses updated array
-      // Because fallback is static constant, we can't mutate it; instead show message
       alert("This is a sample candidate. To edit persistent candidates use real DB entries.");
       return;
     }
 
+    const color = prompt("Color HEX (#xxxxxx)", row.color || "#10b981");
     const name = prompt("Candidate Name", row.full_name);
     if (!name) return;
     const party = prompt("Party", row.party || "");
+
     try {
       await axios.put(`${API_BASE}/api/managevoters/candidates/${row.id}`, {
         full_name: name,
-        position: row.position,
+        position: normalizePosition(row.position), // ✅ normalize — row.position may already be normalized from DB
         party,
         election_year: row.election_year,
+        color,
       });
       await refreshCandidates();
     } catch (err) {
@@ -530,10 +542,9 @@ const AdminVotersDashboard = () => {
             </div>
           </section>
 
-          {/* Add Candidate (inline form) */}
-          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+          {/* Add Candidate */}
+          <div className="mt-6 mb-4 rounded-xl border border-slate-200 bg-white p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">Add Candidate</h3>
-
             <div className="flex flex-wrap gap-2">
               <input
                 placeholder="Full Name"
@@ -543,7 +554,6 @@ const AdminVotersDashboard = () => {
                 }
                 className="border px-3 py-2 rounded-md text-sm"
               />
-
               <select
                 value={candidateForm.position}
                 onChange={(e) =>
@@ -551,10 +561,9 @@ const AdminVotersDashboard = () => {
                 }
                 className="border px-3 py-2 rounded-md text-sm"
               >
-                <option>Mayor</option>
-                <option>Vice Mayor</option>
+                <option value="Mayor">Mayor</option>
+                <option value="Vice Mayor">Vice Mayor</option>
               </select>
-
               <input
                 placeholder="Party"
                 value={candidateForm.party}
@@ -563,7 +572,14 @@ const AdminVotersDashboard = () => {
                 }
                 className="border px-3 py-2 rounded-md text-sm"
               />
-
+              <input
+                type="color"
+                value={candidateForm.color}
+                onChange={(e) =>
+                  setCandidateForm({ ...candidateForm, color: e.target.value })
+                }
+                className="w-12 h-10 border rounded-md cursor-pointer"
+              />
               <input
                 type="number"
                 value={candidateForm.election_year}
@@ -572,7 +588,6 @@ const AdminVotersDashboard = () => {
                 }
                 className="border px-3 py-2 rounded-md text-sm w-[110px]"
               />
-
               <button
                 onClick={addCandidate}
                 className="bg-emerald-600 text-white px-4 py-2 rounded-md text-sm"
@@ -614,27 +629,33 @@ const AdminVotersDashboard = () => {
                   >
                     <div className="font-semibold text-slate-800">{row.full_name}</div>
                     <div>
+                      {/* ✅ Use formatPosition for display, check normalized value for styling */}
                       <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        row.position === "Mayor"
+                        row.position === "mayor"
                           ? "bg-emerald-50 text-emerald-700"
                           : "bg-sky-50 text-sky-700"
                       }`}>
-                        {row.position}
+                        {formatPosition(row.position)}
                       </span>
                     </div>
-                    <div className="text-slate-600">{row.party}</div>
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <span
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: row.color || "#ccc" }}
+                      />
+                      {row.party}
+                    </div>
                     <div className="text-slate-500 flex items-center gap-2">
                       {row.election_year}
                       <button
                         onClick={() => editCandidate(row)}
-                        className="text-xs text-blue-600"
+                        className="text-xs text-blue-600 hover:underline"
                       >
                         Edit
                       </button>
-
                       <button
                         onClick={() => deleteCandidate(row.id)}
-                        className="text-xs text-red-600"
+                        className="text-xs text-red-600 hover:underline"
                       >
                         Delete
                       </button>
