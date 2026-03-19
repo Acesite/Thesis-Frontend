@@ -25,6 +25,25 @@ const KV = ({ label, value }) => (
   </div>
 );
 
+// ── Color-by pill button ──────────────────────────────────────────────────────
+const ColorByPill = ({ label, active, color, onClick }) => (
+  <button
+    onClick={onClick}
+    className={[
+      "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all",
+      active
+        ? "bg-gray-900 border-gray-900 text-white shadow"
+        : "bg-white border-gray-200 text-gray-600 hover:border-gray-400",
+    ].join(" ")}
+  >
+    <span
+      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+      style={{ backgroundColor: active ? "#fff" : color }}
+    />
+    {label}
+  </button>
+);
+
 export default function VotersSidebar({
   visible,
   zoomToLocation,
@@ -33,13 +52,15 @@ export default function VotersSidebar({
   selectedRecord,
   onSelectRecord,
   onRefresh,
-  onFilterChange, // ✅ new prop to emit filter changes to parent
-  candidates = [], // ✅ new prop for legend
+  onFilterChange,
+  onColorByChange, // ✅ new — notifies VotersMap which position to color by
+  candidates = [],
 }) {
   const navigate = useNavigate();
 
   const [selectedBarangay, setSelectedBarangay] = useState("");
   const [selectedPrecinct, setSelectedPrecinct] = useState("");
+  const [colorBy, setColorBy] = useState("none"); // "none" | "mayor" | "vice_mayor"
 
   const barangayOptions = useMemo(() => {
     return [...BARANGAYS].sort((a, b) => a.localeCompare(b));
@@ -69,12 +90,10 @@ export default function VotersSidebar({
   const totals = useMemo(() => {
     let households = 0;
     let voterCount = 0;
-
     for (const r of filteredRecords) {
       households += 1;
       voterCount += Number(r?.voter_count || 0);
     }
-
     return { households, voterCount };
   }, [filteredRecords]);
 
@@ -85,20 +104,37 @@ export default function VotersSidebar({
     [candidates]
   );
 
-  // ✅ Barangay filter handler
+  const viceMayorCandidates = useMemo(
+    () => candidates.filter((c) => c.position === "vice_mayor"),
+    [candidates]
+  );
+
+  // ── Active legend entries based on current colorBy ────────────────────────
+  const activeLegend = useMemo(() => {
+    if (colorBy === "mayor") return mayorCandidates;
+    if (colorBy === "vice_mayor") return viceMayorCandidates;
+    return [];
+  }, [colorBy, mayorCandidates, viceMayorCandidates]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
   const handleBarangayChange = (e) => {
     const barangay = e.target.value;
     setSelectedBarangay(barangay);
-    setSelectedPrecinct(""); // reset precinct when barangay changes
+    setSelectedPrecinct("");
     onBarangaySelect?.(barangay ? { name: barangay } : null);
-    onFilterChange?.({ barangay, precinct: "" }); // ✅ emit up to VotersMap
+    onFilterChange?.({ barangay, precinct: "" });
   };
 
-  // ✅ Precinct filter handler
   const handlePrecinctChange = (e) => {
     const precinct = e.target.value;
     setSelectedPrecinct(precinct);
-    onFilterChange?.({ barangay: selectedBarangay, precinct }); // ✅ emit up to VotersMap
+    onFilterChange?.({ barangay: selectedBarangay, precinct });
+  };
+
+  const handleColorBy = (value) => {
+    const next = colorBy === value ? "none" : value; // toggle off if same
+    setColorBy(next);
+    onColorByChange?.(next);
   };
 
   return (
@@ -146,29 +182,14 @@ export default function VotersSidebar({
               </span>
 
               <dl className="grid grid-cols-2 gap-3">
-                <KV
-                  label="Family leader"
-                  value={fmt(selectedRecord.family_leader_name)}
-                />
-                <KV
-                  label="Number of Voters"
-                  value={fmt(selectedRecord.voter_count)}
-                />
-                <KV
-                  label="Leader age"
-                  value={fmt(selectedRecord.family_leader_age)}
-                />
-                <KV
-                  label="Leader gender"
-                  value={fmt(selectedRecord.family_leader_gender)}
-                />
+                <KV label="Family leader" value={fmt(selectedRecord.family_leader_name)} />
+                <KV label="Number of Voters" value={fmt(selectedRecord.voter_count)} />
+                <KV label="Leader age" value={fmt(selectedRecord.family_leader_age)} />
+                <KV label="Leader gender" value={fmt(selectedRecord.family_leader_gender)} />
                 <KV label="Purok" value={fmt(selectedRecord.purok)} />
                 <KV label="Sitio" value={fmt(selectedRecord.sitio)} />
                 <KV label="Mayor" value={fmt(selectedRecord.mayor_vote)} />
-                <KV
-                  label="Vice Mayor"
-                  value={fmt(selectedRecord.vice_mayor_vote)}
-                />
+                <KV label="Vice Mayor" value={fmt(selectedRecord.vice_mayor_vote)} />
               </dl>
 
               <div>
@@ -183,11 +204,35 @@ export default function VotersSidebar({
           </Section>
         )}
 
-        {/* ✅ Mayor Color Legend */}
-        {mayorCandidates.length > 0 && (
-          <Section title="Mayor Legend">
-            <div className="space-y-2">
-              {mayorCandidates.map((c) => (
+        {/* ✅ Color By Section */}
+        <Section title="Color Markers By">
+          <div className="flex flex-wrap gap-2">
+            <ColorByPill
+              label="Mayor"
+              active={colorBy === "mayor"}
+              color="#6366f1" // indigo as preview dot when inactive
+              onClick={() => handleColorBy("mayor")}
+            />
+            <ColorByPill
+              label="Vice Mayor"
+              active={colorBy === "vice_mayor"}
+              color="#f59e0b" // amber as preview dot when inactive
+              onClick={() => handleColorBy("vice_mayor")}
+            />
+            {colorBy !== "none" && (
+              <button
+                onClick={() => handleColorBy("none")}
+                className="px-3 py-1.5 rounded-full border border-gray-200 text-xs text-gray-400 hover:text-gray-600 hover:border-gray-400 transition-all bg-white"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+
+          {/* ── Dynamic legend ── */}
+          {activeLegend.length > 0 && (
+            <div className="mt-3 space-y-1.5 border-t border-gray-100 pt-3">
+              {activeLegend.map((c) => (
                 <div key={c.id} className="flex items-center gap-2 text-sm">
                   <span
                     className="w-3 h-3 rounded-full flex-shrink-0"
@@ -197,14 +242,10 @@ export default function VotersSidebar({
                   <span className="text-xs text-gray-400 ml-auto">{c.party}</span>
                 </div>
               ))}
-              {/* Gray fallback entry */}
-              <div className="flex items-center gap-2 text-sm">
-                <span className="w-3 h-3 rounded-full flex-shrink-0 bg-gray-500" />
-                <span className="text-gray-500">No mayor assigned</span>
-              </div>
+             
             </div>
-          </Section>
-        )}
+          )}
+        </Section>
 
         <Section title="Map Filters">
           <div className="grid grid-cols-2 gap-3">
@@ -214,7 +255,7 @@ export default function VotersSidebar({
               </label>
               <select
                 value={selectedBarangay}
-                onChange={handleBarangayChange} // ✅ uses new handler
+                onChange={handleBarangayChange}
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               >
                 <option value="">All barangays</option>
@@ -232,7 +273,7 @@ export default function VotersSidebar({
               </label>
               <select
                 value={selectedPrecinct}
-                onChange={handlePrecinctChange} // ✅ uses new handler
+                onChange={handlePrecinctChange}
                 className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               >
                 <option value="">All precincts</option>
@@ -244,7 +285,6 @@ export default function VotersSidebar({
                     {district.schools.map((school, sIndex) => {
                       const [start, end] = school.range;
                       const precincts = [];
-
                       for (let p = start; p <= end; p++) {
                         const code = `${String(dIndex + 1).padStart(2, "0")}${String(p).padStart(2, "0")}A`;
                         precincts.push(
@@ -253,7 +293,6 @@ export default function VotersSidebar({
                           </option>
                         );
                       }
-
                       return (
                         <React.Fragment key={sIndex}>
                           <option disabled>
@@ -274,20 +313,15 @@ export default function VotersSidebar({
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-500">Households</span>
-                <span className="font-semibold text-gray-900">
-                  {totals.households}
-                </span>
+                <span className="font-semibold text-gray-900">{totals.households}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Total voters</span>
-                <span className="font-semibold text-gray-900">
-                  {totals.voterCount}
-                </span>
+                <span className="font-semibold text-gray-900">{totals.voterCount}</span>
               </div>
             </div>
           </div>
 
-          {/* ✅ Clear filters button */}
           {(selectedBarangay || selectedPrecinct) && (
             <button
               onClick={() => {

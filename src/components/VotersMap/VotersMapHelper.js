@@ -211,18 +211,8 @@ export function addTempMarker(map, tempMarkerRef, lng, lat) {
     .addTo(map);
 }
 
-export function getMarkerColor(row, candidates = []) {
-  // ✅ Only use mayor candidate for marker color
-  const mayorId = row.mayor_candidate_id;
-
-  if (mayorId && candidates.length > 0) {
-    const match = candidates.find(
-      (c) => String(c.id) === String(mayorId)
-    );
-    if (match?.color) return match.color;
-  }
-
-  return "#6b7280"; // gray if no mayor assigned
+export function getMarkerColor() {
+  return "#9ca3af"; 
 }
 
 export function buildHouseholdPopupHTML(row) {

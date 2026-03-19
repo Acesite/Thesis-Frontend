@@ -26,9 +26,9 @@
   height: 20px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(0, 150, 255, 0.4);
   animation: haloPulse 2s ease-out infinite;
   pointer-events: none;
+   background-color: currentColor;
 }
 
 @keyframes haloPulse {
