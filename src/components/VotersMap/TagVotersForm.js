@@ -253,6 +253,15 @@ export default function TagVotersForm({
             </div>
 
             <div className="col-span-2">
+  <Label>Purok Leader Name (optional)</Label>
+  <Input
+    value={form.purok_leader_name || ""}
+    onChange={(e) => setField("purok_leader_name", e.target.value)}
+    placeholder="e.g., Pedro Santos"
+  />
+</div>
+
+            <div className="col-span-2">
               <Label>Sitio</Label>
               <Input
                 value={form.sitio}

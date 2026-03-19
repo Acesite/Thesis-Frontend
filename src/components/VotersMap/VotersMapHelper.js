@@ -14,6 +14,7 @@ export const DEFAULT_HOUSEHOLD_FORM = {
   family_leader_name: "",
   family_leader_age: "",
   family_leader_gender: "",
+  purok_leader_name: "",
   other_members: [],
 };
 
