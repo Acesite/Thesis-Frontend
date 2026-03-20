@@ -109,7 +109,7 @@ export default function VotersMap() {
   const [candidates, setCandidates] = useState([]);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [mapStyle, setMapStyle] = useState(
-    "mapbox://styles/wompwomp-69/cmm5q9kl7000l01so1g8m6tpx"
+    "mapbox://styles/wompwomp-69/cmmyi9uil00gi01sk84ukdctz"
   );
   const [lockToBago, setLockToBago] = useState(true);
   const [barangayList, setBarangayList] = useState([]);
@@ -117,12 +117,9 @@ export default function VotersMap() {
   const [isSwitcherVisible, setIsSwitcherVisible] = useState(false);
 
   const mapStyles = {
-    Default: {
-      url: "mapbox://styles/wompwomp-69/cmm5q9kl7000l01so1g8m6tpx",
-      thumbnail: DefaultThumbnail,
-    },
+   
     Satellite: {
-      url: "mapbox://styles/wompwomp-69/cm96vey9z009001ri48hs8j5n",
+      url: "mapbox://styles/wompwomp-69/cmmyi9uil00gi01sk84ukdctz",
       thumbnail: SatelliteThumbnail,
     },
     Dark: {

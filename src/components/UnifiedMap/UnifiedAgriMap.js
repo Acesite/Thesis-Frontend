@@ -410,16 +410,18 @@ const UnifiedAgriMap = () => {
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-sm sm:text-base font-semibold text-slate-900 truncate">
-                Voter
+              {/* ✅ UPDATED: VISTA branding */}
+              <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight truncate">
+                VISTA
               </h1>
-              <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-[2px] text-[11px] font-semibold text-emerald-700">
+              <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-purple-100 bg-purple-50 px-2 py-[2px] text-[11px] font-semibold text-purple-700">
                 <MapPin className="h-3 w-3" />
                 Bacolod City
               </span>
             </div>
-            <p className="hidden sm:block text-xs text-slate-500">
-              
+            {/* ✅ UPDATED: full name as subtitle */}
+            <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
+              Vote – Voter Insights &amp; Spatial Tracking Analytics
             </p>
           </div>
         </div>
