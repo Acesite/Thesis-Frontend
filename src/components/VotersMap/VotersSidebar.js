@@ -130,7 +130,7 @@ export default function VotersSidebar({
 
       {/* ── Logo Area ── */}
      <div className="flex items-center justify-center border-b border-gray-100 px-5 py-3">
-<img src="/images/logo vista.png" alt="VISTA" className="h-45 w-auto object-contain" />
+<img src="/images/vista.png" alt="VISTA" className="h-45 w-auto object-contain" />
         <div className="flex flex-col items-center gap-1">
         </div>
       </div>
