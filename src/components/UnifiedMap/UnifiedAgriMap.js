@@ -3,18 +3,17 @@ import React, { useState, useEffect, useRef } from "react";
 import AdminCropMap from "../AdminCrop/AdminCropMap"; // adjust path if needed
 import CalamityFarmerMap from "../AdminCalamity/CalamityMap"; // adjust path
 
-import DARMap from "../DARmap/DARmap";
+// import DARMap from "../DARmap/DARmap";
 
-// ✅ ADD: import voters map (adjust this path to your actual location)
-import VotersMap from "../VotersMap/VotersMap";
+// import VotersMap from "../VotersMap/VotersMap";
 
 import {
   Sprout,
   CloudLightning,
   MapPin,
   Layers,
-  Landmark,
-  Users, // ✅ ADD
+  // Landmark,
+  // Users,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -391,16 +390,15 @@ const UnifiedOverlayMap = () => {
 
 /* ---------- MAIN PAGE ---------- */
 const UnifiedAgriMap = () => {
-  // ✅ ADD: voters option
-  const [activeTab, setActiveTab] = useState("crop"); // crop | calamity | dar | voters | both
+  const [activeTab, setActiveTab] = useState("crop"); // crop | calamity | both
 
   const navLinks = [
-    // { to: "/AdminLanding", label: "Home", end: true },
-    // { to: "/AdminManageCrop", label: "Crops" },
-    // { to: "/AdminManageCalamity", label: "Calamity" },
+    { to: "/AdminLanding", label: "Home", end: true },
+    { to: "/AdminManageCrop", label: "Crops" },
+    { to: "/AdminManageCalamity", label: "Calamity" },
     // { to: "/AdminDAR", label: "DAR" },
-    // { to: "/AdminGlossary", label: "Glossary" },
-    { to: "/VotersDashboard", label: "Dashboard" },
+    { to: "/AdminGlossary", label: "Glossary" },
+    // { to: "/VotersDashboard", label: "Dashboard" },
   ];
 
   return (
@@ -410,18 +408,16 @@ const UnifiedAgriMap = () => {
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 min-w-0">
-              {/* ✅ UPDATED: VISTA branding */}
               <h1 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight truncate">
-                VISTA
+                AgriGIS
               </h1>
-              <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-purple-100 bg-purple-50 px-2 py-[2px] text-[11px] font-semibold text-purple-700">
+              <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-emerald-100 bg-emerald-50 px-2 py-[2px] text-[11px] font-semibold text-emerald-700">
                 <MapPin className="h-3 w-3" />
-                Bacolod City
+                Bago City
               </span>
             </div>
-            {/* ✅ UPDATED: full name as subtitle */}
             <p className="hidden sm:block text-xs text-slate-500 mt-0.5">
-              Vote – Voter Insights &amp; Spatial Tracking Analytics
+              Agricultural Geographic Information System
             </p>
           </div>
         </div>
@@ -447,7 +443,7 @@ const UnifiedAgriMap = () => {
 
           {/* Toggle */}
           <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-[3px] text-xs">
-            {/* <button
+            <button
               type="button"
               onClick={() => setActiveTab("crop")}
               className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
@@ -458,9 +454,9 @@ const UnifiedAgriMap = () => {
             >
               <Sprout className="w-3.5 h-3.5" />
               Crops
-            </button> */}
+            </button>
 
-            {/* <button
+            <button
               type="button"
               onClick={() => setActiveTab("calamity")}
               className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
@@ -471,9 +467,8 @@ const UnifiedAgriMap = () => {
             >
               <CloudLightning className="w-3.5 h-3.5" />
               Calamities
-            </button> */}
+            </button>
 
-        
             {/* <button
               type="button"
               onClick={() => setActiveTab("dar")}
@@ -487,8 +482,7 @@ const UnifiedAgriMap = () => {
               DAR
             </button> */}
 
-           
-            <button
+            {/* <button
               type="button"
               onClick={() => setActiveTab("voters")}
               className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
@@ -499,10 +493,20 @@ const UnifiedAgriMap = () => {
             >
               <Users className="w-3.5 h-3.5" />
               Voters
-            </button>
+            </button> */}
 
-            {/* (optional) keep this if you later add a "both" button */}
-            {/* <button ... onClick={() => setActiveTab("both")}>Both</button> */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("both")}
+              className={`inline-flex items-center gap-1 px-3 py-[6px] rounded-full transition text-xs font-medium ${
+                activeTab === "both"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-700 hover:text-slate-900"
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Both
+            </button>
           </div>
         </div>
       </header>
@@ -510,8 +514,8 @@ const UnifiedAgriMap = () => {
       <main className="flex-1 relative min-h-0">
         {activeTab === "crop" && <AdminCropMap />}
         {activeTab === "calamity" && <CalamityFarmerMap />}
-        {activeTab === "dar" && <DARMap />}
-        {activeTab === "voters" && <VotersMap />}
+        {/* {activeTab === "dar" && <DARMap />} */}
+        {/* {activeTab === "voters" && <VotersMap />} */}
         {activeTab === "both" && <UnifiedOverlayMap />}
       </main>
     </div>

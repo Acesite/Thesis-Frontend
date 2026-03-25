@@ -825,7 +825,7 @@ const ManageCalamity = () => {
 
      <main
   className={`ml-0 pt-20 md:pt-24 pr-0 md:pr-8 flex-grow transition-all duration-200 ${
-    sidebarCollapsed ? "md:ml-[72px]" : "md:ml-64"
+    sidebarCollapsed ? "md:ml-[10px]" : "md:ml-36"
   }`}
 >
 
@@ -1058,210 +1058,6 @@ const ManageCalamity = () => {
             )}
           </div>
 
-          {/* Grid of calamity cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {isLoading ? (
-              Array.from({ length: pageSize }).map((_, i) => (
-                <SkeletonCard key={i} />
-              ))
-            ) : (
-              pageItems.map((inc) => {
-                const type =
-                  inc.calamity_type ||
-                  inc.incident_type ||
-                  inc.type_name ||
-                  "Others";
-                const color = colorByIncident[type] || "#16a34a";
-                const hasCoords = inc.latitude && inc.longitude;
-
-                return (
-                  <div
-                    key={inc.id}
-                    className="rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-sm transition relative"
-                    data-aos="fade-up"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: color }}
-                        />
-                        <h3 className="text-[18px] sm:text-[20px] font-semibold text-slate-900 truncate">
-                          {type}
-                        </h3>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {inc.status && (
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs ${statusBadge(
-                              inc.status
-                            )}`}
-                          >
-                            {inc.status}
-                          </span>
-                        )}
-                        {(inc.severity_level || inc.severity_text) && (
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs ${severityBadge(
-                              inc.severity_level || inc.severity_text
-                            )}`}
-                          >
-                            {inc.severity_level || inc.severity_text}
-                          </span>
-                        )}
-
-                        <div className="relative">
-                          <button
-                            data-kebab-trigger="true"
-                            aria-label="More actions"
-                            aria-expanded={activeActionId === inc.id}
-                            onClick={() =>
-                              setActiveActionId((id) =>
-                                id === inc.id ? null : inc.id
-                              )
-                            }
-                            className="h-8 w-8 grid place-items-center rounded-full text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-600"
-                          >
-                            <svg
-                              viewBox="0 0 20 20"
-                              fill="currentColor"
-                              className="h-5 w-5"
-                            >
-                              <circle cx="5" cy="10" r="1.6" />
-                              <circle cx="10" cy="10" r="1.6" />
-                              <circle cx="15" cy="10" r="1.6" />
-                            </svg>
-                          </button>
-
-                          {activeActionId === inc.id && (
-                            <div
-                              data-kebab-menu="true"
-                              className="absolute right-0 mt-2 w-36 rounded-xl bg-white border border-slate-200 shadow-xl ring-1 ring-black/5 z-50 overflow-hidden"
-                            >
-                              <button
-                                onClick={() => {
-                                  setActiveActionId(null);
-                                  handleEdit(inc);
-                                }}
-                                className="block w-full px-4 py-2 text-sm text-left hover:bg-slate-50"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setActiveActionId(null);
-                                  setPendingDelete(inc);
-                                }}
-                                className="block w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
-                      <Stat
-                        label="Reported"
-                        value={fmtDate(
-                          inc.date_reported || inc.reported_at
-                        )}
-                      />
-                      <Stat
-                        label="Location (Barangay)"
-                        value={fmtStr(inc.location || inc.barangay)}
-                      />
-                      <Stat
-                        label="Affected Area"
-                        value={fmtHa(inc.affected_area)}
-                      />
-                      <Stat
-                        label="Crop Stage"
-                        value={fmtStr(inc.crop_stage)}
-                      />
-                      <Stat
-                        label="Crop Type"
-                        value={
-                          inc.crop_type_name ||
-                          inc.crop_type ||
-                          inc.crop_type_id
-                        }
-                      />
-                      <Stat
-                        label="Ecosystem"
-                        value={
-                          inc.ecosystem_name ||
-                          inc.ecosystem ||
-                          inc.ecosystem_id
-                        }
-                      />
-                      <Stat
-                        label="Variety"
-                        value={
-                          inc.variety_name ||
-                          inc.variety ||
-                          inc.crop_variety_id
-                        }
-                      />
-                      <Stat
-                        label="Map"
-                        value={
-                          hasCoords ? (
-                            <button
-                              className="text-emerald-700 hover:underline"
-                              onClick={() =>
-                                navigate("/SuperAdminCalamityMap", {
-                                  state: {
-                                    incidentId: String(inc.id),
-                                    incidentType: type,
-                                    barangay:
-                                      inc.barangay || inc.location || "",
-                                    lat: Number(inc.latitude),
-                                    lng: Number(inc.longitude),
-                                    zoom: 16,
-                                  },
-                                })
-                              }
-                              title="Open in Admin Map"
-                            >
-                              View location ↗
-                            </button>
-                          ) : (
-                            "N/A"
-                          )
-                        }
-                      />
-                    </div>
-
-                    <NoteClamp
-                      text={inc.description || inc.note}
-                      className="mt-3"
-                    />
-
-                    <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100">
-                      <div className="text-[12px] text-slate-500">
-                        Status:&nbsp;
-                        <span className="text-slate-700">
-                          {inc.status || "Pending"}
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => openFarmersModal(inc)}
-                        className="text-[13px] font-medium text-emerald-700 hover:underline"
-                      >
-                        View all
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
           {!isLoading && (
             <div className="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div className="text-sm text-slate-600">
@@ -1271,7 +1067,7 @@ const ManageCalamity = () => {
                   {Math.min(start + pageSize, total)}
                 </span>{" "}
                 of <span className="font-medium">{total}</span>
-              </div>
+              </div>  
 
               <div className="flex items-center gap-3">
                 <select

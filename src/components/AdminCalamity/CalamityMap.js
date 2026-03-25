@@ -2004,9 +2004,9 @@ const renderSavedMarkers = useCallback(async () => {
         type: "line",
         source: "barangays-src",
         paint: {
-          "line-color": "#1f2937",
-          "line-width": 1,
-          "line-opacity": 0.7,
+          "line-color": "#ffffff",
+          "line-width": 2,
+          "line-opacity":1,
         },
       });
     }
