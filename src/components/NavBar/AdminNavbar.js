@@ -174,13 +174,21 @@ const AdminNavBar = () => {
   }, [showDropdown]);
 
   function handleLogout() {
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("first_name");
-    localStorage.removeItem("last_name");
-    localStorage.removeItem("email");
-    localStorage.removeItem("profile_picture");
-    navigate("/");
-  }
+  const keys = [
+    "token",
+    "role",
+    "first_name",
+    "last_name",
+    "full_name",
+    "profile_picture",
+    "user_id",
+    "email",
+    "adminUser",
+    "admin_id",
+    "admin_full_name",
+  ];
+  keys.forEach((key) => localStorage.removeItem(key));
+navigate("/", { replace: true });}
 
   return (
     <header className="fixed left-0 top-0 z-50 w-full bg-white shadow-md">

@@ -131,10 +131,23 @@ const SuperAdminSideBar = ({ onCollapsedChange }) => {
     }
   };
 
-  const onLogout = () => {
-    localStorage.clear();
-    navigate("/");
-  };
+ const onLogout = () => {
+  const keys = [
+    "token",
+    "role",
+    "first_name",
+    "last_name",
+    "full_name",
+    "profile_picture",
+    "user_id",
+    "email",
+    "adminUser",
+    "admin_id",
+    "admin_full_name",
+  ];
+  keys.forEach((key) => localStorage.removeItem(key));
+  navigate("/", { replace: true });
+};
 
   const navLinkBase =
     "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors";
